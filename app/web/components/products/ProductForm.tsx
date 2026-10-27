@@ -251,7 +251,7 @@ export function ProductForm({
       let result: Product;
       if (!isEdit) {
         if ((type === "variable" || type === "measured") && !newVariations.length) {
-          throw new Error(measured ? "A measured product needs at least one variation: create it in step 3 of the builder" : "Create at least one variation in step 3 of the builder");
+          throw new Error(measured ? "A measured product needs at least one variation: create it in step 2 of the builder" : "Create at least one variation in step 2 of the builder");
         }
         const body =
           type === "grouped"

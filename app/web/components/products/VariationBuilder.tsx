@@ -16,8 +16,9 @@ import { Alert } from "@/components/ui";
 import { ImageEditorModal, type EditorImageItem } from "@/components/products/ImageEditorModal";
 
 // Port of main v2 index.html VariationBuilder (D-21 version), restyled with marble UI (D23):
-// 1 Define Attributes (name, unit, Sub Var, Quality) → 2 Data (values / pairs / stars, abbreviations)
-// → 3 Create Variation (one combination per set of dropdown picks) → 4 Variation Details (image).
+// 1 Define Attributes (name, unit, Sub Var, Quality) → 2 Create Variation (pick or type each value;
+// a new value becomes data for the next variation; V3.2 merged main v2's separate Data step)
+// → 3 Variation Details (image).
 // V1 differences: attribute names are fixed once saved variations exist (D14), and variation
 // images are URLs (no file upload yet).
 
@@ -94,7 +95,7 @@ export function refreshCombos(combos: Combo[], base: string, defs: AttributeDraf
   }));
 }
 
-const STEPS = ["Define Attributes", "Data", "Create Variation", "Variation Details"];
+const STEPS = ["Define Attributes", "Create Variation", "Variation Details"];
 
 export function VariationBuilder({
   base,
@@ -119,8 +120,9 @@ export function VariationBuilder({
   const [step, setStep] = useState(1);
   const [activeTab, setActiveTab] = useState(0);
   const [picks, setPicks] = useState<Record<string, string>>({});
+  const [subPicks, setSubPicks] = useState<Record<string, string>>({});
+  const [abbrs, setAbbrs] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<{ kind: "error" | "success"; text: string } | null>(null);
-  const newDataRef = useRef<Record<string, HTMLInputElement | null>>({});
   const locked = saved.length > 0;
   const [varEditorOpen, setVarEditorOpen] = useState(false);
   const [varEditorImages, setVarEditorImages] = useState<EditorImageItem[]>([]);
@@ -170,10 +172,6 @@ export function VariationBuilder({
     reader.readAsDataURL(file);
   };
 
-  // Values used by saved variations cannot be removed (D14).
-  const usedValues: Record<string, Set<string>> = {};
-  for (const s of saved) for (const [k, v] of Object.entries(s.attrs)) (usedValues[k] ??= new Set()).add(v);
-
   const setAttr = (i: number, patch: Partial<AttributeDraft>) => setDefs((prev) => prev.map((d, ix) => (ix === i ? { ...d, ...patch } : d)));
   const toggleSub = (i: number) =>
     setDefs((prev) => prev.map((d, ix) => (ix !== i ? d : d.sub ? { ...d, sub: false, subName: "", subUnit: "", pairs: [] } : { ...d, sub: true, subName: "", subUnit: "", pairs: [{ a: "", b: "" }] })));
@@ -199,57 +197,7 @@ export function VariationBuilder({
       }),
     );
 
-  // ---- Abbreviations (main v2 getAbbr / setAbbr / moveAbbr): keyed by the value exactly as stored.
-  const rowKeys = (d: AttributeDraft) => normAttrVals(d);
-  const getAbbr = (i: number, value: string, ri: number) => {
-    const d = defs[i];
-    const v = String(value ?? "").trim();
-    if (!d || !v || !d.abbrMap || d.abbrMap[v] == null) return "";
-    if (rowKeys(d)[ri] !== v) return "";
-    return String(d.abbrMap[v]);
-  };
-  const setAbbr = (i: number, value: string, text: string) =>
-    setDefs((prev) =>
-      prev.map((d, ix) => {
-        if (ix !== i) return d;
-        const k = String(value ?? "").trim();
-        if (!k) return d;
-        const m = { ...(d.abbrMap ?? {}) };
-        const t = String(text ?? "").trim();
-        if (t) m[k] = t.toUpperCase();
-        else delete m[k];
-        return { ...d, abbrMap: m };
-      }),
-    );
-  // An abbreviation follows its value through a rename, but never jumps to another row's value.
-  const moveAbbr = (i: number, oldValue: string, newValue: string, nextDef: AttributeDraft) =>
-    setDefs((prev) =>
-      prev.map((d, ix) => {
-        if (ix !== i) return d;
-        const from = String(oldValue ?? "").trim();
-        const to = String(newValue ?? "").trim();
-        if (from === to || !from || !nextDef.abbrMap || nextDef.abbrMap[from] === undefined) return nextDef;
-        if (rowKeys(nextDef).includes(from)) return nextDef;
-        const m = { ...nextDef.abbrMap };
-        const t = m[from];
-        delete m[from];
-        if (to && String(t).trim()) m[to] = t!;
-        return { ...nextDef, abbrMap: m };
-      }),
-    );
-
-  // "Add Data" appends a row and puts the caret in it.
-  const focusNew = (i: number, ri: number) => setTimeout(() => newDataRef.current[`${i}:${ri}`]?.focus(), 0);
-  const addValue = (i: number) => {
-    setAttr(i, { values: [...(defs[i]!.values ?? []), ""] });
-    focusNew(i, defs[i]!.values.length);
-  };
-  const addPair = (i: number) => {
-    setAttr(i, { pairs: [...(defs[i]!.pairs ?? []), { a: "", b: "" }] });
-    focusNew(i, (defs[i]!.pairs ?? []).length);
-  };
-
-  // ---- Step transitions (main v2 goStep2 / goStep3 / confirmAndOpenDetails)
+  // ---- Step transitions (main v2 goStep2 / confirmAndOpenDetails)
   const goStep2 = () => {
     if (!defs.some((d) => d.name.trim())) return setMessage({ kind: "error", text: "Define at least one attribute name (e.g. Size, Material) first" });
     if (defs.some((d) => !d.name.trim())) return setMessage({ kind: "error", text: "Name or remove every attribute before continuing" });
@@ -259,33 +207,77 @@ export function VariationBuilder({
     setStep(2);
   };
   const goStep3 = () => {
-    if (defs.some((d) => !d.name.trim())) return setMessage({ kind: "error", text: "Name or remove every attribute before continuing" });
-    const named = defs.filter((d) => d.name.trim());
-    if (!named.length || named.some((d) => !normAttrVals(d).length)) return setMessage({ kind: "error", text: "Add at least one value (data) for every attribute" });
-    setMessage(null);
-    setPicks({});
-    setStep(3);
-  };
-  const goStep4 = () => {
     if (!combos.length && !saved.length) return setMessage({ kind: "error", text: "Create at least one variation before continuing" });
     setMessage(null);
     setActiveTab(0);
-    setStep(4);
+    setStep(3);
   };
 
-  // ---- Step 3: create ONE variation from the current picks (no cartesian matrix).
+  // ---- Step 2: Data and Create Variation in one. Each attribute is a pick-or-type box; a typed
+  // value joins that attribute's data when the variation is created, so the next variation offers it.
   const named = defs.filter((d) => d.name.trim());
-  const stored = storedDefs(defs);
+  const uniq = (xs: string[]) => [...new Set(xs.map((x) => String(x ?? "").trim()).filter(Boolean))];
+  /** An existing value that matches case-insensitively wins over the typed spelling. */
+  const canonical = (options: string[], typed: string) => {
+    const t = typed.trim();
+    return options.find((o) => o.toLowerCase() === t.toLowerCase()) ?? t;
+  };
+  const mainOptions = (d: AttributeDraft) => (d.sub ? uniq((d.pairs ?? []).map((p) => p.a)) : normAttrVals(d));
+  const subOptions = (d: AttributeDraft) => uniq((d.pairs ?? []).map((p) => p.b));
+  /** The value stored on the variation for the current picks ("" when nothing is picked). */
+  const pickedValue = (d: AttributeDraft, p = picks, sp = subPicks) => {
+    const k = d.name.trim();
+    const a = (p[k] ?? "").trim();
+    if (!a) return "";
+    return d.sub ? composeSubValue(a, sp[k] ?? "", d.subUnit) : a;
+  };
+  // The Abbr box shows the abbreviation saved for the picked value; editing it applies on create.
+  const pick = (d: AttributeDraft, main?: string | null, sub?: string | null) => {
+    const k = d.name.trim();
+    const p = { ...picks };
+    const sp = { ...subPicks };
+    if (main !== undefined) { if (main) p[k] = main; else delete p[k]; }
+    if (sub !== undefined) { if (sub) sp[k] = sub; else delete sp[k]; }
+    setPicks(p);
+    setSubPicks(sp);
+    const v = pickedValue(d, p, sp);
+    setAbbrs((prev) => ({ ...prev, [k]: v ? String(d.abbrMap?.[v] ?? "") : "" }));
+  };
+
+  /** Definitions with the picked values (and abbreviations) added where they are new. */
+  const withPicks = (prev: AttributeDraft[]): AttributeDraft[] =>
+    prev.map((d) => {
+      const k = d.name.trim();
+      const v = pickedValue(d);
+      if (!k || !v) return d;
+      const abbrMap = { ...(d.abbrMap ?? {}) };
+      const t = (abbrs[k] ?? "").trim().toUpperCase();
+      if (t) abbrMap[v] = t;
+      else delete abbrMap[v];
+      if (normAttrVals(d).includes(v)) return { ...d, abbrMap };
+      if (d.isQuality) {
+        const stars = [...(d.stars ?? []), Number(v)].sort((a, b) => a - b);
+        return { ...d, abbrMap, stars, values: stars.map(String) };
+      }
+      if (d.sub) {
+        const pairs = [...(d.pairs ?? []).filter((x) => x.a.trim() || x.b.trim()), { a: picks[k]!.trim(), b: (subPicks[k] ?? "").trim() }];
+        return { ...d, abbrMap, pairs };
+      }
+      return { ...d, abbrMap, values: [...(d.values ?? []).filter((x) => String(x).trim()), v] };
+    });
+
   const createVariation = () => {
     if (defs.some((d) => !d.name.trim())) return setMessage({ kind: "error", text: "Name or remove every attribute before creating variations" });
     const attrs: Attributes = {};
     for (const d of named) {
-      const v = picks[d.name.trim()];
-      if (!v) return setMessage({ kind: "error", text: `Pick a value for ${d.name} first` });
+      const v = pickedValue(d);
+      if (!v) return setMessage({ kind: "error", text: `Pick or type a value for ${d.name} first` });
       attrs[d.name.trim()] = v;
     }
     const key = comboKey(attrs);
     if (combos.some((c) => c.key === key) || saved.some((s) => s.key === key)) return setMessage({ kind: "error", text: "That combination is already created" });
+    const nextDefs = withPicks(defs);
+    const stored = storedDefs(nextDefs);
     const combo: Combo = {
       key,
       attrs,
@@ -294,13 +286,31 @@ export function VariationBuilder({
       sku: autoOfficialSku(base, attrs, stored),
       image: "",
     };
+    setDefs(() => nextDefs);
     setCombos((prev) => [...prev, combo]);
-    setPicks({});
+    // Picks stay so the next variation only needs the attribute that differs.
     setMessage({ kind: "success", text: "Variation created" });
   };
   const removeVariation = (c: Combo) => {
     if (!window.confirm(`Remove this variation?\n${Object.values(c.attrs).join(" / ") || c.shortName}`)) return;
-    setCombos((prev) => prev.filter((x) => x.key !== c.key));
+    const rest = combos.filter((x) => x.key !== c.key);
+    const inUse = (k: string, v: string) => saved.some((s) => s.attrs[k] === v) || rest.some((x) => x.attrs[k] === v);
+    setDefs((prev) =>
+      prev.map((d) => {
+        const k = d.name.trim();
+        const v = c.attrs[k];
+        if (!v || inUse(k, v)) return d;
+        const abbrMap = { ...(d.abbrMap ?? {}) };
+        delete abbrMap[v];
+        if (d.isQuality) {
+          const stars = (d.stars ?? []).filter((n) => String(n) !== v);
+          return { ...d, abbrMap, stars, values: stars.map(String) };
+        }
+        if (d.sub) return { ...d, abbrMap, pairs: (d.pairs ?? []).filter((p) => composeSubValue(p.a, p.b, d.subUnit) !== v) };
+        return { ...d, abbrMap, values: (d.values ?? []).filter((x) => String(x).trim() !== v) };
+      }),
+    );
+    setCombos(() => rest);
   };
 
   const label = (d: AttributeDraft, i: number) => {
@@ -397,164 +407,69 @@ export function VariationBuilder({
               </div>
             )}
             <div className="flex justify-end">
-              <button type="button" className="btn-primary" onClick={goStep2}>Continue — Data →</button>
+              <button type="button" className="btn-primary" onClick={goStep2}>Continue — Create Variation →</button>
             </div>
           </div>
         )}
 
         {step === 2 && (
           <div className="grid gap-3">
-            <p className="text-sm text-slate-500"><b>Data</b> for each attribute: quality uses a 5-star picker, sub-attributes use main + sub pairs, everything else is a simple value list.</p>
-            {defs.map((d, i) => {
-              const used = usedValues[d.name.trim()] ?? new Set<string>();
-              return (
-                <div key={i} className="card p-3">
-                  <h6 className="mb-2 text-sm font-semibold text-slate-800">{label(d, i)}</h6>
-                  {d.isQuality && (
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap justify-around gap-2 rounded-lg border border-slate-200 bg-white p-2">
-                        {[1, 2, 3, 4, 5].map((n) => {
-                          const on = (d.stars ?? []).includes(n);
-                          const inUse = used.has(String(n));
-                          return (
-                            <button
-                              key={n}
-                              type="button"
-                              aria-pressed={on}
-                              disabled={on && inUse}
-                              onClick={() => {
-                                const nextStars = on
-                                  ? (d.stars ?? []).filter((x) => x !== n)
-                                  : [...(d.stars ?? []), n].sort((a, b) => a - b);
-                                setAttr(i, { stars: nextStars, values: nextStars.map(String) });
-                              }}
-                              className={`flex flex-col items-center rounded-lg px-3 py-1.5 ring-1 ${on ? "bg-amber-50 ring-amber-300" : "ring-slate-200 hover:bg-slate-50"}`}
-                            >
-                              <span className="text-amber-500">{stars(n)}</span>
-                              <span className="text-[10.5px] text-slate-500">{n} star</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {(d.stars ?? []).length > 0 && (
-                        <div className="rounded-lg border border-slate-200 bg-white p-3">
-                          <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                            Quality Star Abbreviations (Optional)
-                          </div>
-                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
-                            {(d.stars ?? [])
-                              .slice()
-                              .sort((a, b) => a - b)
-                              .map((n, ri) => {
-                                const sVal = String(n);
-                                return (
-                                  <div key={n} className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 p-2">
-                                    <span className="text-amber-500 text-sm">{stars(n)}</span>
-                                    <span className="text-xs font-medium text-slate-700 whitespace-nowrap">{n} Star</span>
-                                    <input
-                                      className="input ml-auto w-20 uppercase text-xs"
-                                      value={getAbbr(i, sVal, ri)}
-                                      placeholder={`${n}S`}
-                                      title={`Optional abbreviation used in Short Name and SKU for ${n} star (e.g. ${n}S)`}
-                                      onChange={(e) => setAbbr(i, sVal, e.target.value)}
-                                    />
-                                  </div>
-                                );
-                              })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {!d.isQuality && d.sub && (
-                    <div className="grid gap-2">
-                      {(d.pairs ?? []).map((p, pi) => {
-                        const cval = composeSubValue(p.a, p.b, d.subUnit);
-                        const inUse = used.has(cval);
-                        const setPair = (np: { a: string; b: string }) => {
-                          const next = { ...d, pairs: (d.pairs ?? []).map((x, xi) => (xi === pi ? np : x)) };
-                          moveAbbr(i, cval, composeSubValue(np.a, np.b, d.subUnit), next);
-                        };
-                        return (
-                          <div key={pi} className="flex flex-wrap gap-2">
-                            <input ref={(el) => { newDataRef.current[`${i}:${pi}`] = el; }} className="input min-w-[8rem] flex-1" value={p.a} disabled={inUse} placeholder={`${d.name || "Main"} value`} onChange={(e) => setPair({ ...p, a: e.target.value })} />
-                            <input className="input min-w-[8rem] flex-1" value={p.b} disabled={inUse} placeholder={`${d.subName || "Sub"} value`} onChange={(e) => setPair({ ...p, b: e.target.value })} />
-                            <input className="input w-24 uppercase" value={getAbbr(i, cval, pi)} placeholder="Abbr" title="Optional abbreviation used in the auto-generated Short Name and Official SKU. Leave blank to use the data as-is." onChange={(e) => setAbbr(i, cval, e.target.value)} />
-                            {(d.pairs ?? []).length > 1 && !inUse && (
-                              <button type="button" className="btn-danger px-2" aria-label="Remove row" onClick={() => setAttr(i, { pairs: (d.pairs ?? []).filter((_, xi) => xi !== pi) })}>×</button>
-                            )}
-                          </div>
-                        );
-                      })}
-                      <button type="button" className="btn-secondary justify-self-start" onClick={() => addPair(i)}>+ Add Data</button>
-                    </div>
-                  )}
-                  {!d.isQuality && !d.sub && (
-                    <div className="grid gap-2">
-                      {(d.values ?? []).map((v, vi) => {
-                        const inUse = used.has(String(v).trim());
-                        return (
-                          <div key={vi} className="flex gap-2">
-                            <input
-                              ref={(el) => { newDataRef.current[`${i}:${vi}`] = el; }}
-                              className="input flex-1"
-                              value={v}
-                              placeholder="Data"
-                              disabled={inUse}
-                              onChange={(e) => {
-                                const nv = e.target.value;
-                                moveAbbr(i, v, nv, { ...d, values: d.values.map((x, xi) => (xi === vi ? nv : x)) });
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key !== "Enter") return;
-                                e.preventDefault();
-                                if (vi === d.values.length - 1 && !String(v).trim()) return;
-                                addValue(i);
-                              }}
-                            />
-                            <input className="input w-24 uppercase" value={getAbbr(i, v, vi)} placeholder="Abbr" title="Optional abbreviation used in the auto-generated Short Name and Official SKU. Leave blank to use the data as-is." onChange={(e) => setAbbr(i, v, e.target.value)} />
-                            {d.values.length > 1 && !inUse && (
-                              <button type="button" className="btn-danger px-2" aria-label="Remove value" onClick={() => setAttr(i, { values: d.values.filter((_, xi) => xi !== vi) })}>×</button>
-                            )}
-                          </div>
-                        );
-                      })}
-                      <button type="button" className="btn-secondary justify-self-start" onClick={() => addValue(i)}>+ Add Data</button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            <div className="flex justify-between">
-              <button type="button" className="btn-secondary" onClick={() => setStep(1)}>← Back</button>
-              <button type="button" className="btn-primary" onClick={goStep3}>Continue — Create Variations →</button>
-            </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="grid gap-3">
             <p className="text-sm text-slate-500">
-              Pick one value per attribute and press <b>Create Variation</b>. Every option comes from the <b>Data</b> you entered
-              {combos.length ? <> — <b>{combos.length}</b> created so far</> : null}. New variations start at <b>price 0 and min stock 0</b>: set those from <b>Stock In</b> after saving.
+              Pick a value for each attribute from its list, or type a new one and choose <b>Add</b>, then press <b>Create Variation</b>.
+              A new value is saved as data for the next variation{combos.length ? <> — <b>{combos.length}</b> created so far</> : null}. <b>Abbr</b> is the
+              optional short form used in the Short Name and Official SKU. New variations start at <b>price 0 and min stock 0</b>: set those from <b>Stock In</b> after saving.
             </p>
-            <div className="card flex flex-wrap items-end gap-3 p-3">
+            <div className="card grid gap-3 p-3">
               {named.map((d, i) => {
                 const k = d.name.trim();
+                const main = picks[k] ?? null;
+                const mains = mainOptions(d);
+                const subs = subOptions(d);
                 return (
-                  <div key={k} className="min-w-[10rem] flex-1">
-                    <span className="label">{label(d, i)}</span>
-                    <Combobox
-                      value={picks[k] ?? null}
-                      options={normAttrVals(d).map((v) => ({ id: v, label: d.isQuality ? `${v} star ${stars(v)}` : v }))}
-                      onSelect={(v) => setPicks((prev) => { const n = { ...prev }; if (v) n[k] = v; else delete n[k]; return n; })}
-                      placeholder={`Select ${d.name || "value"}…`}
+                  <div key={k} className="flex flex-wrap items-end gap-2">
+                    <div className="min-w-[10rem] flex-1">
+                      <span className="label">{d.sub ? `${d.name}${d.unit ? ` (${d.unit})` : ""}` : label(d, i)}</span>
+                      <Combobox
+                        value={main}
+                        selectedLabel={main ?? undefined}
+                        options={
+                          d.isQuality
+                            ? [1, 2, 3, 4, 5].map((n) => ({ id: String(n), label: `${n} star ${stars(n)}` }))
+                            : mains.map((v) => ({ id: v, label: v }))
+                        }
+                        onSelect={(v) => pick(d, v)}
+                        onCreate={d.isQuality ? undefined : (q) => pick(d, canonical(mains, q))}
+                        createLabel={(q) => `Add “${q}” to ${d.name}`}
+                        placeholder={d.isQuality ? "Select stars…" : `Select or type ${d.name || "value"}…`}
+                      />
+                    </div>
+                    {d.sub && (
+                      <div className="min-w-[10rem] flex-1">
+                        <span className="label">{d.subName || "Sub"}{d.subUnit ? ` (${d.subUnit})` : ""}</span>
+                        <Combobox
+                          value={subPicks[k] ?? null}
+                          selectedLabel={subPicks[k]}
+                          options={subs.map((v) => ({ id: v, label: v }))}
+                          onSelect={(v) => pick(d, undefined, v)}
+                          onCreate={(q) => pick(d, undefined, canonical(subs, q))}
+                          createLabel={(q) => `Add “${q}” to ${d.subName || "Sub"}`}
+                          placeholder={`Select or type ${d.subName || "sub value"}…`}
+                        />
+                      </div>
+                    )}
+                    <input
+                      className="input w-24 uppercase"
+                      value={abbrs[k] ?? ""}
+                      disabled={!pickedValue(d)}
+                      placeholder="Abbr"
+                      aria-label={`${d.name} abbreviation`}
+                      title="Optional abbreviation used in the auto-generated Short Name and Official SKU. Leave blank to use the data as-is."
+                      onChange={(e) => setAbbrs((prev) => ({ ...prev, [k]: e.target.value.toUpperCase() }))}
                     />
                   </div>
                 );
               })}
-              <button type="button" className="btn-primary" onClick={createVariation} disabled={!named.length}>+ Create Variation</button>
+              <button type="button" className="btn-primary justify-self-start" onClick={createVariation} disabled={!named.length}>+ Create Variation</button>
             </div>
 
             {!combos.length && !saved.length && <Alert message="No variations yet — pick a value for each attribute and press Create Variation." />}
@@ -612,20 +527,20 @@ export function VariationBuilder({
               </div>
             )}
             <div className="flex justify-between">
-              <button type="button" className="btn-secondary" onClick={() => setStep(2)}>← Back to Data</button>
-              <button type="button" className="btn-primary" onClick={goStep4}>Continue →</button>
+              <button type="button" className="btn-secondary" onClick={() => setStep(1)}>← Back</button>
+              <button type="button" className="btn-primary" onClick={goStep3}>Continue →</button>
             </div>
           </div>
         )}
 
-        {step === 4 && (
+        {step === 3 && (
           <div className="grid gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm text-slate-500">Fine-tune each variation — give it a dedicated image.</p>
-              <button type="button" className="btn-secondary" onClick={() => setStep(3)}>← Back to Create Variation</button>
+              <button type="button" className="btn-secondary" onClick={() => setStep(2)}>← Back to Create Variation</button>
             </div>
             {allConfigurable.length === 0 ? (
-              <p className="text-sm text-slate-500">No variations to configure — create variations in Step 3 first.</p>
+              <p className="text-sm text-slate-500">No variations to configure — create variations in Step 2 first.</p>
             ) : (
               <div className="flex flex-col gap-3 sm:flex-row">
                 <div className="flex shrink-0 gap-1 overflow-x-auto sm:w-56 sm:flex-col" role="tablist" aria-label="Variations">
