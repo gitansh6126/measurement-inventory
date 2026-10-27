@@ -16,8 +16,10 @@ changed, and a fix made once can be merged into every line that needs it.
 ## Folder layout (the same for every version)
 
 ```
-rs-inventory\                    <- the only inventory repo (GitHub: gitansh6126/measurement-inventory, public)
-  VERSION                        <- 3.1.0 now; must equal the release tag (CI checks it)
+measurement-inventory\           <- the only inventory repo (GitHub: gitansh6126/measurement-inventory, public)
+                                    dev PC: D:\client works\rs new\measurement-inventory
+                                    shop PC: C:\RS-Inventory
+  VERSION                        <- the release (3.1.1 now); must equal the tag (CI checks it)
   README.md                      <- shop install / update guide
   SETUP-FIRST-TIME.bat  START-SHOP.bat  START-DEMO.bat  STOP.bat  UPDATE.bat  BACKUP-NOW.bat
   app\                           <- the application (pnpm workspace)
@@ -32,7 +34,9 @@ rs-inventory\                    <- the only inventory repo (GitHub: gitansh6126
   docs\                          <- plans, decisions, CI-CD.md, this file
   .github\workflows\ci.yml       <- guard + test + release
 
-rs-inventory-Data\  (C:\RS-Inventory-Data on the shop)   <- NOT in git: env files, images, backups, logs
+<repo folder>-Data\              <- NOT in git: env files, images, backups, logs
+                                    dev PC: D:\client works\rs new\measurement-inventory-Data
+                                    shop PC: C:\RS-Inventory-Data
 ```
 
 A new version **changes files inside this tree**. It never adds a sibling folder. A new
@@ -97,7 +101,7 @@ The same model. V4 is just `MAJOR` = 4:
 ## Rules that keep it easy
 
 1. **One source of truth.** Never copy the app into a new folder again.
-   To look at an old version: `git worktree add ..\rs-inventory-3.1 v3.1.0` (read-only use,
+   To look at an old version: `git worktree add ..\measurement-inventory-3.1 v3.1.0` (read-only use,
    delete after).
 2. **The shop runs tags only.** Never tell the shop to "pull main".
 3. **Migrations are append-only**, and each one keeps the existing data valid.
