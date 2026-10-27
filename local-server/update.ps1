@@ -69,6 +69,12 @@ try {
     Write-Host "[OK] Already on the newest release ($target). Nothing to do." -ForegroundColor Green
     exit 0
   }
+  # A fresh `git clone` sits on main, which can be newer than the last tag: never step back.
+  Invoke-Git merge-base --is-ancestor $targetCommit $prevCommit
+  if ($LASTEXITCODE -eq 0 -and -not $Tag) {
+    Write-Host "[OK] This PC already has everything in $target (it is on newer code). Nothing to do." -ForegroundColor Green
+    exit 0
+  }
   Write-Host "    Changes:"
   Invoke-Git log --oneline --no-decorate -n 40 "$prevCommit..$targetCommit" | ForEach-Object { Write-Host "      $_" }
   $newMigrations = @(Get-Migrations $targetCommit | Where-Object { $_ -notin (Get-Migrations $prevCommit) })
@@ -144,6 +150,14 @@ try {
     Write-Host ""
     Write-Host "[!] The update failed and $prevName is running again. Send $LogDir\update-$stamp.log to the developer." -ForegroundColor Red
     exit 1
+  }
+
+  # The new release's own scripts: shortcuts it adds or renames, and any one-off step it needs
+  # (local-server\post-update.ps1, only when a release ships one). Failures here only warn.
+  try { & "$PSScriptRoot\create-shortcuts.ps1" } catch { Write-Host "[!] Desktop shortcuts not refreshed: $($_.Exception.Message)" -ForegroundColor Yellow }
+  $post = Join-Path $PSScriptRoot "post-update.ps1"
+  if (Test-Path $post) {
+    try { & $post -From $prevName -To $target } catch { Write-Host "[!] post-update.ps1: $($_.Exception.Message)" -ForegroundColor Yellow }
   }
 
   Write-History "UPDATED $prevName -> $target"
