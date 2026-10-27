@@ -17,6 +17,7 @@ import {
 } from "../lib/documents.js";
 import { AppError } from "../lib/errors.js";
 import type { Permission } from "../lib/permissions.js";
+import { documentChainIds } from "../lib/measure.js";
 import { setsOfDocument } from "../lib/sets.js";
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
@@ -203,8 +204,10 @@ function documentRoutes(kind: "sale" | "purchase") {
     const gross = d.lines.reduce((s, l) => s.add(l.lineTotal).add(l.discount), new Prisma.Decimal(0));
     // Measured lines (V2 plan §2.8): the rolls each line was cut from or received as. Internal
     // view only; the printed line shows length and rate.
+    // A header-edited document (2026-10-27): its rolls were cut or received by the first of its chain.
+    const chain = await documentChainIds(prisma, companyId, kind, d.id);
     const pieceRows = await prisma.measurementPieceLedger.findMany({
-      where: { companyId, ...(kind === "sale" ? { saleId: d.id } : { purchaseId: d.id }), action: { in: ["SALE", "RECEIVE", "SALE_VOID", "PURCHASE_VOID"] } },
+      where: { companyId, ...(kind === "sale" ? { saleId: { in: chain } } : { purchaseId: { in: chain } }), action: { in: ["SALE", "RECEIVE", "SALE_VOID", "PURCHASE_VOID"] } },
       orderBy: [{ occurredAt: "asc" }, { id: "asc" }],
       select: { variationId: true, lineNo: true, action: true, change: true, beforeLength: true, afterLength: true, piece: { select: { id: true, code: true, kind: true } } },
     });

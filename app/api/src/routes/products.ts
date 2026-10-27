@@ -29,6 +29,7 @@ import {
   updateVariationBody,
 } from "../lib/products.js";
 import { createGroupedProduct, createPlainProduct } from "../lib/product-create.js";
+import { deleteProduct, deleteVariation, renameAttribute, renameAttributeBody, unused, usageByVariation, usageText, variationUsage } from "../lib/product-corrections.js";
 import { addVariationCategories, inCategory, setOneVariationCategories, setProductCategories, setVariationCategories } from "../lib/category-heads.js";
 
 const listQuery = z.object({
@@ -359,6 +360,43 @@ export function productRoutes() {
       return { ...serializeVariation(after), categoryIds };
     });
     res.json({ variation });
+  });
+
+  // Corrections (docs\CORRECTIONS-AUDIT-2026-10-27.md): rename an attribute or value; delete
+  // what was never used. Anything used keeps Archive.
+  r.post("/:id/attributes/rename", requirePermission("product.write"), async (req, res) => {
+    const body = renameAttributeBody.parse(req.body);
+    const result = await writeTx((tx) => renameAttribute(tx, ctx(req), String(req.params.id), body));
+    const product = serializeGroup(await loadGroup(prisma, req.auth!.companyId, String(req.params.id)));
+    res.json({ ...result, product: costFor(req.auth!.role, product) });
+  });
+
+  r.get("/:id/usage", requirePermission("product.write"), async (req, res) => {
+    const companyId = req.auth!.companyId;
+    const g = await prisma.productGroup.findFirst({ where: { id: String(req.params.id), companyId }, select: { id: true, variations: { select: { id: true } }, mainComponent: { select: { id: true, variations: { select: { id: true } } } } } });
+    if (!g) throw new AppError(404, "NOT_FOUND", "Product not found");
+    const own = g.variations.map((v) => v.id);
+    const byVariation = await usageByVariation(prisma, companyId, [...own, ...(g.mainComponent?.variations.map((v) => v.id) ?? [])]);
+    const total = await variationUsage(prisma, companyId, [...byVariation.keys()]);
+    const [sets, setOf] = await Promise.all([
+      prisma.groupSet.count({ where: { companyId, groupId: { in: [g.id, ...(g.mainComponent ? [g.mainComponent.id] : [])] } } }),
+      prisma.groupByproduct.count({ where: { companyId, productId: g.id } }),
+    ]);
+    const productUsage = { ...total, sets: total.sets + sets };
+    res.json({
+      product: { unused: unused(productUsage) && setOf === 0, usage: setOf ? "a by-product of a set" : usageText(productUsage) },
+      variations: own.map((id) => ({ id, unused: unused(byVariation.get(id)!), usage: usageText(byVariation.get(id)!) })),
+    });
+  });
+
+  r.delete("/:id", requirePermission("product.write"), async (req, res) => {
+    res.json(await writeTx((tx) => deleteProduct(tx, ctx(req), String(req.params.id))));
+  });
+
+  r.delete("/:id/variations/:variationId", requirePermission("product.write"), async (req, res) => {
+    const result = await writeTx((tx) => deleteVariation(tx, ctx(req), String(req.params.id), String(req.params.variationId)));
+    const product = serializeGroup(await loadGroup(prisma, req.auth!.companyId, String(req.params.id)));
+    res.json({ ...result, product: costFor(req.auth!.role, product) });
   });
 
   return r;

@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
-import { prisma, WRITE_TX, type Tx } from "../db.js";
+import { prisma, WRITE_TX, type Db, type Tx } from "../db.js";
 import { formatLength, ratePerOf, toMilli } from "@rs-v31/shared/measure";
 import { audit } from "./audit.js";
 import { AppError } from "./errors.js";
@@ -185,6 +185,12 @@ export interface WriteDocOptions {
   occurredAt?: Date;
   reason?: string;
   skipMovements?: boolean;
+  /**
+   * Header edit of a document with Measured or grouped lines (2026-10-27): the same items and
+   * quantities at new prices / discounts / notes. Only the document and its lines are written;
+   * the caller moves the original's stock (movements, rolls, sets) onto it.
+   */
+  headerOnly?: boolean;
   orderId?: string;
   /** 0027: the order line each document line delivers / receives, by index (internal only). */
   orderLineIds?: (string | null)[];
@@ -237,8 +243,9 @@ export async function writeDocument(
   const lines = body.lines.map((l, i) => {
     const v = byId.get(l.variationId);
     if (!v) throw new AppError(400, "UNKNOWN_ITEM", `Line ${i + 1}: item not found`);
-    // marble assertActive: new documents use only active variations of active products.
-    if (!v.group.active || !v.active) throw new AppError(400, "INACTIVE_ITEM", `${v.group.name} ${v.shortName} is archived`);
+    // marble assertActive: new documents use only active variations of active products. A header
+    // edit keeps the original's items, archived since or not.
+    if (!options?.headerOnly && (!v.group.active || !v.active)) throw new AppError(400, "INACTIVE_ITEM", `${v.group.name} ${v.shortName} is archived`);
     const measured = v.group.productType === "measured";
     const grouped = v.group.productType === "grouped";
     const name = `${v.group.name} ${v.shortName}`;
@@ -246,7 +253,10 @@ export async function writeDocument(
     if (l.splits && (measured || grouped)) throw new AppError(400, "BAD_LINE", `${name}: ${measured ? "each roll or piece" : "each set"} has its own warehouse`);
     if (l.splits && l.quantity !== undefined) validateSplits(name, l.quantity, l.splits);
     let qtyMilli = l.quantity === undefined ? 0 : toMilli(l.quantity);
-    if (grouped && cfg.kind === "sale") {
+    if (options?.headerOnly) {
+      // Quantities were checked against the original by editDocument; rolls / pieces / sets stay.
+      if (l.quantity === undefined) throw new AppError(400, "QUANTITY_REQUIRED", `Line ${i + 1}: enter a quantity`);
+    } else if (grouped && cfg.kind === "sale") {
       // V3.1 (plan §5): a grouped sale line is the sets picked from stock.
       if (!l.saleSets?.length) throw new AppError(400, "SETS_REQUIRED", `${v.group.name}: pick the sets sold`);
       if (l.sets) throw new AppError(400, "BAD_LINE", `${v.group.name}: a sale picks sets from stock`);
@@ -314,9 +324,9 @@ export async function writeDocument(
     };
   });
   // Measured lines and what they carry, by line number (pieces, rolls).
-  const measuredLines = body.lines
-    .map((l, i) => ({ l, i, line: lines[i]! }))
-    .filter(({ l }) => byId.get(l.variationId)!.group.productType === "measured");
+  const measuredLines = options?.headerOnly
+    ? []
+    : body.lines.map((l, i) => ({ l, i, line: lines[i]! })).filter(({ l }) => byId.get(l.variationId)!.group.productType === "measured");
   if (subtotal > MAX_PAISE) throw new AppError(400, "AMOUNT_TOO_LARGE", "Document total is too large");
   const payment = paymentFor(body.paymentMode, body.amountPaid, subtotal);
 
@@ -405,13 +415,13 @@ export async function writeDocument(
   // V3.1 grouped sale lines (plan §5.3): part changes now, before the loose lines move (so they
   // cannot take a replacement part's free stock); the sets are sold after them.
   const saleSetLines: SaleSetLine[] =
-    cfg.kind === "sale"
+    cfg.kind === "sale" && !options?.headerOnly
       ? body.lines.flatMap((l, i) => (isGrouped(l.variationId) ? [{ lineNo: lines[i]!.lineNo, groupId: byId.get(l.variationId)!.groupId, price: lines[i]!.price, sets: l.saleSets! }] : []))
       : [];
   const saleRef = { id: doc.id, number, date: docDate };
   await prepareSaleSets(tx, { companyId, actorId, requestId }, saleRef, saleSetLines);
   for (const [i, l] of body.lines.entries()) {
-    if (cfg.kind === "sale" || !isGrouped(l.variationId)) continue;
+    if (cfg.kind === "sale" || !isGrouped(l.variationId) || options?.headerOnly) continue;
     const line = lines[i]!;
     const created = await createSets(
       tx,
@@ -423,7 +433,7 @@ export async function writeDocument(
     setCodes.push({ lineNo: line.lineNo, codes: created.map((c) => c.code) });
   }
 
-  if (!options?.skipMovements) {
+  if (!options?.skipMovements && !options?.headerOnly) {
     // One movement per line and warehouse (0035: the movements are the line's split, WH-5/WH-6).
     const movements: MovementInput[] = [];
     for (const [i, l] of lines.entries()) {
@@ -447,7 +457,7 @@ export async function writeDocument(
     await recordMovements(tx, companyId, actorId, movements, { allowNegative: cfg.kind === "sale" && body.allowNegative, requestId });
   }
   if (saleSetLines.length) setCodes = await sellSets(tx, { companyId, actorId, requestId }, saleRef, saleSetLines);
-  if (cfg.kind === "sale") {
+  if (cfg.kind === "sale" && !options?.headerOnly) {
     await recordProductSale(tx, companyId, lines.map((line) => line.variationId), docDate);
   }
   if (cfg.kind === "purchase" && party?.id) {
@@ -627,6 +637,113 @@ export async function loadParty(tx: Tx, cfg: KindConfig, companyId: string, part
   return p;
 }
 
+/** Product types whose lines carry rolls or sets: their documents take a header edit only. */
+const HEADER_ONLY_TYPES: readonly string[] = ["measured", "grouped"];
+
+const HEADER_ONLY_MESSAGE =
+  "This document has measured items or sets: only prices, discounts, notes, party and payment can be changed. To change items or quantities, cancel it and enter it again.";
+
+/**
+ * The lines of a header edit: the original's items and quantities line by line, with the price,
+ * discount and note sent. Rolls, pieces and sets are never sent again (they stay as they were).
+ */
+function headerEditLines(
+  orig: readonly { variationId: string; quantity: Prisma.Decimal }[],
+  next: DocumentBody["lines"],
+): DocumentBody["lines"] {
+  if (next.length !== orig.length) throw new AppError(409, "HEADER_EDIT_ONLY", HEADER_ONLY_MESSAGE);
+  return orig.map((o, i) => {
+    const n = next[i]!;
+    if (n.variationId !== o.variationId || (n.quantity !== undefined && toMilli(n.quantity) !== toMilli(Number(o.quantity)))) {
+      throw new AppError(409, "HEADER_EDIT_ONLY", HEADER_ONLY_MESSAGE);
+    }
+    return { variationId: o.variationId, quantity: Number(o.quantity), price: n.price, discount: n.discount, note: n.note };
+  });
+}
+
+/** A full edit (Simple / Variable documents) cannot bring in rolls or sets. */
+async function assertNoHeaderOnlyItems(db: Db, companyId: string, lines: DocumentBody["lines"]) {
+  const vs = await db.productVariation.findMany({
+    where: { companyId, id: { in: [...new Set(lines.map((l) => l.variationId))] } },
+    select: { group: { select: { productType: true } } },
+  });
+  if (vs.some((v) => HEADER_ONLY_TYPES.includes(v.group.productType))) {
+    throw new AppError(409, "ITEM_NEEDS_NEW_DOCUMENT", "Measured items and sets cannot be added by editing; enter them on a new document");
+  }
+}
+
+/**
+ * Header edit (2026-10-27): the stock of `from` becomes the stock of `to`. Movements are
+ * append-only, so each SALE / PURCHASE movement of `from` is reversed on it and recorded again on
+ * `to` (net zero per item and warehouse, at the new line rate; set parts keep theirs); sets and
+ * received rolls are re-linked to `to`, a purchase's rolls and sets taking the new line cost.
+ * Sold-roll ledger rows stay on the document that cut them; `documentChainIds` finds them.
+ */
+async function moveStockToRevision(
+  tx: Tx,
+  cfg: KindConfig,
+  ctx: DocContext,
+  from: { id: string; number: string },
+  to: { id: string; number: string },
+  lines: DocumentBody["lines"],
+  now: Date,
+) {
+  const { companyId, actorId, requestId } = ctx;
+  const isSale = cfg.kind === "sale";
+  const moves = await tx.stockMovement.findMany({
+    where: { companyId, ...(isSale ? { saleId: from.id, movementType: "SALE" as const } : { purchaseId: from.id, movementType: "PURCHASE" as const }) },
+    select: { variationId: true, warehouseId: true, quantity: true, rate: true, ratePer: true },
+    orderBy: { id: "asc" },
+  });
+  const rateOf = new Map<string, string>();
+  for (const l of lines) if (!rateOf.has(l.variationId)) rateOf.set(l.variationId, l.price);
+  const back: MovementInput[] = moves.map((m) => ({
+    variationId: m.variationId,
+    warehouseId: m.warehouseId ?? undefined,
+    type: isSale ? "SALE_VOID" : "PURCHASE_VOID",
+    quantity: -Number(m.quantity),
+    rate: m.rate?.toFixed(2) ?? null,
+    ratePer: m.ratePer,
+    reason: `REPLACED by ${to.number}`,
+    occurredAt: now,
+    ...(isSale ? { saleId: from.id } : { purchaseId: from.id }),
+  }));
+  const again: MovementInput[] = moves.map((m) => ({
+    variationId: m.variationId,
+    warehouseId: m.warehouseId ?? undefined,
+    type: isSale ? "SALE" : "PURCHASE",
+    quantity: Number(m.quantity),
+    rate: rateOf.get(m.variationId) ?? m.rate?.toFixed(2) ?? null,
+    ratePer: m.ratePer,
+    reason: `${to.number} (Edit of ${from.number})`,
+    occurredAt: now,
+    ...(isSale ? { saleId: to.id } : { purchaseId: to.id }),
+  }));
+  // Stock is added before it is taken: a sale's goods come back first, a purchase's goods are
+  // received on the revision first.
+  await recordMovements(tx, companyId, actorId, isSale ? [...back, ...again] : [...again, ...back], { sets: true, requestId });
+
+  if (isSale) {
+    await tx.groupSet.updateMany({ where: { companyId, saleId: from.id }, data: { saleId: to.id, version: { increment: 1 }, updatedById: actorId } });
+    return;
+  }
+  await tx.groupSet.updateMany({ where: { companyId, purchaseId: from.id }, data: { purchaseId: to.id, version: { increment: 1 }, updatedById: actorId } });
+  for (const [i, l] of lines.entries()) {
+    await tx.groupSet.updateMany({ where: { companyId, purchaseId: to.id, purchaseLineNo: i + 1 }, data: { rate: l.price } });
+  }
+  const pieces = await tx.measurementPiece.findMany({ where: { companyId, purchaseId: from.id }, select: { id: true, setOrigin: true } });
+  if (!pieces.length) return;
+  await tx.measurementPiece.updateMany({ where: { id: { in: pieces.map((p) => p.id) } }, data: { purchaseId: to.id, updatedById: actorId } });
+  const received = await tx.measurementPieceLedger.findMany({
+    where: { pieceId: { in: pieces.filter((p) => !p.setOrigin).map((p) => p.id) }, action: "RECEIVE" },
+    select: { pieceId: true, lineNo: true },
+  });
+  for (const r of received) {
+    const line = r.lineNo ? lines[r.lineNo - 1] : undefined;
+    if (line) await tx.measurementPiece.update({ where: { id: r.pieceId }, data: { unitCost: line.price } });
+  }
+}
+
 export const editDocumentBody = documentBody.extend({
   reason: z.string().trim().min(3, "Give a reason (at least 3 characters)").max(300),
   expectedNumber: z.string().trim().optional(),
@@ -692,28 +809,16 @@ export async function editDocument(cfg: KindConfig, ctx: DocContext, id: string,
         throw new AppError(400, "FY_CHANGE", "Cannot move a document to a different financial year. Cancel and re-enter instead.");
       }
 
-      // 5. Measured items check (Phase 1)
+      // 5. Lines. A document with Measured or grouped lines (rolls cut or received, sets picked)
+      // takes a header edit only (2026-10-27): its stock moves to the revision unchanged.
       const origLines = isSale
-        ? await tx.saleLine.findMany({ where: { saleId: id }, include: { variation: { include: { group: { select: { productType: true } } } } } })
-        : await tx.purchaseLine.findMany({ where: { purchaseId: id }, include: { variation: { include: { group: { select: { productType: true } } } } } });
-      // V3.1: documents with sets are cancelled and entered again, not edited (plan §3, §5.4).
-      if (origLines.some((l) => l.variation.group.productType === "grouped")) {
-        throw new AppError(409, "SETS_NOT_EDITABLE", "Contains sets — cancel and re-enter this document");
-      }
-      const hasMeasuredOrig = origLines.some((l) => l.variation.group.productType === "measured");
-      if (hasMeasuredOrig) {
-        throw new AppError(409, "MEASURED_NOT_EDITABLE", "Contains measured items — cancel and re-enter this document");
-      }
-      const newVariationIds = [...new Set(body.lines.map((l) => l.variationId))];
-      const newVariations = await tx.productVariation.findMany({
-        where: { companyId, id: { in: newVariationIds } },
-        include: { group: { select: { productType: true } } },
-      });
-      if (newVariations.some((v) => v.group.productType === "grouped")) {
-        throw new AppError(409, "SETS_NOT_EDITABLE", "Contains sets — cancel and re-enter this document");
-      }
-      if (newVariations.some((v) => v.group.productType === "measured")) {
-        throw new AppError(409, "MEASURED_NOT_EDITABLE", "Contains measured items — cancel and re-enter this document");
+        ? await tx.saleLine.findMany({ where: { saleId: id }, orderBy: { lineNo: "asc" }, include: { variation: { include: { group: { select: { productType: true } } } } } })
+        : await tx.purchaseLine.findMany({ where: { purchaseId: id }, orderBy: { lineNo: "asc" }, include: { variation: { include: { group: { select: { productType: true } } } } } });
+      const headerOnly = origLines.some((l) => HEADER_ONLY_TYPES.includes(l.variation.group.productType));
+      if (headerOnly) {
+        body = { ...body, date: body.date ?? origDate, lines: headerEditLines(origLines, body.lines) };
+      } else {
+        await assertNoHeaderOnlyItems(tx, companyId, body.lines);
       }
 
       // The revision stays a delivery of the same order: each kept item keeps its order line
@@ -745,7 +850,30 @@ export async function editDocument(cfg: KindConfig, ctx: DocContext, id: string,
 
       let newDocId: string;
 
-      if (isSale) {
+      if (headerOnly) {
+        // Header edit: the same lines at new prices; the original's movements, rolls and sets
+        // carry over to the revision (no stock changes hands).
+        newDocId = await writeDocument(tx, cfg, ctx, body, {
+          number: newNumber,
+          replacesId: id,
+          revision,
+          occurredAt: now,
+          reason: `${newNumber} (Edit of ${original.number})`,
+          headerOnly: true,
+          ...orderLink,
+        });
+        await moveStockToRevision(tx, cfg, ctx, { id, number: original.number }, { id: newDocId, number: newNumber }, body.lines, now);
+        await tx.documentVoid.create({
+          data: {
+            companyId,
+            ...(isSale ? { saleId: id, replacedBySaleId: newDocId } : { purchaseId: id, replacedByPurchaseId: newDocId }),
+            kind: "REPLACED",
+            reason: body.reason,
+            createdById: actorId,
+          },
+        });
+        if (isSale) await recalculateProductActivityForSale(tx, companyId, id);
+      } else if (isSale) {
         // Sale edit:
         // Reverse original movements (+) first
         await recordMovements(
@@ -860,6 +988,7 @@ export async function editDocument(cfg: KindConfig, ctx: DocContext, id: string,
         after: {
           number: newNumber,
           revision,
+          ...(headerOnly ? { headerOnly: true } : {}),
           lines: body.lines.map((l) => ({
             variationId: l.variationId,
             quantity: l.quantity,
@@ -953,12 +1082,11 @@ export async function previewEditDocument(cfg: KindConfig, ctx: DocContext, id: 
     throw new AppError(409, "ALREADY_CANCELLED", `${original.number} is cancelled and cannot be edited`);
   }
 
-  if (original.lines.some((l) => l.variation.group.productType === "grouped")) {
-    throw new AppError(409, "SETS_NOT_EDITABLE", "Contains sets — cancel and re-enter this document");
-  }
-  if (original.lines.some((l) => l.variation.group.productType === "measured")) {
-    throw new AppError(409, "MEASURED_NOT_EDITABLE", "Contains measured items — cancel and re-enter this document");
-  }
+  // Measured / grouped documents: header edit only (same items and quantities, see editDocument).
+  const sortedLines = [...original.lines].sort((a, b) => a.lineNo - b.lineNo);
+  const headerOnly = sortedLines.some((l) => HEADER_ONLY_TYPES.includes(l.variation.group.productType));
+  if (headerOnly) body = { ...body, lines: headerEditLines(sortedLines, body.lines) };
+  else await assertNoHeaderOnlyItems(prisma, companyId, body.lines);
   if (original.orderId) {
     const order = await prisma.order.findFirst({ where: { id: original.orderId, companyId }, select: { number: true } });
     assertSameOrderQuantities(original.lines, body.lines, order?.number ?? "its order");
@@ -975,12 +1103,6 @@ export async function previewEditDocument(cfg: KindConfig, ctx: DocContext, id: 
     where: { companyId, id: { in: newIds } },
     include: { group: { select: { name: true, unit: true, productType: true } } },
   });
-  if (variations.some((v) => v.group.productType === "grouped")) {
-    throw new AppError(409, "SETS_NOT_EDITABLE", "Contains sets — cancel and re-enter this document");
-  }
-  if (variations.some((v) => v.group.productType === "measured")) {
-    throw new AppError(409, "MEASURED_NOT_EDITABLE", "Contains measured items — cancel and re-enter this document");
-  }
   const byId = new Map(variations.map((v) => [v.id, v]));
 
   const oldMap = new Map<string, { qty: number; price: string; discount: string; total: string; name: string; shortName: string; unit: string }>();

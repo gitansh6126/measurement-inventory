@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useCart, type CartLine, type CartMode } from "@/components/CartContext";
+import { DocumentHeaderEdit } from "@/components/DocumentHeaderEdit";
 import { PrintIcon } from "@/components/icons";
 import { useCan } from "@/components/MeContext";
 import { PageHeader, TableSkeleton } from "@/components/ui";
@@ -100,6 +101,7 @@ export function DocumentView({ mode, id }: { mode: CartMode; id: string }) {
 
   const { data, error, reload } = useApi<{ document: Doc }>(`/${base}/${id}`);
   const [voiding, setVoiding] = useState(false);
+  const [headerEdit, setHeaderEdit] = useState(false);
   const [showRevisions, setShowRevisions] = useState(false);
   const [reason, setReason] = useState("");
   // Sale cancel: set id → "release" when its measured parts come back as free cut pieces.
@@ -127,12 +129,10 @@ export function DocumentView({ mode, id }: { mode: CartMode; id: string }) {
   const hasDiscount = Number(d.discount) > 0;
 
   function handleEdit() {
-    if (d.lines.some((l) => l.sets && l.sets.length > 0)) {
-      alert("Documents with sets cannot be edited. Please cancel and re-enter instead.");
-      return;
-    }
-    if (d.lines.some((l) => l.pieces && l.pieces.length > 0)) {
-      alert("Documents with measured items cannot be edited at this time. Please cancel and re-enter instead.");
+    // Rolls and sets stay as they are: prices and details only (2026-10-27).
+    if (d.lines.some((l) => (l.sets?.length ?? 0) > 0 || (l.pieces?.length ?? 0) > 0)) {
+      setVoiding(false);
+      setHeaderEdit(true);
       return;
     }
     if (cart.lines.length > 0) {
@@ -218,6 +218,8 @@ export function DocumentView({ mode, id }: { mode: CartMode; id: string }) {
           }
         />
       </div>
+
+      {headerEdit && !cancelled && !replaced && <DocumentHeaderEdit mode={mode} doc={d} onClose={() => setHeaderEdit(false)} />}
 
       {voiding && !cancelled && !replaced && (
         <div className="no-print card border-rose-200 bg-rose-50 p-4 text-sm">

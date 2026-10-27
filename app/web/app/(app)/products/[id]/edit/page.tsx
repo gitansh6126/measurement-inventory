@@ -3,6 +3,7 @@
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { useCan } from "@/components/MeContext";
+import { ProductCorrections } from "@/components/products/ProductCorrections";
 import { ProductForm } from "@/components/products/ProductForm";
 import { Alert, PageHeader, TableSkeleton } from "@/components/ui";
 import type { Product } from "@/lib/types";
@@ -64,11 +65,17 @@ function EditProductContent() {
       />
 
       <ProductForm
+        // A rename or delete below changes the saved product: start the form again from it.
+        key={data.product.version}
         product={data.product}
         onSaved={handleSaved}
         onCancel={() => router.push(returnHref)}
         isPage
       />
+
+      {!data.product.ownerGroup && (
+        <ProductCorrections product={data.product} onChanged={() => void reload()} onDeleted={() => router.push("/products")} />
+      )}
     </div>
   );
 }

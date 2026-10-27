@@ -165,14 +165,17 @@ describe("products", () => {
     expect(await ids("q=wire&status=archived")).toEqual([r.id]);
   });
 
-  it("archives instead of deleting, and only admins archive (main v2 BR-24)", async () => {
+  it("archives a used product instead of deleting it, and only admins archive (main v2 BR-24)", async () => {
     const { manager, admin, staff, co } = await setup();
-    const p = (await post(manager, "/api/products", { productType: "simple", name: "Hook", unit: "Nos", shortName: "HK" })).body.product.id;
+    const hook = (await post(manager, "/api/products", { productType: "simple", name: "Hook", unit: "Nos", shortName: "HK" })).body.product;
+    const p = hook.id;
+    // Used (opening stock): only a never-used product may be deleted (2026-10-27, corrections.test.ts).
+    expect((await post(manager, "/api/inventory/adjustments", { variationId: hook.variations[0].id, type: "OPENING", quantity: 1 })).status).toBe(201);
     expect((await patch(staff, `/api/products/${p}`, { name: "Nope" })).status).toBe(403);
     expect((await patch(manager, `/api/products/${p}`, { active: false })).status).toBe(403);
     expect((await patch(admin, `/api/products/${p}`, { active: false })).body.product.active).toBe(false);
     expect((await patch(admin, `/api/products/${p}`, { active: true })).body.product.active).toBe(true);
-    expect((await manager.delete(`/api/products/${p}`).set("Origin", ORIGIN)).status).toBe(404); // no delete route exists
+    expect((await manager.delete(`/api/products/${p}`).set("Origin", ORIGIN)).body.error.code).toBe("IN_USE");
     const actions = (await prisma.auditEvent.findMany({ where: { companyId: co.id, entityId: p }, orderBy: { createdAt: "asc" } })).map((e) => e.action);
     expect(actions).toEqual(["PRODUCT_CREATE", "PRODUCT_ARCHIVE", "PRODUCT_RESTORE"]);
   });

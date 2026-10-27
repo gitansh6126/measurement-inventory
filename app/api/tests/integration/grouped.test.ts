@@ -264,9 +264,9 @@ describe("grouped products (sets)", () => {
     const piece = await prisma.measurementPiece.findFirstOrThrow({ where: { variationId: c4 } });
     expect(piece).toMatchObject({ purchaseId: doc.id, kind: "CUT", setOrigin: true });
 
-    // Sets are not edited on a purchase: cancel and enter again.
+    // Sets are not changed by an edit (2026-10-27: prices and details only): cancel and enter again.
     const edit = await post(s.manager, `/api/purchases/${doc.id}/edit`, { partyId: supplier, reason: "Fix quantity", lines: [{ variationId: hookV, quantity: 2, price: 300 }] });
-    expect(edit.body.error.code).toBe("SETS_NOT_EDITABLE");
+    expect(edit.body.error.code).toBe("HEADER_EDIT_ONLY");
 
     // Void is refused once a set changed (D16)…
     const one = sets[2]!;

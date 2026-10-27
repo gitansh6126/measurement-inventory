@@ -698,6 +698,24 @@ export async function cutForSale(tx: Tx, ctx: MeasureCtx, sale: { id: string; nu
 /** Ledger rows that open a Closed roll: Open itself, or a cut / sale taking length off it. */
 export const OPENS_ROLL = (action: string, changeMilli: number) => action === "OPEN" || ((action === "CUT" || action === "SALE") && changeMilli < 0);
 
+/**
+ * A document and the documents it replaced, newest first. Measured and grouped documents are
+ * only ever header-edited (2026-10-27), so their roll ledger rows sit on the first of the chain
+ * while the revision holds the stock.
+ */
+export async function documentChainIds(db: Db, companyId: string, kind: "sale" | "purchase", id: string): Promise<string[]> {
+  const ids = [id];
+  for (let at: string | null = id; at && ids.length < 100; ) {
+    const doc: { replacesId: string | null } | null =
+      kind === "sale"
+        ? await db.sale.findFirst({ where: { id: at, companyId }, select: { replacesId: true } })
+        : await db.purchase.findFirst({ where: { id: at, companyId }, select: { replacesId: true } });
+    at = doc?.replacesId ?? null;
+    if (at) ids.push(at);
+  }
+  return ids;
+}
+
 /** Written on a SALE_VOID row that sealed a roll again (history replays it). */
 export const RESEALED = "(sealed again)";
 
@@ -712,7 +730,9 @@ export const RESEALED = "(sealed again)";
  * recorded by voidDocument; sets re-fit their pieces afterwards (restoreSaleSets).
  */
 export async function restoreSaleCuts(tx: Tx, ctx: MeasureCtx, sale: { id: string; number: string }) {
-  const sold = await tx.measurementPieceLedger.findMany({ where: { companyId: ctx.companyId, saleId: sale.id, action: "SALE" }, orderBy: [{ occurredAt: "asc" }, { lineNo: "asc" }, { id: "asc" }] });
+  // A header-edited sale (2026-10-27): the cuts were made by the first document of its chain.
+  const chain = await documentChainIds(tx, ctx.companyId, "sale", sale.id);
+  const sold = await tx.measurementPieceLedger.findMany({ where: { companyId: ctx.companyId, saleId: { in: chain }, action: "SALE" }, orderBy: [{ occurredAt: "asc" }, { lineNo: "asc" }, { id: "asc" }] });
   if (!sold.length) return [];
   await lockVariations(tx, ctx.companyId, [...new Set(sold.map((s) => s.variationId))]);
   const out: { pieceId: string; returnedTo: string; length: number; as: "SAME_PIECE" | "NEW_CUT_PIECE" }[] = [];
@@ -735,7 +755,7 @@ export async function restoreSaleCuts(tx: Tx, ctx: MeasureCtx, sale: { id: strin
       if (piece.kind === "OPEN") {
         const rows = await tx.measurementPieceLedger.findMany({ where: { pieceId: piece.id }, select: { id: true, action: true, change: true } });
         // Opened while this sale was being saved (not added already open before it).
-        const saleAt = (await tx.sale.findUniqueOrThrow({ where: { id: sale.id }, select: { createdAt: true } })).createdAt.getTime();
+        const saleAt = (await tx.sale.findUniqueOrThrow({ where: { id: chain[chain.length - 1]! }, select: { createdAt: true } })).createdAt.getTime();
         const openedBySale = !!piece.openedAt && piece.openedAt.getTime() >= saleAt - 2000;
         reseal = openedBySale && rows.every((b) => b.id === row.id || !OPENS_ROLL(b.action, milliOf(b.change)));
       }
