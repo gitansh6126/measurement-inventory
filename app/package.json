@@ -1,0 +1,19 @@
+{
+  "name": "rs-inventory-v31",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RS Inventory V1 — Products, Sales, Purchases, Inventory (VPS application).",
+  "workspaces": [
+    "shared",
+    "api",
+    "web"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test -w api",
+    "test:integration": "npm run test:integration -w api"
+  }
+}

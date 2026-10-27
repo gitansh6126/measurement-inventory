@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RS Machinery - Inventory V3 UI Prototype</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23ea580c'/><text x='16' y='21' font-size='14' font-weight='bold' fill='white' text-anchor='middle'>RS</text></svg>">
+</head>
+
+<body>
+  <!-- Environment Banner (V3 Prototype Review Mode) -->
+  <aside class="env-banner no-print" aria-label="Environment Banner">
+    <div style="display: flex; align-items: center;">
+      <span class="env-banner-badge">PROTOTYPE</span>
+      <span>RS Machinery V3 UI Interactive Reference · Offline / Vanilla HTML, CSS &amp; JS</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span id="banner-role-indicator">Viewing as: <b>Admin (Rajesh Sharma)</b></span>
+      <button class="btn-link" style="color: #854d0e; text-decoration: underline; font-size: 11px;"
+        onclick="window.RS_APP.openRoleSwitcher()">Switch Role</button>
+    </div>
+  </aside>
+
+  <div class="app-container">
+    <!-- Desktop Reserved Sidebar Space -->
+    <div class="sidebar-reserve no-print" aria-hidden="true"></div>
+
+    <!-- Collapsible / Hoverable Sidebar -->
+    <aside id="app-sidebar" class="sidebar no-print" aria-label="Primary Navigation">
+      <div class="sidebar-header">
+        <span class="brand-logo">RS</span>
+        <div class="brand-text">
+          <div class="brand-title">RS MACHINERY</div>
+          <div class="brand-sub">Inventory V3</div>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <!-- Inventory Section -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">
+            <span>Inventory</span>
+            <div class="sidebar-divider"></div>
+          </div>
+          <a class="nav-link active" data-route="products" onclick="window.RS_APP.navigate('products')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path
+                  d="m7.5 4.27 9 5.15M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+                <path d="m3.3 7 8.7 5 8.7-5M12 22V12" />
+              </svg>
+            </span>
+            <span class="nav-label">Products</span>
+          </a>
+          <a class="nav-link" data-route="categories" onclick="window.RS_APP.navigate('categories')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                <polyline points="2 17 12 22 22 17" />
+                <polyline points="2 12 12 17 22 12" />
+              </svg>
+            </span>
+            <span class="nav-label">Categories</span>
+          </a>
+          <a class="nav-link" data-route="inventory" onclick="window.RS_APP.navigate('inventory')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path
+                  d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+                <path d="m3.3 7 8.7 5 8.7-5M12 22V12" />
+              </svg>
+            </span>
+            <span class="nav-label">Stock In</span>
+          </a>
+          <a class="nav-link" data-route="image-editor" onclick="window.RS_APP.navigate('image-editor')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
+            </span>
+            <span class="nav-label">Image Editor</span>
+          </a>
+        </div>
+
+        <!-- Sales Section -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">
+            <span>Sales</span>
+            <div class="sidebar-divider"></div>
+          </div>
+          <a class="nav-link" data-route="sales-new" onclick="window.RS_APP.navigate('sales-new')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="8" cy="21" r="1" />
+                <circle cx="19" cy="21" r="1" />
+                <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
+              </svg>
+            </span>
+            <span class="nav-label">New Sale</span>
+          </a>
+          <a class="nav-link" data-route="sales-orders" onclick="window.RS_APP.navigate('sales-orders')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M16 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg>
+            </span>
+            <span class="nav-label">Sale Orders</span>
+          </a>
+          <a class="nav-link" data-route="sales-history" onclick="window.RS_APP.navigate('sales-history')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+              </svg>
+            </span>
+            <span class="nav-label">Sale History</span>
+          </a>
+        </div>
+
+        <!-- Purchase Section -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">
+            <span>Purchase</span>
+            <div class="sidebar-divider"></div>
+          </div>
+          <a class="nav-link" data-route="purchases-new" onclick="window.RS_APP.navigate('purchases-new')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 17h4V5H2v12h3m10 0h2a2 2 0 0 0 2-2v-3.5L16.5 8H14v9Z" />
+                <circle cx="7.5" cy="17.5" r="2.5" />
+                <circle cx="17.5" cy="17.5" r="2.5" />
+              </svg>
+            </span>
+            <span class="nav-label">New Purchase</span>
+          </a>
+          <a class="nav-link" data-route="purchases-orders" onclick="window.RS_APP.navigate('purchases-orders')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M16 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+            </span>
+            <span class="nav-label">Purchase Orders</span>
+          </a>
+          <a class="nav-link" data-route="purchases-history" onclick="window.RS_APP.navigate('purchases-history')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z" />
+                <path d="M6 6h10M6 10h10" />
+              </svg>
+            </span>
+            <span class="nav-label">Purchase History</span>
+          </a>
+          <a class="nav-link" data-route="supplier-prices" onclick="window.RS_APP.navigate('supplier-prices')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="1" x2="12" y2="23" />
+                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+              </svg>
+            </span>
+            <span class="nav-label">Supplier Prices</span>
+          </a>
+        </div>
+
+        <!-- Directory Section -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">
+            <span>Directory</span>
+            <div class="sidebar-divider"></div>
+          </div>
+          <a class="nav-link" data-route="customers" onclick="window.RS_APP.navigate('customers')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </span>
+            <span class="nav-label">Customers</span>
+          </a>
+          <a class="nav-link" data-route="suppliers" onclick="window.RS_APP.navigate('suppliers')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+            </span>
+            <span class="nav-label">Suppliers</span>
+          </a>
+        </div>
+
+        <!-- Administration Section -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">
+            <span>Admin</span>
+            <div class="sidebar-divider"></div>
+          </div>
+          <a class="nav-link" data-route="users" onclick="window.RS_APP.navigate('users')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+            </span>
+            <span class="nav-label">Users</span>
+          </a>
+          <a class="nav-link" data-route="backup" onclick="window.RS_APP.navigate('backup')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <ellipse cx="12" cy="5" rx="9" ry="3" />
+                <path d="M3 5V19A9 3 0 0 0 21 19V5" />
+                <path d="M3 12A9 3 0 0 0 21 12" />
+              </svg>
+            </span>
+            <span class="nav-label">Backup &amp; Restore</span>
+          </a>
+          <a class="nav-link" data-route="settings" onclick="window.RS_APP.navigate('settings')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3" />
+                <path
+                  d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </span>
+            <span class="nav-label">Settings</span>
+          </a>
+        </div>
+
+        <!-- Help Section -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">
+            <span>Help</span>
+            <div class="sidebar-divider"></div>
+          </div>
+          <a class="nav-link" data-route="glossary" onclick="window.RS_APP.navigate('glossary')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+              </svg>
+            </span>
+            <span class="nav-label">Glossary</span>
+          </a>
+          <a class="nav-link" data-route="login" onclick="window.RS_APP.navigate('login')">
+            <span class="nav-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                <polyline points="10 17 15 12 10 7" />
+                <line x1="15" y1="12" x2="3" y2="12" />
+              </svg>
+            </span>
+            <span class="nav-label">Login Screen</span>
+          </a>
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Mobile Sidebar Backdrop -->
+    <div id="sidebar-backdrop" class="backdrop-overlay no-print" style="display: none;"
+      onclick="window.RS_APP.toggleMobileMenu(false)"></div>
+
+    <!-- Main Workspace Area -->
+    <div class="main-wrapper">
+      <!-- Sticky Top Header -->
+      <header class="top-header no-print">
+        <button class="menu-trigger" onclick="window.RS_APP.toggleMobileMenu(true)" aria-label="Open Navigation Menu">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="4" y1="12" x2="20" y2="12" />
+            <line x1="4" y1="6" x2="20" y2="6" />
+            <line x1="4" y1="18" x2="20" y2="18" />
+          </svg>
+        </button>
+
+        <div id="current-ist-date" class="header-date">Monday, 19 October 2026</div>
+
+        <div class="header-user">
+          <span id="user-avatar" class="user-avatar-small">R</span>
+          <span id="user-display-name" class="user-name">Rajesh Sharma</span>
+          <span id="user-display-role" class="user-role-badge">Admin</span>
+          <span class="header-divider">|</span>
+          <button class="btn-link" onclick="window.RS_APP.navigate('login')">Logout</button>
+        </div>
+      </header>
+
+      <!-- Dynamic Active View Container -->
+      <main id="app-root" class="page-container">
+        <!-- Rendered dynamically by app.js based on current route -->
+      </main>
+    </div>
+  </div>
+
+  <!-- Floating Cart Pill Widget -->
+  <div id="cart-pill" class="cart-pill-widget no-print" style="display: none;"
+    onclick="window.RS_APP.toggleCartSidebar(true)">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="8" cy="21" r="1" />
+      <circle cx="19" cy="21" r="1" />
+      <path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12" />
+    </svg>
+    <span id="cart-pill-title">Sale Cart</span>
+    <span id="cart-pill-count" class="cart-count-badge">0 items</span>
+    <span id="cart-pill-total" style="font-weight: 600;">₹0</span>
+  </div>
+
+  <!-- Slide-out Cart Sidebar Drawer -->
+  <div id="cart-sidebar-backdrop" class="drawer-overlay no-print" style="display: none;"
+    onclick="window.RS_APP.toggleCartSidebar(false)"></div>
+  <aside id="cart-sidebar" class="drawer-bottom no-print"
+    style="display: none; max-width: 520px; left: auto; right: 0; top: 0; bottom: 0; max-height: 100vh; border-radius: 0; border-left: 1px solid var(--slate-200);">
+    <div class="drawer-header">
+      <div>
+        <h3 id="sidebar-cart-heading" style="font-size: 15px; font-weight: 600;">Active Cart</h3>
+        <p id="sidebar-cart-sub" style="font-size: 12px; color: var(--slate-500);">Review selected items</p>
+      </div>
+      <button class="modal-close" onclick="window.RS_APP.toggleCartSidebar(false)">&times;</button>
+    </div>
+    <div id="sidebar-cart-items" style="padding: 16px; overflow-y: auto; flex: 1; max-height: calc(100vh - 190px);">
+      <!-- Cart items injected here -->
+    </div>
+    <div
+      style="position: absolute; bottom: 0; left: 0; right: 0; border-top: 1px solid var(--slate-200); background: var(--slate-50); padding: 16px;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 14px;">
+        <span style="font-weight: 500;">Cart Subtotal:</span>
+        <span id="sidebar-cart-total" style="font-weight: 700; color: var(--brand-700);">₹0</span>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn btn-secondary" style="flex: 1;" onclick="window.RS_APP.clearCart()">Clear</button>
+        <button id="sidebar-checkout-btn" class="btn btn-primary" style="flex: 2;"
+          onclick="window.RS_APP.proceedToCheckout()">Checkout</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Global Modal Root -->
+  <div id="modal-root" class="no-print"></div>
+
+  <!-- Global Drawer Root -->
+  <div id="drawer-root" class="no-print"></div>
+
+  <!-- Global Toast Container -->
+  <div id="toast-container" class="toast-container no-print"></div>
+
+  <!-- Data & Application Logic -->
+  <script src="fixtures/sample-data.js"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>

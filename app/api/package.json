@@ -1,0 +1,45 @@
+{
+  "name": "@rs-v31/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run tests/unit",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "db:migrate": "prisma migrate deploy",
+    "db:status": "prisma migrate status",
+    "db:generate": "prisma generate",
+    "create-admin": "tsx --env-file=.env scripts/create-admin.ts",
+    "demo:seed": "tsx --env-file=.env scripts/seed-demo.ts",
+    "demo:reset": "tsx --env-file=.env scripts/seed-demo.ts --reset",
+    "postinstall": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "@rs-v31/shared": "*",
+    "adm-zip": "^0.6.1",
+    "bcryptjs": "3.0.3",
+    "cookie-parser": "1.4.7",
+    "express": "5.3.0",
+    "express-rate-limit": "8.7.1",
+    "helmet": "8.3.0",
+    "nodemailer": "^10.1.1",
+    "tsx": "4.23.15",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
+    "@types/cookie-parser": "1.4.10",
+    "@types/express": "5.0.6",
+    "@types/node": "22.19.1",
+    "@types/nodemailer": "^8.0.2",
+    "@types/supertest": "6.0.3",
+    "prisma": "6.19.3",
+    "supertest": "7.3.1",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  }
+}

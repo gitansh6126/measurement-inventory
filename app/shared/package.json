@@ -1,0 +1,14 @@
+{
+  "name": "@rs-v31/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure functions shared by the V1 API and web app (variation codes and identity).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./measure": "./src/measure.ts",
+    "./import": "./src/import.ts",
+    "./sets": "./src/sets.ts"
+  },
+  "types": "./src/index.ts"
+}

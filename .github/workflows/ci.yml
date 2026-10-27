@@ -1,0 +1,104 @@
+# RS Inventory CI/CD (see docs\CI-CD.md).
+#   guard   - fails if a secret, env file, database dump, node_modules or build output is in git
+#   test    - typecheck, unit tests, integration tests on a throwaway PostgreSQL, web build
+#   release - only for a tag v1.2.3: checks VERSION = tag, then publishes the GitHub Release.
+#             The shop's UPDATE.bat installs only such tags, so a release exists only after
+#             guard + test passed on exactly that commit.
+# No repository secrets are needed: the CI database is a service container that exists only for
+# this run, and real client.env / demo.env never reach GitHub.
+name: CI
+
+on:
+  push:
+    branches: [main, "release/**"]
+    tags: ["v*"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: No secrets, data or generated files in git
+        shell: bash
+        run: |
+          bad=$(git ls-files | grep -E '(^|/)node_modules/|(^|/)\.next[^/]*/|(^|/)(\.env|.*\.env|\.env\..*)$|\.(dump|pem|key|pfx|zip|log)$|(^|/)(storage|backups)/' \
+                | grep -vE '(^|/)\.env\.example$|^local-server/(client|demo)\.example\.env$' || true)
+          if [ -n "$bad" ]; then echo "::error::These files must not be in git:"; echo "$bad"; exit 1; fi
+          # Example env files must hold placeholders only (CHANGE_ME or empty), never a real password.
+          leak=$(grep -HnE '^(DATABASE_URL|RESTORE_DB_URL|TEST_DATABASE_URL)=postgresql://[^:]+:[^@]+@' app/api/.env.example local-server/*.example.env | grep -v 'CHANGE_ME' || true)
+          leak="$leak$(grep -HnE '^(SESSION_SECRET|SMTP_PASS|ADMIN_PASSWORD)=.+' app/api/.env.example local-server/*.example.env | grep -v 'CHANGE_ME' || true)"
+          if [ -n "$leak" ]; then echo "::error::Example env files contain real values:"; echo "$leak"; exit 1; fi
+          echo "OK: nothing secret or generated is tracked."
+
+  test:
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: app
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: rs_ci
+          POSTGRES_PASSWORD: rs_ci_only
+          POSTGRES_DB: rs_v31_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U rs_ci -d rs_v31_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://rs_ci:rs_ci_only@127.0.0.1:5432/rs_v31_test
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: app/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck (api + web)
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Integration tests (migrate reset of the CI database, then the full suite)
+        run: npm run test:integration
+      - name: Web build (as the shop build does)
+        working-directory: app/web
+        env:
+          NEXT_DIST_DIR: .next-local-client
+          API_INTERNAL_URL: http://127.0.0.1:4210
+        run: npx next build
+
+  release:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: VERSION file matches the tag
+        shell: bash
+        run: |
+          v="$(head -n1 VERSION | tr -d '\r ')"
+          if [ "v$v" != "${GITHUB_REF_NAME}" ]; then echo "::error::VERSION is $v but the tag is ${GITHUB_REF_NAME}"; exit 1; fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

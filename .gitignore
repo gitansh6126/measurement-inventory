@@ -1,0 +1,46 @@
+# RS Inventory - nothing generated, secret or shop-owned ever goes to GitHub.
+# Shop data lives OUTSIDE this folder (RS_DATA_ROOT, default <this folder>-Data); the lines
+# below are a second safety net for anything created inside it by mistake.
+
+# Packages and build output
+**/node_modules/
+**/.next/
+**/.next-*/
+**/.vite/
+**/.turbo/
+**/dist/
+**/build/
+**/coverage/
+**/*.tsbuildinfo
+
+# Secrets: every env file except the committed examples
+**/.env
+**/.env.*
+**/*.env
+!**/.env.example
+!local-server/client.example.env
+!local-server/demo.example.env
+*.pem
+*.key
+*.pfx
+
+# Shop data, backups, logs, runtime state (old in-folder locations included)
+*-Data/
+local-server/data/
+local-server/backups/
+local-server/logs/
+local-server/run/
+app/api/storage/
+**/storage/
+*.log
+*.dump
+*.sql.gz
+*.zip
+*.lnk
+
+# OS / editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/

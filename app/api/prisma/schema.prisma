@@ -1,0 +1,1311 @@
+// RS Inventory V2 — relational schema (V1 migrations 0001–0006 unchanged; V2 adds 0007+).
+// Migrations are checked in under prisma/migrations and applied with `prisma migrate deploy`.
+// Never use `prisma db push` against CLIENT_READY.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  sales_manager
+  sales_staff
+}
+
+// One row per business. A deployment normally holds exactly one company, but every
+// business table carries companyId so the boundary is enforced from day one.
+// Retained for backup compatibility. V2 code fixes this to WARN_AND_ALLOW for counted stock.
+enum NegativeStockPolicy {
+  STRICT
+  WARN_AND_ALLOW
+  MANAGER_OVERRIDE
+}
+
+model Company {
+  id                  String              @id @default(cuid())
+  name                String
+  negativeStockPolicy NegativeStockPolicy @default(WARN_AND_ALLOW) @map("negative_stock_policy")
+  // Length settings for every Measured product, per length unit (0029). Saving them in Settings
+  // copies them onto product_groups.length_decimals / scrap_below of that unit.
+  lengthDecimalsM     Int                 @default(1) @map("length_decimals_m")
+  scrapBelowM         Decimal?            @map("scrap_below_m") @db.Decimal(14, 3)
+  lengthDecimalsFtIn  Int                 @default(1) @map("length_decimals_ft_in")
+  scrapBelowFtIn      Decimal?            @map("scrap_below_ft_in") @db.Decimal(14, 3)
+  // V3.1 (0035, WH-1): set once by creating the first warehouse; never switched back off.
+  warehousingEnabled  Boolean             @default(false) @map("warehousing_enabled")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+
+  users         User[]
+  counters      DocumentCounter[]
+  audits        AuditEvent[]
+  categories    Category[]
+  categoryHeads CategoryHead[]
+  productCategories ProductCategory[]
+  variationCategories VariationCategory[]
+  productGroups ProductGroup[]
+  variations    ProductVariation[]
+  movements     StockMovement[]
+  balances      StockBalance[]
+  parties       Party[]
+  sales         Sale[]
+  purchases     Purchase[]
+  images        Image[]
+  voids         DocumentVoid[]
+  drafts        DraftOrder[]
+  vendorPrices  VendorPrice[]
+  vendorHistory VendorPriceHistory[]
+  orders        Order[]
+  pieces        MeasurementPiece[]
+  pieceLedger   MeasurementPieceLedger[]
+  pieceCounters PieceCounter[]
+  groupByproducts     GroupByproduct[]
+  groupSets           GroupSet[]
+  groupSetParts       GroupSetPart[]
+  groupSetPartChanges GroupSetPartChange[]
+  warehouses          Warehouse[]
+  stockTransfers      StockTransfer[]
+  stockTransferVoids  StockTransferVoid[]
+
+  @@map("companies")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  companyId    String   @map("company_id")
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  name         String
+  // Stored lower-cased; uniqueness is per deployment.
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         Role     @default(sales_staff)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdById  String?  @map("created_by")
+  updatedById  String?  @map("updated_by")
+
+  sessions           Session[]
+  preferences        UserPreference[]
+  passwordResetCodes PasswordResetCode[]
+
+  @@index([companyId])
+  @@map("users")
+}
+
+// Server-side sessions. The browser holds only an opaque random token in an HttpOnly
+// cookie; the database stores its HMAC so a leaked table cannot be replayed.
+model Session {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique @map("token_hash")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  ip         String?
+  userAgent  String?   @map("user_agent")
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model PasswordResetCode {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash   String    @map("code_hash")
+  attempts   Int       @default(0)
+  expiresAt  DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("password_reset_codes")
+}
+
+// Append-only. UPDATE and DELETE are blocked by a trigger in the 0001 migration.
+model AuditEvent {
+  id          String   @id @default(cuid())
+  companyId   String?  @map("company_id")
+  company     Company? @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  environment String
+  actorId     String?  @map("actor_id")
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id")
+  before      Json?    @map("before_json")
+  after       Json?    @map("after_json")
+  reason      String?
+  requestId   String?  @map("request_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([companyId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_events")
+}
+
+// Atomic per-company, per-type, per-financial-year document counters.
+// docType is the number prefix, e.g. SAL or PUR; fiscalYear is e.g. 2026-27.
+model DocumentCounter {
+  companyId  String  @map("company_id")
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  docType    String  @map("doc_type")
+  fiscalYear String  @map("fiscal_year")
+  lastValue  Int     @default(0) @map("last_value")
+
+  @@id([companyId, docType, fiscalYear])
+  @@map("document_counters")
+}
+
+// ---------------------------------------------------------------------------
+// Products (Phase 2). Contract: references for final inven/AI_CONTEXT/contracts/v1-canonical-schemas.md
+// ---------------------------------------------------------------------------
+
+enum ProductType {
+  simple
+  variable
+  // V2 plan §2 (DM-1): rolls sold by length; always has variations.
+  measured
+  // V3.1 (0030): a set = main component + by-products; stock is its sets, never its own.
+  grouped
+}
+
+// Base unit of a Measured product (length only): metres, or feet + inches stored in inches.
+enum LengthUnit {
+  m
+  ft_in
+}
+
+// V3.1 (0033): a head groups categories, e.g. "Industry" → Agriculture, Gym. The built-in head
+// "Product Type" has no row (categories.head_id NULL). Never hard-deleted: active=false retires it.
+// Name uniqueness per company is case-insensitive (expression index in 0033).
+model CategoryHead {
+  id          String   @id @default(cuid())
+  companyId   String   @map("company_id")
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  name        String
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdById String?  @map("created_by")
+  updatedById String?  @map("updated_by")
+
+  categories Category[]
+
+  @@index([companyId])
+  @@map("category_heads")
+}
+
+// Product Type categories (head_id NULL): one optional category per product (main v2 model,
+// product_groups.category_id). Categories of other heads: any number per product
+// (product_categories). Never hard-deleted: active=false retires it.
+// Names are unique per company and head, case-insensitively (expression index in 0033).
+model Category {
+  id          String   @id @default(cuid())
+  companyId   String   @map("company_id")
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  name        String
+  // NULL = the built-in Product Type head (0033).
+  headId      String?  @map("head_id")
+  head        CategoryHead? @relation(fields: [headId], references: [id], onDelete: Restrict)
+  imageUrl    String?  @map("image_url")
+  active      Boolean  @default(true)
+  // Category rail order (0013); ties sort by name.
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdById String?  @map("created_by")
+  updatedById String?  @map("updated_by")
+
+  products       ProductGroup[]
+  productLinks   ProductCategory[]
+  variationLinks VariationCategory[]
+
+  @@index([companyId])
+  @@index([headId])
+  @@map("categories")
+}
+
+// V3.1 (0033): a product in a category of a head other than Product Type.
+model ProductCategory {
+  productId   String       @map("product_id")
+  product     ProductGroup @relation(fields: [productId], references: [id], onDelete: Restrict)
+  categoryId  String       @map("category_id")
+  category    Category     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  companyId   String       @map("company_id")
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  createdById String?      @map("created_by")
+
+  @@id([productId, categoryId])
+  @@index([categoryId])
+  @@index([companyId])
+  @@map("product_categories")
+}
+
+// V3.1 (0038): a variation in a category of a head other than Product Type, when that category
+// does not apply to the whole product (a product_categories row; never both — trigger in 0038).
+model VariationCategory {
+  variationId String           @map("variation_id")
+  variation   ProductVariation @relation(fields: [variationId], references: [id], onDelete: Restrict)
+  categoryId  String           @map("category_id")
+  category    Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  // The variation's own product (FK in 0038); keeps "products in a category" cheap.
+  productId   String           @map("product_id")
+  product     ProductGroup     @relation(fields: [productId], references: [id], onDelete: Restrict)
+  companyId   String           @map("company_id")
+  company     Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  createdById String?          @map("created_by")
+
+  @@id([variationId, categoryId])
+  @@index([categoryId, productId])
+  @@index([productId])
+  @@index([companyId])
+  @@map("variation_categories")
+}
+
+// The product a customer recognises ("Wire Rope"). A Simple product has exactly one
+// variation; a Variable product declares attributes and has one or more variations.
+model ProductGroup {
+  id                   String      @id @default(cuid())
+  companyId            String      @map("company_id")
+  company              Company     @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  name                 String
+  productType          ProductType @map("product_type")
+  // Base Short Name: the suffix of every generated variation code (BR-07).
+  baseShortName        String      @map("base_short_name")
+  description          String?
+  unit                 String
+  imageUrl             String?     @map("image_url")
+  // Ordered image URLs (uploaded "/api/images/<id>" or external https). The first is MAIN and
+  // is mirrored into imageUrl so lists and documents keep one main picture.
+  gallery              String[]    @default([])
+  categoryId           String?     @map("category_id")
+  category             Category?   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  // Ordered AttributeDef[] (see @rs-v31/shared). Declared values are kept even when no
+  // variation uses them; they are not rebuilt from child rows.
+  attributeDefinitions Json        @default("[]") @map("attribute_definitions")
+  // Measured products only (V2 plan §2; null otherwise, checked in 0020).
+  lengthUnit           LengthUnit? @map("length_unit")
+  // Label of a physical piece: "Roll", "Reel", "Drum".
+  rollName             String?     @map("roll_name")
+  // Pre-fills the purchase roll entry only; every roll's real length is typed.
+  defaultRollLength    Decimal?    @map("default_roll_length") @db.Decimal(14, 3)
+  // Decimals and scrap-below are company settings per length unit (0029), copied here.
+  lengthDecimals       Int?        @map("length_decimals")
+  // A leftover shorter than this prompts a write-off (DM-7).
+  scrapBelow           Decimal?    @map("scrap_below") @db.Decimal(14, 3)
+  active               Boolean     @default(true)
+  // Derived cache: newest non-voided completed sale date for any variation in this product.
+  lastSaleAt           DateTime?   @map("last_sale_at")
+  // Optimistic concurrency (V2 plan §1.5): an edit that sends a stale version gets 409.
+  version              Int         @default(1)
+  createdAt            DateTime    @default(now()) @map("created_at")
+  updatedAt            DateTime    @updatedAt @map("updated_at")
+  createdById          String?     @map("created_by")
+  updatedById          String?     @map("updated_by")
+  // V3.1 (0031): set on the main component (Simple) of a grouped product; it exists only
+  // inside that product's sets (D2–D4).
+  ownerGroupId         String?     @unique @map("owner_group_id")
+  ownerGroup           ProductGroup?  @relation("GroupMainComponent", fields: [ownerGroupId], references: [id], onDelete: Restrict)
+  mainComponent        ProductGroup?  @relation("GroupMainComponent")
+
+  variations ProductVariation[]
+  byproducts     GroupByproduct[] @relation("GroupByproductGroup")
+  byproductOf    GroupByproduct[] @relation("GroupByproductProduct")
+  sets           GroupSet[]
+  // V3.1 (0033): categories of heads other than Product Type.
+  categoryLinks  ProductCategory[]
+  // V3.1 (0038): categories of other heads on chosen variations only.
+  variationCategoryLinks VariationCategory[]
+
+  @@index([companyId, active])
+  @@index([companyId, lastSaleAt])
+  @@index([categoryId])
+  @@index([companyId, categoryId, active, name])
+  // Trigram search (V2 plan §1.2): ILIKE '%term%' uses the index instead of a full scan.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "product_groups_name_trgm_idx")
+  @@map("product_groups")
+}
+
+// The stock-keeping unit used on documents and stock movements.
+model ProductVariation {
+  id                String       @id @default(cuid())
+  companyId         String       @map("company_id")
+  company           Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  groupId           String       @map("group_id")
+  group             ProductGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  // Internal identifier: trimmed, uppercase, unique per company (BR-04).
+  shortName         String       @map("short_name")
+  // Customer-facing code: nullable, case-insensitively unique when present (BR-05).
+  officialSku       String?      @map("official_sku")
+  // { "<attribute>": "<value>" } in definition order; {} for a Simple product.
+  attributes        Json         @default("{}")
+  // Order-independent identity of the combination (main v2 attrComboKey); "" for Simple.
+  attributeKey      String       @map("attribute_key")
+  description       String?
+  imageUrl          String?      @map("image_url")
+  // Commercial configuration is owned by Inventory/Purchases, not the product form (BR-08a).
+  salePrice         Decimal      @default(0) @map("sale_price") @db.Decimal(14, 2)
+  minSalePrice      Decimal      @default(0) @map("min_sale_price") @db.Decimal(14, 2)
+  purchaseCost      Decimal      @default(0) @map("purchase_cost") @db.Decimal(14, 2)
+  lowStockThreshold Int          @default(0) @map("low_stock_threshold")
+  // User-selected order within the parent product (V2 plan §1.10).
+  sortOrder         Int          @default(0) @map("sort_order")
+  // Measured only: overrides the product's default roll length for purchase pre-fill.
+  defaultRollLength Decimal?     @map("default_roll_length") @db.Decimal(14, 3)
+  active            Boolean      @default(true)
+  version           Int          @default(1)
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+  createdById       String?      @map("created_by")
+  updatedById       String?      @map("updated_by")
+
+  movements     StockMovement[]
+  balance       StockBalance?
+  saleLines     SaleLine[]
+  purchaseLines PurchaseLine[]
+  vendorPrices  VendorPrice[]
+  orderLines    OrderLine[]
+  pieces        MeasurementPiece[]
+  setParts      GroupSetPart[]
+  // V3.1 (0038): categories of other heads on this variation only.
+  categoryLinks VariationCategory[]
+
+  @@unique([companyId, shortName])
+  @@unique([groupId, attributeKey])
+  @@index([groupId])
+  @@index([shortName(ops: raw("gin_trgm_ops"))], type: Gin, map: "product_variations_short_name_trgm_idx")
+  @@index([officialSku(ops: raw("gin_trgm_ops"))], type: Gin, map: "product_variations_official_sku_trgm_idx")
+  @@map("product_variations")
+}
+
+// ---------------------------------------------------------------------------
+// Inventory (Phase 3). Counted stock = SUM(quantity) per variation (contract).
+// Append-only; a trigger in 0003_inventory locks the variation and rejects any
+// movement that would make stock negative (no oversell, no clamping).
+// ---------------------------------------------------------------------------
+
+enum MovementType {
+  OPENING
+  PURCHASE
+  SALE
+  ADJUSTMENT
+  // V2 void (D3): reverses a document's movements; linked to the same sale / purchase.
+  SALE_VOID
+  PURCHASE_VOID
+  // V3.1 shifts between warehouses (0034); a cancelled shift's reversal is TRANSFER_VOID.
+  TRANSFER_OUT
+  TRANSFER_IN
+  TRANSFER_VOID
+}
+
+model StockMovement {
+  id           String           @id @default(cuid())
+  companyId    String           @map("company_id")
+  company      Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  variationId  String           @map("variation_id")
+  variation    ProductVariation @relation(fields: [variationId], references: [id], onDelete: Restrict)
+  movementType MovementType     @map("movement_type")
+  // + in, - out. Whole for Simple / Variable; Measured may carry 3 decimals (DM-2, trigger in 0020).
+  quantity     Decimal          @db.Decimal(14, 3)
+  unit         String
+  rate         Decimal?         @db.Decimal(14, 2)
+  ratePer      Int              @default(1) @map("rate_per")  // base units per rate unit: 12 = per ft on lengths in inches (0028)
+  reason       String?
+  // Set for SALE / PURCHASE movements (checked in 0004_documents).
+  saleId       String?          @map("sale_id")
+  sale         Sale?            @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  purchaseId   String?          @map("purchase_id")
+  purchase     Purchase?        @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  occurredAt   DateTime         @default(now()) @map("occurred_at")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  createdById  String?          @map("created_by")
+  // V3.1 (0035): required while the company has warehousing on, NULL while off (trigger).
+  // Same-company FKs are hand-written in the migration.
+  warehouseId  String?          @map("warehouse_id")
+  transferId   String?          @map("transfer_id")
+
+  @@index([variationId, occurredAt])
+  @@index([companyId, occurredAt])
+  @@index([transferId])
+  @@index([variationId, warehouseId])
+  @@map("stock_movements")
+}
+
+// ---------------------------------------------------------------------------
+// Warehouses (V3.1, 0035; docs\WAREHOUSE-V3-PLAN.md). Off until the first warehouse is created.
+// ---------------------------------------------------------------------------
+
+model Warehouse {
+  id          String   @id @default(cuid())
+  companyId   String   @map("company_id")
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  code        String
+  name        String
+  address     String?
+  isDefault   Boolean  @default(false) @map("is_default")
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0) @map("sort_order")
+  version     Int      @default(1)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+  createdById String?  @map("created_by")
+  updatedById String?  @map("updated_by")
+
+  @@unique([companyId, code])
+  @@map("warehouses")
+}
+
+// Written ONLY by the movement trigger (0035), like stock_balances.
+model WarehouseStockBalance {
+  variationId String   @map("variation_id")
+  warehouseId String   @map("warehouse_id")
+  companyId   String   @map("company_id")
+  quantity    Decimal  @default(0) @db.Decimal(14, 3)
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  @@id([variationId, warehouseId])
+  @@index([companyId, warehouseId, quantity])
+  @@map("warehouse_stock_balances")
+}
+
+// A shift (WH-10): append-only, cancelled by a StockTransferVoid.
+model StockTransfer {
+  id              String              @id @default(cuid())
+  companyId       String              @map("company_id")
+  company         Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  number          String
+  transferDate    DateTime            @default(now()) @map("transfer_date")
+  fromWarehouseId String              @map("from_warehouse_id")
+  toWarehouseId   String              @map("to_warehouse_id")
+  notes           String?
+  clientRef       String?             @map("client_ref")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  createdById     String              @map("created_by")
+  lines           StockTransferLine[]
+
+  @@unique([companyId, number])
+  @@unique([companyId, clientRef])
+  @@index([companyId, transferDate])
+  @@map("stock_transfers")
+}
+
+model StockTransferLine {
+  id                  String        @id @default(cuid())
+  transferId          String        @map("transfer_id")
+  transfer            StockTransfer @relation(fields: [transferId], references: [id], onDelete: Restrict)
+  lineNo              Int           @map("line_no")
+  variationId         String        @map("variation_id")
+  productNameSnapshot String        @map("product_name_snapshot")
+  shortNameSnapshot   String        @map("short_name_snapshot")
+  unit                String
+  quantity            Decimal       @db.Decimal(14, 3)
+  // Measured: one line per whole piece. Grouped: one line per whole set (its parts move with it).
+  pieceId             String?       @map("piece_id")
+  setId               String?       @map("set_id")
+  note                String?
+
+  @@unique([transferId, lineNo])
+  @@index([variationId])
+  @@index([pieceId])
+  @@index([setId])
+  @@map("stock_transfer_lines")
+}
+
+model StockTransferVoid {
+  id          String   @id @default(cuid())
+  companyId   String   @map("company_id")
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  transferId  String   @unique @map("transfer_id")
+  reason      String
+  createdAt   DateTime @default(now()) @map("created_at")
+  createdById String   @map("created_by")
+
+  @@map("stock_transfer_voids")
+}
+
+// Stored running balance = SUM(stock_movements.quantity) per variation (V2 plan §1.1, backlog C1).
+// Written ONLY by the stock_movements_maintain_balance trigger (0007), in the same statement as
+// the movement, so it can never disagree with the ledger; view stock_balance_drift lists any
+// row where it does. Signed: negative only when the company policy allowed an oversell.
+// No row = no movements yet = 0.
+model StockBalance {
+  variationId String           @id @map("variation_id")
+  variation   ProductVariation @relation(fields: [variationId], references: [id], onDelete: Cascade)
+  companyId   String           @map("company_id")
+  company     Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  quantity    Decimal          @default(0) @db.Decimal(14, 3)
+  updatedAt   DateTime         @default(now()) @map("updated_at")
+
+  @@index([companyId, quantity])
+  @@map("stock_balances")
+}
+
+// ---------------------------------------------------------------------------
+// Sales and purchases (Phase 4). Direct documents; append-only (void deferred, D3).
+// ---------------------------------------------------------------------------
+
+enum PartyType {
+  CUSTOMER
+  SUPPLIER
+  BOTH
+}
+
+// Optional customer / supplier reference (D1, D20). No ledger or credit.
+model Party {
+  id              String    @id @default(cuid())
+  companyId       String    @map("company_id")
+  company         Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  type            PartyType
+  name            String
+  phone           String?
+  email           String?
+  address         String?
+  city            String?
+  // V2 party profile (plan §3.2, owner decision 4: no GSTIN/PAN/state until V3).
+  contactPerson   String?   @map("contact_person")
+  altPhone        String?   @map("alt_phone")
+  shippingAddress String?   @map("shipping_address")
+  creditScore     Int       @default(0) @map("credit_score")
+  active          Boolean   @default(true)
+  version         Int       @default(1)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdById     String?   @map("created_by")
+  updatedById     String?   @map("updated_by")
+
+  sales        Sale[]
+  purchases    Purchase[]
+  drafts       DraftOrder[]
+  vendorPrices VendorPrice[]
+  orders       Order[]
+  pieces       MeasurementPiece[]
+
+  @@index([companyId, type])
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "parties_name_trgm_idx")
+  @@index([phone(ops: raw("gin_trgm_ops"))], type: Gin, map: "parties_phone_trgm_idx")
+  @@map("parties")
+}
+
+model Sale {
+  id            String         @id @default(cuid())
+  companyId     String         @map("company_id")
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  number        String
+  status        String         @default("COMPLETED")
+  saleDate      DateTime       @default(now()) @map("sale_date")
+  partyId       String?        @map("party_id")
+  party         Party?         @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  // Party name at the time of sale; the party record may be renamed later.
+  partyName     String?        @map("party_name")
+  subtotal      Decimal        @db.Decimal(14, 2)
+  total         Decimal        @db.Decimal(14, 2)
+  notes         String?
+  // Client-generated key: a repeated submit returns the same sale (D21).
+  clientRef     String?        @map("client_ref")
+  // V2 (plan §3.1): how it was paid. Information only — ledgers and settlement are V3.
+  paymentMode   PaymentMode?   @map("payment_mode")
+  paymentStatus PaymentStatus? @map("payment_status")
+  amountPaid    Decimal?       @map("amount_paid") @db.Decimal(14, 2)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  createdById   String         @map("created_by")
+
+  lines         SaleLine[]
+  movements     StockMovement[]
+  void          DocumentVoid?
+  pieceLedger   MeasurementPieceLedger[]
+  sets          GroupSet[]
+  setPartChanges GroupSetPartChange[]
+  replacesId    String?                  @unique @map("replaces_id")
+  replaces      Sale?                    @relation("SaleRevisions", fields: [replacesId], references: [id], onDelete: Restrict)
+  replacedBy    Sale?                    @relation("SaleRevisions")
+  revision      Int                      @default(0)
+  replacedVoids DocumentVoid[]           @relation("SaleReplacedVoid")
+  orderId       String?                  @map("order_id")
+  order         Order?                   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, number])
+  @@unique([companyId, clientRef])
+  @@index([companyId, saleDate])
+  @@index([orderId])
+  @@index([number(ops: raw("gin_trgm_ops"))], type: Gin, map: "sales_number_trgm_idx")
+  @@map("sales")
+}
+
+model SaleLine {
+  id                  String           @id @default(cuid())
+  saleId              String           @map("sale_id")
+  sale                Sale             @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  lineNo              Int              @map("line_no")
+  variationId         String           @map("variation_id")
+  variation           ProductVariation @relation(fields: [variationId], references: [id], onDelete: Restrict)
+  productNameSnapshot String           @map("product_name_snapshot")
+  shortNameSnapshot   String           @map("short_name_snapshot")
+  officialSkuSnapshot String?          @map("official_sku_snapshot")
+  attributesSnapshot  Json             @default("{}") @map("attributes_snapshot")
+  unit                String
+  quantity            Decimal          @db.Decimal(14, 3)
+  unitPrice           Decimal          @map("unit_price") @db.Decimal(14, 2)
+  ratePer             Int              @default(1) @map("rate_per")  // base units per rate unit: 12 = per ft on lengths in inches (0028)
+  // V2: flat discount in rupees on this line; lineTotal = quantity × unitPrice − discount.
+  discount            Decimal          @default(0) @db.Decimal(14, 2)
+  note                String?
+  lineTotal           Decimal          @map("line_total") @db.Decimal(14, 2)
+  // 0027: the order line this line delivers / receives (documents made from an order).
+  orderLineId         String?          @map("order_line_id")
+  orderLine           OrderLine?       @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+
+  @@unique([saleId, lineNo])
+  @@index([variationId])
+  @@index([orderLineId])
+  @@map("sale_lines")
+}
+
+model Purchase {
+  id            String         @id @default(cuid())
+  companyId     String         @map("company_id")
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  number        String
+  status        String         @default("COMPLETED")
+  purchaseDate  DateTime       @default(now()) @map("purchase_date")
+  partyId       String?        @map("party_id")
+  party         Party?         @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  partyName     String?        @map("party_name")
+  subtotal      Decimal        @db.Decimal(14, 2)
+  total         Decimal        @db.Decimal(14, 2)
+  notes         String?
+  clientRef     String?        @map("client_ref")
+  paymentMode   PaymentMode?   @map("payment_mode")
+  paymentStatus PaymentStatus? @map("payment_status")
+  amountPaid    Decimal?       @map("amount_paid") @db.Decimal(14, 2)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  createdById   String         @map("created_by")
+
+  lines         PurchaseLine[]
+  movements     StockMovement[]
+  void          DocumentVoid?
+  pieces        MeasurementPiece[]
+  pieceLedger   MeasurementPieceLedger[]
+  sets          GroupSet[]
+  replacesId    String?                  @unique @map("replaces_id")
+  replaces      Purchase?                @relation("PurchaseRevisions", fields: [replacesId], references: [id], onDelete: Restrict)
+  replacedBy    Purchase?                @relation("PurchaseRevisions")
+  revision      Int                      @default(0)
+  replacedVoids DocumentVoid[]           @relation("PurchaseReplacedVoid")
+  orderId       String?                  @map("order_id")
+  order         Order?                   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@unique([companyId, number])
+  @@unique([companyId, clientRef])
+  @@index([companyId, purchaseDate])
+  @@index([orderId])
+  @@index([number(ops: raw("gin_trgm_ops"))], type: Gin, map: "purchases_number_trgm_idx")
+  @@map("purchases")
+}
+
+model PurchaseLine {
+  id                  String           @id @default(cuid())
+  purchaseId          String           @map("purchase_id")
+  purchase            Purchase         @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  lineNo              Int              @map("line_no")
+  variationId         String           @map("variation_id")
+  variation           ProductVariation @relation(fields: [variationId], references: [id], onDelete: Restrict)
+  productNameSnapshot String           @map("product_name_snapshot")
+  shortNameSnapshot   String           @map("short_name_snapshot")
+  officialSkuSnapshot String?          @map("official_sku_snapshot")
+  attributesSnapshot  Json             @default("{}") @map("attributes_snapshot")
+  unit                String
+  quantity            Decimal          @db.Decimal(14, 3)
+  unitCost            Decimal          @map("unit_cost") @db.Decimal(14, 2)
+  ratePer             Int              @default(1) @map("rate_per")  // base units per rate unit: 12 = per ft on lengths in inches (0028)
+  discount            Decimal          @default(0) @db.Decimal(14, 2)
+  note                String?
+  lineTotal           Decimal          @map("line_total") @db.Decimal(14, 2)
+  // 0027: the order line this line delivers / receives (documents made from an order).
+  orderLineId         String?          @map("order_line_id")
+  orderLine           OrderLine?       @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+
+  @@unique([purchaseId, lineNo])
+  @@index([variationId])
+  @@index([orderLineId])
+  @@map("purchase_lines")
+}
+
+// ---------------------------------------------------------------------------
+// Uploaded images (square-cropped in the browser). Bytes live under STORAGE_ROOT,
+// one folder per environment; this row is the index. Served only within the company.
+// ---------------------------------------------------------------------------
+
+model Image {
+  id          String   @id @default(cuid())
+  companyId   String   @map("company_id")
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  storageKey  String   @unique @map("storage_key")
+  mimeType    String   @map("mime_type")
+  bytes       Int
+  width       Int
+  height      Int
+  sha256      String
+  createdAt   DateTime @default(now()) @map("created_at")
+  createdById String   @map("created_by")
+
+  @@index([companyId])
+  @@map("images")
+}
+
+// ---------------------------------------------------------------------------
+// V2 (0010): payment info, document void, drafts, supplier prices, user preferences.
+// ---------------------------------------------------------------------------
+
+enum PaymentMode {
+  CASH
+  UPI
+  BANK_TRANSFER
+  CHEQUE
+  CREDIT
+}
+
+enum PaymentStatus {
+  PAID
+  PARTIAL
+  PENDING
+}
+
+enum DocumentVoidKind {
+  CANCELLED
+  REPLACED
+}
+
+// Void / reversal of a sale or purchase (D3, plan §3.1). Documents stay append-only: the void is
+// its own row (one per document) plus reversing SALE_VOID / PURCHASE_VOID movements. A document
+// is "CANCELLED" exactly when it has a void row with kind CANCELLED. A document is "REPLACED"
+// when it was edited/replaced by a newer revision.
+model DocumentVoid {
+  id                   String           @id @default(cuid())
+  companyId            String           @map("company_id")
+  company              Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  saleId               String?          @unique @map("sale_id")
+  sale                 Sale?            @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  purchaseId           String?          @unique @map("purchase_id")
+  purchase             Purchase?        @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  kind                 DocumentVoidKind @default(CANCELLED)
+  replacedBySaleId     String?          @map("replaced_by_sale_id")
+  replacedBySale       Sale?            @relation("SaleReplacedVoid", fields: [replacedBySaleId], references: [id], onDelete: Restrict)
+  replacedByPurchaseId String?          @map("replaced_by_purchase_id")
+  replacedByPurchase   Purchase?        @relation("PurchaseReplacedVoid", fields: [replacedByPurchaseId], references: [id], onDelete: Restrict)
+  reason               String
+  createdAt            DateTime         @default(now()) @map("created_at")
+  createdById          String           @map("created_by")
+
+  @@index([companyId, createdAt])
+  @@map("document_voids")
+}
+
+enum DraftMode {
+  SALE
+  PURCHASE
+}
+
+enum DraftStatus {
+  ACTIVE
+  COMPLETED
+  DISCARDED
+}
+
+// Held / parked carts (plan §3.4). Never touch stock: lines are re-validated when resumed and
+// again by the normal checkout. Lines are the cart's own JSON ({ variationId, quantity, price,
+// discount?, note? }[]).
+model DraftOrder {
+  id             String      @id @default(cuid())
+  companyId      String      @map("company_id")
+  company        Company     @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  mode           DraftMode
+  status         DraftStatus @default(ACTIVE)
+  title          String
+  partyId        String?     @map("party_id")
+  party          Party?      @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  notes          String?
+  lines          Json        @default("[]")
+  // Estimated total when saved (paise-free rupees string); the checkout recomputes it.
+  estimatedTotal Decimal     @default(0) @map("estimated_total") @db.Decimal(14, 2)
+  lineCount      Int         @default(0) @map("line_count")
+  // Set when checked out: the sale or purchase it became.
+  documentId     String?     @map("document_id")
+  version        Int         @default(1)
+  expiresAt      DateTime?   @map("expires_at")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+  createdById    String      @map("created_by")
+  updatedById    String?     @map("updated_by")
+
+  @@index([companyId, mode, status, updatedAt])
+  @@map("draft_orders")
+}
+
+// Supplier rate cards (plan §4, fixes the 7 paused-V1 defects). One current rate per
+// (variation, supplier); every change also appends to VendorPriceHistory. Rates only PREFILL
+// the purchase cart — the typed price stays authoritative (BR-01 / D19).
+model VendorPrice {
+  id          String           @id @default(cuid())
+  companyId   String           @map("company_id")
+  company     Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  variationId String           @map("variation_id")
+  variation   ProductVariation @relation(fields: [variationId], references: [id], onDelete: Restrict)
+  supplierId  String           @map("supplier_id")
+  supplier    Party            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  rate        Decimal          @db.Decimal(14, 2)
+  active      Boolean          @default(true)
+  notes       String?
+  effectiveAt DateTime         @default(now()) @map("effective_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  createdById String?          @map("created_by")
+  updatedById String?          @map("updated_by")
+
+  @@unique([companyId, variationId, supplierId])
+  @@index([companyId, supplierId])
+  @@map("vendor_prices")
+}
+
+// Append-only history of supplier rate changes ("what did we pay them in March?").
+model VendorPriceHistory {
+  id           String   @id @default(cuid())
+  companyId    String   @map("company_id")
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  variationId  String   @map("variation_id")
+  supplierId   String   @map("supplier_id")
+  rate         Decimal  @db.Decimal(14, 2)
+  ratePer      Int      @default(1) @map("rate_per")  // base units per rate unit: 12 = per ft on lengths in inches (0028)
+  active       Boolean
+  notes        String?
+  recordedAt   DateTime @default(now()) @map("recorded_at")
+  recordedById String?  @map("recorded_by")
+
+  @@index([companyId, variationId, supplierId, recordedAt])
+  @@map("vendor_price_history")
+}
+
+// Per-user, per-page screen settings (plan §1.10: visible columns, etc.). Presentation only:
+// never affects permissions or data. Scoped to the user, so never shared between users.
+model UserPreference {
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@id([userId, key])
+  @@map("user_preferences")
+}
+
+// ---------------------------------------------------------------------------
+// V2 (0014): sale and purchase orders (docs/orders/ORDER-LIFECYCLE-PLAN.md).
+// An order is editable and never moves stock. Completing it creates the normal Sale / Purchase
+// (same engine, same checks) in the same transaction and stores its id in document_id.
+// ---------------------------------------------------------------------------
+
+enum OrderKind {
+  SALE
+  PURCHASE
+}
+
+enum OrderStatus {
+  DRAFT
+  PLACED
+  ON_DELIVERY
+  PARTIALLY_FULFILLED
+  COMPLETED
+  CANCELLED
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  companyId       String      @map("company_id")
+  company         Company     @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  kind            OrderKind
+  number          String
+  status          OrderStatus @default(DRAFT)
+  orderDate       DateTime    @default(now()) @map("order_date")
+  partyId         String?     @map("party_id")
+  party           Party?      @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  // Party name when last saved; the party record may be renamed later.
+  partyName       String?     @map("party_name")
+  // Expected delivery / receipt day (YYYY-MM-DD in Asia/Kolkata), information only.
+  expectedDate    String?     @map("expected_date")
+  deliveryAddress String?     @map("delivery_address")
+  // Vehicle, transporter, tracking number…
+  deliveryNote    String?     @map("delivery_note")
+  notes           String?
+  subtotal        Decimal     @default(0) @db.Decimal(14, 2)
+  lineCount       Int         @default(0) @map("line_count")
+  clientRef       String?     @map("client_ref")
+  // The Sale or Purchase created when the order was completed.
+  documentId      String?     @map("document_id")
+  cancelReason    String?     @map("cancel_reason")
+  // V3.1 (0035, WH-13): purchase order — preferred "Receive into" warehouse.
+  warehouseId     String?     @map("warehouse_id")
+  version         Int         @default(1)
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+  createdById     String      @map("created_by")
+  updatedById     String?     @map("updated_by")
+
+  lines             OrderLine[]
+  events            OrderEvent[]
+  sales             Sale[]
+  purchases         Purchase[]
+  procuredForOrders OrderLine[]  @relation("OrderProcurement")
+  sets              GroupSet[]
+
+  @@unique([companyId, number])
+  @@unique([companyId, clientRef])
+  @@index([companyId, kind, status, orderDate])
+  @@index([number(ops: raw("gin_trgm_ops"))], type: Gin, map: "orders_number_trgm_idx")
+  @@map("orders")
+}
+
+model OrderLine {
+  id                String            @id @default(cuid())
+  orderId           String            @map("order_id")
+  order             Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  lineNo            Int               @map("line_no")
+  variationId       String            @map("variation_id")
+  variation         ProductVariation  @relation(fields: [variationId], references: [id], onDelete: Restrict)
+  // NUMERIC(14,3) since 0022: whole for counted items, a length for Measured ones.
+  quantity          Decimal           @db.Decimal(14, 3)
+  fulfilledQuantity Decimal           @default(0) @map("fulfilled_quantity") @db.Decimal(14, 3)
+  price             Decimal           @db.Decimal(14, 2)
+  ratePer           Int               @default(1) @map("rate_per")  // base units per rate unit: 12 = per ft on lengths in inches (0028)
+  discount          Decimal           @default(0) @db.Decimal(14, 2)
+  note              String?
+  lineTotal         Decimal           @map("line_total") @db.Decimal(14, 2)
+  // 0022: sale orders — the preferred piece to cut; purchase orders — the rolls expected.
+  pieceId           String?           @map("piece_id")
+  piece             MeasurementPiece? @relation(fields: [pieceId], references: [id], onDelete: SetNull)
+  rolls             Json?
+  linkedOrderLineId String?           @map("linked_order_line_id")
+  linkedOrderLine   OrderLine?        @relation("OrderLineProcurement", fields: [linkedOrderLineId], references: [id], onDelete: SetNull, map: "order_lines_linked_order_line_fkey")
+  procuringLines    OrderLine[]       @relation("OrderLineProcurement")
+  saleLines         SaleLine[]
+  purchaseLines     PurchaseLine[]
+  linkedOrderId     String?           @map("linked_order_id")
+  // V3.1 (0035, WH-13): sale order Take-from split [{ warehouseId, quantity }]; NULL = decide at delivery.
+  splits            Json?
+  // V3.1 (0037): grouped lines — sale order: [{ setId, changes }] (sets HELD); purchase order: sets expected.
+  sets              Json?
+  linkedOrder       Order?            @relation("OrderProcurement", fields: [linkedOrderId], references: [id], onDelete: SetNull, map: "order_lines_linked_order_fkey")
+
+  @@unique([orderId, lineNo])
+  // 0022: several lines of one Measured variation; counted items stay one line (trigger).
+  @@index([orderId, variationId])
+  @@index([variationId])
+  @@index([pieceId])
+  @@index([linkedOrderLineId])
+  @@index([linkedOrderId])
+  @@map("order_lines")
+}
+
+// Append-only status history (timeline on the order page).
+model OrderEvent {
+  id          String       @id @default(cuid())
+  orderId     String       @map("order_id")
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus  OrderStatus? @map("from_status")
+  toStatus    OrderStatus  @map("to_status")
+  note        String?
+  createdAt   DateTime     @default(now()) @map("created_at")
+  createdById String       @map("created_by")
+
+  @@index([orderId, createdAt])
+  @@map("order_events")
+}
+
+// ---------------------------------------------------------------------------
+// Measured stock (V2 plan §2, 0020). One row per physical roll or cut piece; lengths in the
+// product's base unit. For every Measured variation, SUM(remaining of ACTIVE pieces) equals
+// stock_balances.quantity (checked at commit). Pieces are never deleted; the ledger is
+// append-only and records every change with before/after.
+// ---------------------------------------------------------------------------
+
+enum PieceKind {
+  CLOSED
+  OPEN
+  CUT
+}
+
+enum PieceStatus {
+  ACTIVE
+  USED_UP
+}
+
+enum PieceAction {
+  RECEIVE
+  ADD
+  OPEN
+  CUT
+  SALE
+  SALE_VOID
+  PURCHASE_VOID
+  WRITE_OFF
+  CORRECTION
+  EDIT
+  // V3.1 (0030): piece fitted into / taken out of a set (no length change).
+  SET_ALLOCATE
+  SET_RELEASE
+  // V3.1 (0034): whole piece shifted to another warehouse / shift cancelled (no length change).
+  TRANSFER
+  TRANSFER_VOID
+}
+
+model MeasurementPiece {
+  id              String             @id @default(cuid())
+  companyId       String             @map("company_id")
+  company         Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  variationId     String             @map("variation_id")
+  variation       ProductVariation   @relation(fields: [variationId], references: [id], onDelete: Restrict)
+  // Printable, unique per company, never reused: "<Short Name>-0007". Future QR payload.
+  code            String
+  kind            PieceKind
+  status          PieceStatus        @default(ACTIVE)
+  originalLength  Decimal            @map("original_length") @db.Decimal(14, 3)
+  remainingLength Decimal            @map("remaining_length") @db.Decimal(14, 3)
+  // Set for CUT pieces: the roll it was cut from.
+  parentId        String?            @map("parent_id")
+  parent          MeasurementPiece?  @relation("PieceLineage", fields: [parentId], references: [id], onDelete: Restrict)
+  children        MeasurementPiece[] @relation("PieceLineage")
+  purchaseId      String?            @map("purchase_id")
+  purchase        Purchase?          @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  supplierId      String?            @map("supplier_id")
+  supplier        Party?             @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  unitCost        Decimal?           @map("unit_cost") @db.Decimal(14, 2)
+  supplierRollNo  String?            @map("supplier_roll_no")
+  rack            String?
+  notes           String?
+  openedAt        DateTime?          @map("opened_at")
+  openedById      String?            @map("opened_by")
+  receivedAt      DateTime           @default(now()) @map("received_at")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+  createdById     String?            @map("created_by")
+  updatedById     String?            @map("updated_by")
+
+  // V3.1 (0031): the set this piece is fitted in; NULL = free stock (pickers skip set pieces).
+  setId           String?            @map("set_id")
+  set             GroupSet?          @relation(fields: [setId], references: [id], onDelete: Restrict)
+  // Cut piece made inside a set (no parent roll); kept after it is released to free stock.
+  setOrigin       Boolean            @default(false) @map("set_origin")
+  // V3.1 (0035): where the piece is; NULL while warehousing is off. A cut piece inherits its roll's.
+  warehouseId     String?            @map("warehouse_id")
+
+  ledger     MeasurementPieceLedger[]
+  orderLines OrderLine[]
+  setParts   GroupSetPart[]
+
+  @@unique([companyId, code])
+  @@index([setId])
+  @@index([companyId, variationId, status, kind])
+  @@index([parentId])
+  @@index([purchaseId])
+  @@map("measurement_pieces")
+}
+
+model MeasurementPieceLedger {
+  id             String           @id @default(cuid())
+  companyId      String           @map("company_id")
+  company        Company          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  pieceId        String           @map("piece_id")
+  piece          MeasurementPiece @relation(fields: [pieceId], references: [id], onDelete: Restrict)
+  variationId    String           @map("variation_id")
+  action         PieceAction
+  // after = before + change (checked).
+  change         Decimal          @db.Decimal(14, 3)
+  beforeLength   Decimal          @map("before_length") @db.Decimal(14, 3)
+  afterLength    Decimal          @map("after_length") @db.Decimal(14, 3)
+  // CUT: the other piece (parent → child or child → parent).
+  relatedPieceId String?          @map("related_piece_id")
+  saleId         String?          @map("sale_id")
+  sale           Sale?            @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  purchaseId     String?          @map("purchase_id")
+  purchase       Purchase?        @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  // The sale / purchase line this row belongs to (0021: a Measured variation may repeat).
+  lineNo         Int?             @map("line_no")
+  // V3.1 (0035): the piece's warehouse at the time; TRANSFER rows also carry the destination.
+  warehouseId    String?          @map("warehouse_id")
+  toWarehouseId  String?          @map("to_warehouse_id")
+  transferId     String?          @map("transfer_id")
+  reason         String?
+  occurredAt     DateTime         @default(now()) @map("occurred_at")
+  createdById    String?          @map("created_by")
+
+  @@index([pieceId, occurredAt])
+  @@index([saleId])
+  @@index([purchaseId])
+  @@map("measurement_piece_ledger")
+}
+
+// Atomic per-company, per-prefix piece sequence counters (concurrency-safe stock ID allocation).
+// prefixKey is e.g. "{SKU}-{LENGTH}-{D-M-YY}" or "{SKU}-{LENGTH}-{D-M-YY}-C".
+model PieceCounter {
+  companyId String  @map("company_id")
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  prefixKey String  @map("prefix_key")
+  lastValue Int     @default(0) @map("last_value")
+
+  @@id([companyId, prefixKey])
+  @@map("piece_counters")
+}
+
+// ---------------------------------------------------------------------------
+// Grouped products / sets (V3.1, 0031; docs\GROUPED-PRODUCTS-V3-PLAN.md §1). Parts stay in the
+// normal stock of their own products; a set only marks them taken:
+//   free stock = stock_balances.quantity − SUM(ALLOCATED part quantity)  (deferred trigger)
+// ---------------------------------------------------------------------------
+
+enum SetStatus {
+  IN_STOCK
+  HELD // on a sale order (D23)
+  SOLD
+  CANCELLED // its purchase / opening entry was cancelled
+}
+
+enum SetSource {
+  PURCHASE
+  OPENING
+}
+
+enum PartRole {
+  MAIN
+  BY
+}
+
+enum PartStatus {
+  ALLOCATED
+  RELEASED
+  SOLD
+}
+
+enum PartChangeType {
+  REPLACE
+  ADD
+  REMOVE
+}
+
+// Grouped product → by-product link (D5, D6). No variation is fixed here.
+model GroupByproduct {
+  id          String       @id @default(cuid())
+  companyId   String       @map("company_id")
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  groupId     String       @map("group_id")
+  group       ProductGroup @relation("GroupByproductGroup", fields: [groupId], references: [id], onDelete: Restrict)
+  productId   String       @map("product_id")
+  product     ProductGroup @relation("GroupByproductProduct", fields: [productId], references: [id], onDelete: Restrict)
+  required    Boolean      @default(true)
+  sortOrder   Int          @default(0) @map("sort_order")
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  createdById String?      @map("created_by")
+
+  parts GroupSetPart[]
+
+  @@unique([groupId, productId])
+  @@index([productId])
+  @@map("group_byproducts")
+}
+
+// One physical set; code fixed for life (D17).
+model GroupSet {
+  id             String       @id @default(cuid())
+  companyId      String       @map("company_id")
+  company        Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  code           String
+  groupId        String       @map("group_id")
+  group          ProductGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  warehouseId    String?      @map("warehouse_id")
+  status         SetStatus    @default(IN_STOCK)
+  source         SetSource
+  purchaseId     String?      @map("purchase_id")
+  purchase       Purchase?    @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  purchaseLineNo Int?         @map("purchase_line_no")
+  rate           Decimal      @default(0) @db.Decimal(14, 2)
+  orderId        String?      @map("order_id")
+  order          Order?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  orderLineNo    Int?         @map("order_line_no")
+  saleId         String?      @map("sale_id")
+  sale           Sale?        @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  saleLineNo     Int?         @map("sale_line_no")
+  notes          String?
+  version        Int          @default(1)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at")
+  createdById    String?      @map("created_by")
+  updatedById    String?      @map("updated_by")
+
+  parts   GroupSetPart[]
+  changes GroupSetPartChange[]
+  pieces  MeasurementPiece[]
+
+  @@unique([companyId, code])
+  @@index([companyId, groupId, status])
+  @@index([purchaseId])
+  @@index([saleId])
+  @@index([orderId])
+  @@map("group_sets")
+}
+
+model GroupSetPart {
+  id          String            @id @default(cuid())
+  companyId   String            @map("company_id")
+  company     Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  setId       String            @map("set_id")
+  set         GroupSet          @relation(fields: [setId], references: [id], onDelete: Restrict)
+  role        PartRole
+  byproductId String?           @map("byproduct_id")
+  byproduct   GroupByproduct?   @relation(fields: [byproductId], references: [id], onDelete: Restrict)
+  variationId String            @map("variation_id")
+  variation   ProductVariation  @relation(fields: [variationId], references: [id], onDelete: Restrict)
+  pieceId     String?           @map("piece_id")
+  piece       MeasurementPiece? @relation(fields: [pieceId], references: [id], onDelete: Restrict)
+  // 1 for counted parts; the length for a measured part.
+  quantity    Decimal           @db.Decimal(14, 3)
+  status      PartStatus        @default(ALLOCATED)
+  allocatedAt DateTime          @default(now()) @map("allocated_at")
+  releasedAt  DateTime?         @map("released_at")
+
+  @@index([setId])
+  @@index([variationId, status])
+  @@map("group_set_parts")
+}
+
+// Append-only history of part changes made in a sale (D10, spec §10).
+model GroupSetPartChange {
+  id               String         @id @default(cuid())
+  companyId        String         @map("company_id")
+  company          Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  setId            String         @map("set_id")
+  set              GroupSet       @relation(fields: [setId], references: [id], onDelete: Restrict)
+  saleId           String         @map("sale_id")
+  sale             Sale           @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  changeType       PartChangeType @map("change_type")
+  oldPartId        String?        @map("old_part_id")
+  newPartId        String?        @map("new_part_id")
+  oldPieceId       String?        @map("old_piece_id")
+  newSourcePieceId String?        @map("new_source_piece_id")
+  reason           String?
+  createdAt        DateTime       @default(now()) @map("created_at")
+  createdById      String?        @map("created_by")
+
+  @@index([setId])
+  @@index([saleId])
+  @@map("group_set_part_changes")
+}

@@ -1,0 +1,2 @@
+ALTER TABLE "parties"
+  ADD COLUMN "credit_score" INTEGER NOT NULL DEFAULT 0;
