@@ -16,7 +16,7 @@ changed, and a fix made once can be merged into every line that needs it.
 ## Folder layout (the same for every version)
 
 ```
-rs-inventory\                    <- the only inventory repo (GitHub: rs-inventory, public)
+rs-inventory\                    <- the only inventory repo (GitHub: gitansh6126/measurement-inventory, public)
   VERSION                        <- 3.1.0 now; must equal the release tag (CI checks it)
   README.md                      <- shop install / update guide
   SETUP-FIRST-TIME.bat  START-SHOP.bat  START-DEMO.bat  STOP.bat  UPDATE.bat  BACKUP-NOW.bat

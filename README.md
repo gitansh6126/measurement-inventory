@@ -28,7 +28,7 @@ user environment variable `RS_DATA_ROOT` before the first setup.
    (or download it from https://git-scm.com/download/win). Close and reopen PowerShell.
 2. Download the program:
    ```
-   git clone https://github.com/<owner>/rs-inventory.git C:\RS-Inventory
+   git clone https://github.com/gitansh6126/measurement-inventory.git C:\RS-Inventory
    ```
 3. Open `C:\RS-Inventory` and double-click **`SETUP-FIRST-TIME.bat`**.
    It installs Node.js and PostgreSQL when they are missing, creates the databases and the
