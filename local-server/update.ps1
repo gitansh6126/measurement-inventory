@@ -99,7 +99,7 @@ try {
     $global:LASTEXITCODE = 0
     & "$PSScriptRoot\backup.ps1" -Env $n
     # 2 = only the second copy (BACKUP_COPY_DIR) is missing / failed; the local backup is there.
-    if ($LASTEXITCODE -notin 0, 2) { throw "Backup of $n failed (see above), so nothing was updated. Start the app again with the Shop shortcut." }
+    if ($LASTEXITCODE -notin 0, 2) { throw "Backup of $n failed (see above), so nothing was updated. Start the app again with the Start Shop shortcut." }
     if ($LASTEXITCODE -eq 2) { Write-Host "[!] $n backup has no second copy (BACKUP_COPY_DIR). The local backup is fine; continuing." -ForegroundColor Yellow }
     $backups[$n] = Get-NewestBackup $n
     Write-Host "    $n backup: $($backups[$n].FullName)"
@@ -117,10 +117,16 @@ try {
     & "$PSScriptRoot\build.ps1" -Env all
 
     Step "6/6 Starting"
-    $first = if ("client" -in $envs) { "client" } else { "demo" }
-    $global:LASTEXITCODE = 0
-    & "$PSScriptRoot\start.ps1" -Env $first -Prod
-    if ($LASTEXITCODE -ne 0) { throw "The new version did not start." }
+    # Real company and demo, as the Start Shop shortcut does. Only the real company not
+    # starting is a failed update; a demo that does not start only warns.
+    foreach ($n in $envs) {
+      $global:LASTEXITCODE = 0
+      & "$PSScriptRoot\start.ps1" -Env $n -Prod -NoBrowser
+      if ($LASTEXITCODE -ne 0) {
+        if ($n -eq "client" -or $envs.Count -eq 1) { throw "The new version did not start." }
+        Write-Host "[!] The demo company did not start; the real company is fine." -ForegroundColor Yellow
+      }
+    }
   } catch {
     $why = $_.Exception.Message
     Write-Host ""
@@ -145,7 +151,7 @@ try {
       Install-Packages
       & "$PSScriptRoot\build.ps1" -Env all
     }
-    & "$PSScriptRoot\start.ps1" -Env $(if ("client" -in $envs) { "client" } else { "demo" }) -Prod
+    foreach ($n in $envs) { & "$PSScriptRoot\start.ps1" -Env $n -Prod -NoBrowser }
     Write-History "ROLLED BACK $prevName (update to $target failed: $why)"
     Write-Host ""
     Write-Host "[!] The update failed and $prevName is running again. Send $LogDir\update-$stamp.log to the developer." -ForegroundColor Red

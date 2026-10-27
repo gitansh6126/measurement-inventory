@@ -10,7 +10,7 @@
 #   4. fills the demo company with sample data
 #   5. asks for the real company's name and first admin (skipped with -SkipAdmin, used when
 #      the shop's V2 data is copied in by upgrade-from-v2.ps1: V2's users come with it)
-#   6. puts SHOP / DEMO / STOP / UPDATE / BACKUP shortcuts on the desktop (create-shortcuts.ps1)
+#   6. puts START SHOP / STOP SERVER / UPDATE on the desktop + auto start at sign-in (create-shortcuts.ps1)
 # Safe to run again: existing env files, databases and data are kept. V2 is never touched.
 # Do not move this folder or the data folder after setup (env files hold absolute paths).
 param(
@@ -172,7 +172,7 @@ if ("client" -in $names -and -not $SkipAdmin) {
       if ($LASTEXITCODE -ne 0) { throw "Creating the admin failed ($LASTEXITCODE)" }
     } finally { Remove-Item Env:BOOTSTRAP_ADMIN_PASSWORD -ErrorAction SilentlyContinue; Pop-Location }
   }
-} else { Step "5/6 First admin skipped (V2 data and users are copied by UPGRADE-FROM-V2.bat)" }
+} else { Step "5/6 First admin skipped (V2 data and users are copied by archive\local-server\UPGRADE-FROM-V2.bat)" }
 
 if (-not $NoShortcuts) {
   Step "6/6 Desktop shortcuts"
@@ -183,8 +183,9 @@ Write-Host ""
 Write-Host "=====================================================================" -ForegroundColor Green
 Write-Host ("  SETUP FINISHED in {0:N0} minutes" -f ((Get-Date) - $started).TotalMinutes) -ForegroundColor Green
 Write-Host "=====================================================================" -ForegroundColor Green
-Write-Host "  Start:   '$AppTitle - Shop' on the desktop (START-SHOP.bat)  - port 3210"
-Write-Host "  Demo:    '$AppTitle - Demo' (START-DEMO.bat) - port 3310, Admin button on the login page"
+Write-Host "  Start:   '$AppTitle - Start Shop' on the desktop (START-SHOP.bat) - real company :3210 + demo :3310"
+Write-Host "           (also runs by itself at every Windows sign-in; 'Switch to Demo company' is inside the app)"
+Write-Host "  Stop:    '$AppTitle - Stop Server' (STOP.bat)"
 Write-Host "  Update:  '$AppTitle - Update' (UPDATE.bat) whenever the developer says a new version is out"
 Write-Host "  Then set BACKUP_COPY_DIR in $(Get-EnvFile 'client') (README.md)"
 Write-Host ""

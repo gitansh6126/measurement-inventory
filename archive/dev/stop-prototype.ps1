@@ -1,6 +1,6 @@
 # Stops the RS Inventory V3.1 Standalone UI Prototype web server
 $ErrorActionPreference = "Continue"
-. (Join-Path (Split-Path $PSScriptRoot -Parent) "local-server\common.ps1")
+. (Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) "local-server\common.ps1")
 $pidFile = Join-Path $RunDir "prototype.json"
 
 if (Test-Path $pidFile) {

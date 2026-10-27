@@ -1,6 +1,6 @@
 # Copies the shop's V2 data (real company) into V3.1 and upgrades it to the V3.1 database.
 # V2 is only READ (pg_dump); it keeps running and keeps its own data.
-# Easiest: double-click UPGRADE-FROM-V2.bat. Or:
+# Easiest: double-click archive\local-server\UPGRADE-FROM-V2.bat. Or:
 #   powershell -ExecutionPolicy Bypass -File upgrade-from-v2.ps1 [-V2Folder C:\RS-Inventory-V2] [-Replace] [-NoSmoke]
 #
 #  1. reads V2's client.env (database + images folder) and V3.1's client.env
@@ -69,7 +69,7 @@ try {
   $hasTables = Q $v31Url "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users'"
   $v31Users = if ($hasTables -eq "1") { [int](Q $v31Url "SELECT count(*) FROM users") } else { 0 }
   if ($v31Users -gt 0 -and -not $Replace) {
-    throw "V3.1 already has $v31Users user(s) (an earlier copy or typed data). To replace it with a fresh copy of V2, run UPGRADE-FROM-V2.bat again and answer Y (or -Replace)."
+    throw "V3.1 already has $v31Users user(s) (an earlier copy or typed data). To replace it with a fresh copy of V2, run archive\local-server\UPGRADE-FROM-V2.bat again and answer Y (or -Replace)."
   }
   if ($v31Users -gt 0) {
     Write-Host "    V3.1 has data: backing it up before replacing it..."

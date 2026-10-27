@@ -51,13 +51,17 @@ user environment variable `RS_DATA_ROOT` before the first setup.
 
 | Shortcut | What it does |
 |---|---|
-| **RS Inventory - Shop** | Starts the real company: `http://<this PC's IP>:3210` (the window prints the address) |
-| **RS Inventory - Demo** | Starts the demo company (sample data, *Admin* button on the login page): port 3310 |
-| **RS Inventory - Stop** | Stops both |
+| **RS Inventory - Start Shop** | Starts the real company (`http://<this PC's IP>:3210`) **and** the demo company (port 3310) for every phone / PC on the shop Wi-Fi. The window prints the addresses. Inside the app, **Switch to Demo company** (top strip) opens the demo |
+| **RS Inventory - Stop Server** | Stops both |
 | **RS Inventory - Update** | Installs the newest release (see below) |
-| **RS Inventory - Backup now** | Backup of the real company now (also automatic every night at 20:45) |
 
-Closing the black window does not stop the app; use **Stop**.
+**Auto start:** the same start runs by itself at every Windows sign-in (shortcut
+"RS Inventory - Auto start" in the Windows Startup folder; it opens minimized in the taskbar).
+To switch it off: `powershell -ExecutionPolicy Bypass -File C:\RS-Inventory\local-server\create-shortcuts.ps1 -NoAutoStart`.
+
+Closing the black window does not stop the app; use **Stop Server**. The backup still runs by
+itself every night at 20:45 and before every update. Other launchers (demo only, backup now,
+smoke test, V2 copy, developer tools) are in [`archive\`](archive/README.md).
 
 ## Bring back the shop's data from an in-app backup
 
@@ -104,7 +108,7 @@ there; the restore then replaces the company with the ZIP's data.
 
 | Problem | Fix |
 |---|---|
-| Phone cannot open `:3210` | Same Wi-Fi? Start **Shop** again and click **Yes** (adds the firewall rule). |
+| Phone cannot open `:3210` | Same Wi-Fi? Double-click **Start Shop** again and click **Yes** (adds the firewall rule). |
 | App "did not start" | The window shows the last log lines; all logs are in `C:\RS-Inventory-Data\logs\`. |
 | Update says it cannot reach GitHub | Check the internet and try again; nothing was changed. |
 | Backup FAILED | Set `BACKUP_COPY_DIR` (install step 4). |
@@ -114,8 +118,9 @@ Never forward ports 3210 / 4210 / 3310 / 4310 on the router.
 
 ## Other tools
 
-- `local-server\UPGRADE-FROM-V2.bat`: copies the real company from an old V2 install
+All in [`archive\`](archive/README.md) (still working, just off the desktop):
+- `archive\local-server\UPGRADE-FROM-V2.bat`: copies the real company from an old V2 install
   (`C:\RS-Inventory-V2`, read only).
-- `local-server\TEST-APP.bat`: read-only smoke test of the running app.
-- `local-server\install-autostart.ps1 -StartAtLogon`: starts the shop app at Windows sign-in.
-- `dev\`: developer launchers (hot reload, UI prototype); not for the shop.
+- `archive\local-server\TEST-APP.bat`: read-only smoke test of the running app.
+- `archive\START-DEMO.bat` / `archive\BACKUP-NOW.bat`: demo only / manual backup now.
+- `archive\dev\`: developer launchers (hot reload, UI prototype); not for the shop.
