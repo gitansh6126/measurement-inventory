@@ -123,6 +123,20 @@ nothing in the existing routes or screens changes, and the shop build is untouch
 5. Unit tests for the path split (`/api/...` → API, `/`, `/_next/...` → Next) and a local run
    of `start:hosting` against a local `*_demo` database before uploading.
 
+### 6.2a Local check (2026-10-29, worktree of `hosting/hostinger-business`)
+
+- `pnpm install --frozen-lockfile`, `next build` (default `.next`, no `API_INTERNAL_URL`): passed.
+- `node --env-file=<demo env, PORT=3610> hosting/start.mjs` against local `rs_v31_demo`:
+  `/api/health`, `/api/health/ready`, `/api/version` 200; unknown `/api/nope` gets the API's JSON
+  404; `/login` served by Next; Demo Admin sign-in (POST passes the same-origin check, cookie
+  set), Products page loads with demo data.
+- First run found a bug: under tsx, `next`'s default import is `createServer` itself, not
+  `.default`. Fixed in `app\hosting\server.ts` (accepts both).
+- 10 parallel clients × 20 requests (Stock In list, categories, warehouses, me, login page):
+  200 requests, 0 errors, median 31 ms, p95 1.07 s, max 1.38 s with `connection_limit=3`.
+  The slow ones are Stock In list queries waiting for a DB connection; use `connection_limit=5`
+  on Hostinger (Neon free allows it).
+
 ### 6.3 Hostinger steps
 
 1. hPanel → Websites → Add website → **Node.js app**; Node 22; subdomain `inventory.<domain>`.

@@ -17,8 +17,11 @@ const env = getEnv(); // throws (and exits non-zero) on invalid configuration
 await bootstrapAdmin(env);
 const api = createApp(env);
 
-// next is CommonJS: from ESM the default import is module.exports, whose .default is createServer.
-const createNext = nextModule.default;
+// next is CommonJS: the default import is module.exports. Its types say createServer sits on
+// .default, but at runtime under tsx module.exports is createServer itself, so accept both.
+type CreateNext = typeof nextModule.default;
+const loaded = nextModule as unknown as CreateNext & { default?: CreateNext };
+const createNext: CreateNext = typeof loaded.default === "function" ? loaded.default : loaded;
 const web = createNext({ dev: false, dir: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../web") });
 await web.prepare();
 const handleWeb = web.getRequestHandler();
