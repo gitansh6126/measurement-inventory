@@ -7,11 +7,11 @@ import { BottomNav } from "@/components/BottomNav";
 import { CartProvider } from "@/components/CartContext";
 import { CartPill } from "@/components/CartPill";
 import { DisplayPanel } from "@/components/DisplayPanel";
-import { ArrowInIcon, BookIcon, BoxesIcon, BuildingIcon, CartIcon, CloseIcon, CogIcon, DatabaseIcon, InvoiceIcon, LayersIcon, OrderIcon, PackageIcon, QuoteIcon, ShiftIcon, SlidersIcon, TagIcon, TruckIcon, UsersIcon, WarehouseIcon } from "@/components/icons";
+import { ArrowInIcon, BookIcon, BoxesIcon, BuildingIcon, CartIcon, CloseIcon, CogIcon, DatabaseIcon, InvoiceIcon, LayersIcon, LogOutIcon, OrderIcon, PackageIcon, QuoteIcon, ShiftIcon, SlidersIcon, TagIcon, TruckIcon, UsersIcon, WarehouseIcon } from "@/components/icons";
 import { MeContext } from "@/components/MeContext";
 import { TableStackLabels } from "@/components/TableStackLabels";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { ApiError, api, type Me } from "@/lib/api";
+import { ApiError, api, type Me, type VersionInfo } from "@/lib/api";
 import { queryClient } from "@/lib/useApi";
 import { LengthScopeProvider } from "@/lib/lengthView";
 
@@ -88,6 +88,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [me, setMe] = useState<Me | null>(null);
+  const [version, setVersion] = useState<VersionInfo | null>(null);
   const [error, setError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
@@ -98,6 +99,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       if (err instanceof ApiError && err.status === 401) router.replace("/login");
       else setError("Could not load your account. Check the connection and reload.");
     });
+    api<VersionInfo>("/version").then(setVersion, () => undefined);
   }, [router]);
 
   useEffect(() => setMenuOpen(false), [pathname]);
@@ -140,11 +142,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <MeContext.Provider value={me}>
       <CartProvider>
       <LengthScopeProvider scope={lengthScope}>
-        <div className="min-h-[calc(100vh-28px)] lg:flex">
+        <div className="min-h-screen lg:flex">
           {/* Reserves the collapsed sidebar width on large screens; the sidebar is fixed and widens over the page. */}
           <div className="no-print hidden w-16 shrink-0 lg:block" aria-hidden />
           <aside
-            className={`group/nav no-print fixed bottom-0 left-0 top-7 z-40 flex w-60 flex-col overflow-hidden bg-slate-900 text-slate-300 transition-[width,transform,box-shadow] duration-200 ease-out lg:w-16 lg:translate-x-0 lg:hover:w-60 lg:hover:shadow-2xl lg:hover:delay-100 lg:has-[:focus-visible]:w-60 lg:has-[:focus-visible]:shadow-2xl ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
+            className={`group/nav no-print fixed bottom-0 left-0 top-0 z-40 flex w-60 flex-col overflow-hidden bg-slate-900 text-slate-300 transition-[width,transform,box-shadow] duration-200 ease-out lg:w-16 lg:translate-x-0 lg:hover:w-60 lg:hover:shadow-2xl lg:hover:delay-100 lg:has-[:focus-visible]:w-60 lg:has-[:focus-visible]:shadow-2xl ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
           >
             <div className="flex items-center justify-between px-3.5 py-3 shrink-0">
               <div className="flex items-center gap-3">
@@ -199,10 +201,11 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 </div>
               ))}
             </nav>
-            {/* Display preferences: text size, spacing (components/DisplayPanel.tsx). */}
-            <div className="border-t border-slate-800/80 px-2 py-2 shrink-0">
+            {/* Display preferences & account / logout / switch company */}
+            <div className="border-t border-slate-800/80 px-2 py-2 shrink-0 space-y-1">
               <div className="relative group/item flex items-center justify-start lg:justify-center">
                 <button
+                  type="button"
                   onClick={() => {
                     setMenuOpen(false);
                     setDisplayOpen((o) => !o);
@@ -220,29 +223,76 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                   Display
                 </div>
               </div>
+
+              {/* Switch Demo/Real company (if switchUrl provided) */}
+              {version?.switchUrl && (
+                <div className="relative group/item flex items-center justify-start lg:justify-center">
+                  <a
+                    href={version.switchUrl}
+                    title={version.environment === "CLIENT_READY" ? "Switch to Demo company" : "Switch to Real company"}
+                    className="flex items-center gap-3 w-full h-9 rounded-xl text-sm transition-all text-amber-400 hover:bg-slate-800/80 hover:text-amber-300 px-2.5 lg:px-0 justify-start lg:justify-center lg:group-hover/nav:justify-start lg:group-hover/nav:px-2.5 lg:group-has-[:focus-visible]/nav:justify-start lg:group-has-[:focus-visible]/nav:px-2.5"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center text-amber-400">
+                      <ShiftIcon className={ic} />
+                    </span>
+                    <span className="whitespace-nowrap transition-opacity inline-block lg:hidden lg:group-hover/nav:inline-block lg:group-hover/nav:delay-100 lg:group-has-[:focus-visible]/nav:inline-block text-xs font-medium">
+                      {version.environment === "CLIENT_READY" ? "Switch to Demo" : "Switch to Real"}
+                    </span>
+                  </a>
+                  <div className="pointer-events-none absolute left-14 z-50 hidden rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white shadow-xl border border-slate-700 whitespace-nowrap lg:group-hover/item:block lg:group-hover/nav:hidden">
+                    {version.environment === "CLIENT_READY" ? "Switch to Demo company" : "Switch to Real company"}
+                  </div>
+                </div>
+              )}
+
+              {/* User profile (who is logged in) */}
+              <div className="relative group/item flex items-center justify-start lg:justify-center pt-1 border-t border-slate-800/60">
+                <div
+                  className="flex items-center gap-3 w-full h-9 rounded-xl text-sm px-2.5 lg:px-0 justify-start lg:justify-center lg:group-hover/nav:justify-start lg:group-hover/nav:px-2.5 lg:group-has-[:focus-visible]/nav:justify-start lg:group-has-[:focus-visible]/nav:px-2.5"
+                >
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-600/30 text-xs font-bold text-brand-300">
+                    {me.user.name[0]?.toUpperCase() ?? "U"}
+                  </span>
+                  <div className="min-w-0 flex-1 whitespace-nowrap transition-opacity inline-block lg:hidden lg:group-hover/nav:inline-block lg:group-hover/nav:delay-100 lg:group-has-[:focus-visible]/nav:inline-block">
+                    <div className="truncate text-xs font-medium text-slate-200">{me.user.name}</div>
+                    <div className="text-[10px] uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                      <span>{me.user.role.replace("_", " ")}</span>
+                      {version?.environment === "DEMO" && (
+                        <span className="rounded bg-amber-500/20 px-1 text-[9px] font-semibold text-amber-400 border border-amber-500/30">DEMO</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="pointer-events-none absolute left-14 z-50 hidden rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white shadow-xl border border-slate-700 whitespace-nowrap lg:group-hover/item:block lg:group-hover/nav:hidden">
+                  {me.user.name} ({me.user.role.replace("_", " ")})
+                </div>
+              </div>
+
+              {/* Logout button */}
+              <div className="relative group/item flex items-center justify-start lg:justify-center">
+                <button
+                  type="button"
+                  onClick={logout}
+                  title="Logout"
+                  className="flex items-center gap-3 w-full h-9 rounded-xl text-sm transition-all text-slate-400 hover:bg-rose-950/40 hover:text-rose-300 px-2.5 lg:px-0 justify-start lg:justify-center lg:group-hover/nav:justify-start lg:group-hover/nav:px-2.5 lg:group-has-[:focus-visible]/nav:justify-start lg:group-has-[:focus-visible]/nav:px-2.5"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center">
+                    <LogOutIcon className={ic} />
+                  </span>
+                  <span className="whitespace-nowrap transition-opacity inline-block lg:hidden lg:group-hover/nav:inline-block lg:group-hover/nav:delay-100 lg:group-has-[:focus-visible]/nav:inline-block text-xs font-medium">
+                    Logout
+                  </span>
+                </button>
+                <div className="pointer-events-none absolute left-14 z-50 hidden rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white shadow-xl border border-slate-700 whitespace-nowrap lg:group-hover/item:block lg:group-hover/nav:hidden">
+                  Logout
+                </div>
+              </div>
             </div>
           </aside>
           {displayOpen && <DisplayPanel onClose={closeDisplay} />}
           {menuOpen && <div className="no-print fixed inset-0 z-30 bg-slate-900/40 lg:hidden" onClick={() => setMenuOpen(false)} />}
 
           <div className="min-w-0 flex-1">
-            <header className="no-print sticky top-7 z-30 flex h-9 items-center justify-between border-b border-slate-200 bg-white/90 px-4 text-xs backdrop-blur">
-              <button className="-ml-1 rounded p-1 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setMenuOpen(true)} aria-label="Open menu">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                  <path d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-              <div className="hidden text-slate-500 lg:block">
-                {new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-100 text-[10px] font-semibold text-brand-700">{me.user.name[0]?.toUpperCase()}</span>
-                <span className="font-medium text-slate-800">{me.user.name}</span>
-                <span className="uppercase text-slate-400">{me.user.role.replace("_", " ")}</span>
-                <span className="text-slate-300">|</span>
-                <button onClick={logout} className="font-medium text-slate-600 hover:text-brand-600">Logout</button>
-              </div>
-            </header>
             <main className="w-full px-4 pb-24 pt-4 sm:px-6">{children}</main>
           </div>
         </div>

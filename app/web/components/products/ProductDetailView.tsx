@@ -147,7 +147,7 @@ export function ProductDetailView({ productId, back }: { productId: string; back
   return (
     <div className="grid gap-4">
       {/* h-0 + -mb-4 keep the page from moving when the bar shows; it overlays the content. */}
-      <div className="no-print sticky top-16 z-20 -mb-4 h-0">
+      <div className="no-print sticky top-0 z-20 -mb-4 h-0">
         <div
           aria-hidden={!compact}
           className={`-mx-4 flex items-center gap-3 border-b border-slate-200 bg-white/95 px-4 py-2 shadow-sm backdrop-blur transition duration-200 sm:mx-0 sm:rounded-b-xl sm:border-x ${compact ? "translate-y-0 opacity-100" : "pointer-events-none -translate-y-2 opacity-0"}`}

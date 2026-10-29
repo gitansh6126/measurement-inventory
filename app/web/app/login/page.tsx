@@ -100,7 +100,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-[calc(100vh-28px)] place-items-center p-4">
+    <main className="grid min-h-screen place-items-center p-4">
       <form className="card grid w-full max-w-sm gap-4 p-6" method="post" onSubmit={onSubmit} aria-busy={busy}>
         <div>
           <h1 className="text-2xl font-bold text-slate-900">RS Machinery</h1>

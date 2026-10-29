@@ -1,0 +1,25 @@
+# Local PostgreSQL for developers (not used on the shop PC). Started by `npm run dev:setup` in app\.
+# Creates rs_v31_demo (the Demo company) and rs_v31_test (integration tests only).
+# Host port 5433 so it never clashes with a PostgreSQL already installed on 5432.
+# The password is a throwaway for this container only; never reuse it anywhere real.
+services:
+  db:
+    image: postgres:18
+    container_name: rs-inventory-dev-db
+    environment:
+      POSTGRES_USER: rs_v3
+      POSTGRES_PASSWORD: rs_dev_only
+      POSTGRES_DB: rs_v31_demo
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - rs_inventory_dev_db:/var/lib/postgresql
+      - ./dev/docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rs_v3 -d rs_v31_demo"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  rs_inventory_dev_db:

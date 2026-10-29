@@ -6,6 +6,7 @@ to the internet.
 
 Current release: see [`VERSION`](VERSION) and the git tags (`v3.1.0`, ...).
 For developers:
+- [DEVELOPER-SETUP.md](DEVELOPER-SETUP.md): clone, run with demo data, and test (start here)
 - [docs/VERSIONING.md](docs/VERSIONING.md): branches, releases, and how V3.2 / V4 are built
 - [docs/CI-CD.md](docs/CI-CD.md): env files, databases, the GitHub pipeline, and how an update reaches the shop
 

@@ -457,8 +457,8 @@ export function SaleSetsModal({
       const v = b.variations.find((x) => x.id === w.variationId);
       const len = b.productType === "measured" ? (w.lengthMilli ?? 0) / 1000 : 0;
       if (v && (b.productType !== "measured" || len > 0)) {
-        const partMin = Number(v.minSalePrice) > 0 ? v.minSalePrice : v.salePrice;
-        if (Number(v.minSalePrice) > 0) hasMin = true;
+        const partMin = v.minSalePrice && Number(v.minSalePrice) > 0 ? v.minSalePrice : v.salePrice;
+        if (v.minSalePrice && Number(v.minSalePrice) > 0) hasMin = true;
         p += partPaise(partMin, len, b.lengthUnit, b.productType === "measured");
       }
     }

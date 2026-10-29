@@ -84,7 +84,7 @@ export function DisplayPanel({ onClose }: { onClose: () => void }) {
       aria-label="Display settings"
       onPointerEnter={cancelHide}
       onPointerLeave={onLeave}
-      className="no-print fixed bottom-0 left-0 top-7 z-50 flex w-72 max-w-[100vw] animate-fade-in flex-col border-r border-slate-200 bg-white shadow-2xl outline-none lg:left-16"
+      className="no-print fixed bottom-0 left-0 top-0 z-50 flex w-72 max-w-[100vw] animate-fade-in flex-col border-r border-slate-200 bg-white shadow-2xl outline-none lg:left-16"
     >
       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
         <div>

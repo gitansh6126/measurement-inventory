@@ -209,11 +209,10 @@
     box-shadow: none;
   }
 
-  /* Page-level tables scrolling within the main viewport sit below the fixed/sticky app headers:
-     EnvBanner (28px / h-7) + Header navbar (36px / h-9) = 64px = 4rem (top-16) */
+  /* Page-level tables scrolling within the main viewport stick to top (0) */
   main .card > .table:not(.table-sticky-0) > thead > tr > th,
   .table-page th {
-    top: 4rem; /* 64px offset for sticky page headers */
+    top: 0;
   }
 
   /* Tables inside modals, drawers, or explicit scroll containers stick to container top (0) */

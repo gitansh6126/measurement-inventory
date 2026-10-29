@@ -27,7 +27,7 @@ export function ShopLayout({
     // which pushed the product grid past the right edge on phones.
     // Phones: the rail becomes a sticky horizontal strip above the products (full-width cards).
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-4">
-      <div className="sticky top-16 z-20 -mx-4 min-w-0 self-start bg-slate-50/95 px-4 backdrop-blur sm:mx-0 sm:max-h-[calc(100vh-5rem)] sm:overflow-y-auto sm:bg-transparent sm:px-0 sm:backdrop-blur-none">{rail}</div>
+      <div className="sticky top-0 z-20 -mx-4 min-w-0 self-start bg-slate-50/95 px-4 backdrop-blur sm:mx-0 sm:max-h-[calc(100vh-1rem)] sm:overflow-y-auto sm:bg-transparent sm:px-0 sm:backdrop-blur-none">{rail}</div>
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-3">
         {crumbs && <div className="text-xs text-slate-500">{crumbs}</div>}
         {(title || count !== undefined) && (
