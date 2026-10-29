@@ -8,6 +8,7 @@ import { ProductThumb } from "@/components/ProductThumb";
 import { PriceHistoryModal } from "@/components/vendor/PriceHistoryModal";
 import type { RailProduct } from "@/components/vendor/ProductRail";
 import { setTypeName, useSetTypes } from "@/components/sets/SetTypes";
+import { formatContentItem } from "@/components/sets/SetContents";
 import { variationText } from "@/components/sets/SetSheet";
 import { api } from "@/lib/api";
 import { dateTime, money } from "@/lib/format";
@@ -311,12 +312,21 @@ export function GroupedSetPricing({
 
                   {/* Components */}
                   <div className="flex flex-wrap gap-1.5 mb-3">
-                    {t.contents.map((c) => (
-                      <span key={c.name} className="inline-flex items-center gap-1 text-[11px] bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md text-slate-700">
-                        <span className="text-slate-400 font-semibold">{c.name}:</span>
-                        <span className="font-semibold text-slate-900">{c.value}</span>
-                      </span>
-                    ))}
+                    {t.contents.map((c) => {
+                      const { label, displayValue, isFitted, fullTitle } = formatContentItem(c);
+                      return (
+                        <span key={c.name} className="inline-flex items-center gap-1 text-[11px] bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md text-slate-700" title={fullTitle}>
+                          {isFitted ? (
+                            <span className="font-semibold text-slate-900">{displayValue}</span>
+                          ) : (
+                            <>
+                              <span className="text-slate-500 font-medium">{label}:</span>
+                              <span className="font-semibold text-slate-900">{displayValue}</span>
+                            </>
+                          )}
+                        </span>
+                      );
+                    })}
                   </div>
 
                   {/* Top Quoting Suppliers for this preset */}

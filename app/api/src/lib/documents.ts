@@ -10,7 +10,7 @@ import { lockOrderOfDocument, syncNote, syncOrderFromDocuments, type OrderSyncRe
 import { recalculateProductActivityForSale, recordProductSale } from "./product-activity.js";
 import { cancelPurchaseSets, createSets, prepareSaleSets, restoreSaleSets, saleSetInput, sellSets, setInput, type SaleSetLine } from "./sets.js";
 import { money, recordMovements, type MovementInput } from "./stock.js";
-import { isWarehousingOn, requireWarehouse, resolveWarehouse, splitsInput, validateSplits } from "./warehouses.js";
+import { isWarehousingOn, requireWarehouse, requireWarehouses, resolveWarehouse, splitsInput, validateSplits } from "./warehouses.js";
 import { upsertRate } from "./vendor-prices.js";
 
 // Sales and purchases share one engine (D18). References: main v2 completeSale/completePurchase
@@ -217,8 +217,9 @@ export async function writeDocument(
   const warehousing = await isWarehousingOn(tx, companyId);
   if (!warehousing && body.lines.some((l) => l.splits)) throw new AppError(400, "WAREHOUSING_OFF", "Warehousing is not set up yet");
   const header = cfg.kind === "purchase" ? await resolveWarehouse(tx, companyId, body.warehouseId) : undefined;
-  for (const l of body.lines) {
-    for (const s of l.splits ?? []) await requireWarehouse(tx, companyId, s.warehouseId, { active: cfg.kind === "purchase" });
+  const splitWarehouseIds = body.lines.flatMap((l) => (l.splits ?? []).map((s) => s.warehouseId));
+  if (splitWarehouseIds.length) {
+    await requireWarehouses(tx, companyId, splitWarehouseIds, { active: cfg.kind === "purchase" });
   }
   const variations = await tx.productVariation.findMany({
     where: { companyId, id: { in: ids } },

@@ -13,7 +13,8 @@ import { useApi } from "@/lib/useApi";
 import { useEntryUnits } from "@/lib/useEntryUnits";
 import { useWarehouses } from "@/lib/useWarehouses";
 import { partValue, variationText } from "./SetSheet";
-import { fmtLen } from "@/lib/measure";
+import { formatContentItem } from "./SetContents";
+import { fmtLen, fmtSellRate } from "@/lib/measure";
 import { useLengthView } from "@/lib/lengthView";
 
 // V3.1 sale cart (docs\GROUPED-PRODUCTS-V3-PLAN.md §5, docs\SET-BUILD-IN-SALE-PLAN.md), two steps:
@@ -85,6 +86,7 @@ const planPartsOf = (s: GroupSet) =>
 export function SaleSetsModal({
   productId,
   initial,
+  initialPrice,
   excludeSetIds = [],
   orderId,
   onClose,
@@ -95,6 +97,8 @@ export function SaleSetsModal({
   orderId?: string;
   /** The picks of the cart line(s) being edited: their combination is filled in. */
   initial?: SaleSetPick[];
+  /** Price of the cart line being edited, if any. */
+  initialPrice?: string;
   /** Sets already on other cart lines. */
   excludeSetIds?: string[];
   onClose: () => void;
@@ -102,7 +106,7 @@ export function SaleSetsModal({
 }) {
   useLengthView();
   const { data, error: loadError } = useApi<{ product: Product }>(`/products/${productId}`);
-  const setsRes = useApi<{ sets: GroupSet[]; typePrices?: Record<string, { salePrice: string }> }>(`/sets?groupId=${productId}&status=IN_STOCK`);
+  const setsRes = useApi<{ sets: GroupSet[]; typePrices?: Record<string, { salePrice: string; minSalePrice?: string }> }>(`/sets?groupId=${productId}&status=IN_STOCK`);
   const heldRes = useApi<{ sets: GroupSet[] }>(orderId ? `/sets?groupId=${productId}&status=HELD` : null);
   const product = data?.product ?? null;
   const info = product?.grouped ?? null;
@@ -115,6 +119,9 @@ export function SaleSetsModal({
   const [step, setStep] = useState<1 | 2>(1);
   const [want, setWant] = useState<WantForm>({});
   const [quantity, setQuantity] = useState(initial?.length || 1);
+  /** Step 2: selling price per set and individual per-set overrides. */
+  const [sellingPrice, setSellingPrice] = useState<string>(initialPrice ?? "");
+  const [perSetPrices, setPerSetPrices] = useState<Record<string, string>>({});
   /** Step 2: the set the seller chose for a slot ("Other set…"), and bundles tapped per set. */
   const [preferred, setPreferred] = useState<Record<number, string>>({});
   const [chosenPieces, setChosenPieces] = useState<Record<string, Record<string, string>>>({});
@@ -153,6 +160,7 @@ export function SaleSetsModal({
   }, [info]);
 
   const setPrice = product?.variations[0] ? paiseOf(product.variations[0].salePrice) : 0;
+  const setMinPrice = product?.variations[0] && Number(product.variations[0].minSalePrice) > 0 ? paiseOf(product.variations[0].minSalePrice) : 0;
   const all = useMemo(
     () =>
       [...(heldRes.data?.sets ?? []).filter((s) => s.orderId === orderId), ...(soldRes.data?.sets ?? []), ...(setsRes.data?.sets ?? [])].filter((s) => !excludeSetIds.includes(s.id)),
@@ -310,6 +318,25 @@ export function SaleSetsModal({
     return Math.max(0, p);
   }
 
+  const typePriceOf = (s: GroupSet) => {
+    const tp = setsRes.data?.typePrices?.[s.typeKey];
+    let sale = 0;
+    if (tp?.salePrice !== undefined && Number(tp.salePrice) > 0) {
+      sale = Math.round(Number(tp.salePrice));
+    } else {
+      const p = priceOf(s, {});
+      sale = p > 0 ? Math.round(p / 100) : setPrice > 0 ? Math.round(setPrice / 100) : 0;
+    }
+
+    let min = 0;
+    if (tp?.minSalePrice !== undefined && Number(tp.minSalePrice) > 0) {
+      min = Math.round(Number(tp.minSalePrice));
+    } else if (setMinPrice > 0) {
+      min = Math.round(setMinPrice / 100);
+    }
+    return { sale, min };
+  };
+
   /** "Chain Hoist · 4 mm 3 m (was 8 mm 3 m)" — named by contents after the edits (D18). */
   function summaryOf(s: GroupSet, edits: Edits) {
     const parts = byproducts.flatMap((b) => {
@@ -417,17 +444,61 @@ export function SaleSetsModal({
   const backorderPicks = picks.filter((p) => p.isWholeBackorder || p.changes.some((c) => c.backorder)).length;
   const problem = plan?.problems[0] ?? null;
   const shortPart = problem ? problemPart(problem) : null;
+  
+  const combinationMinPrice = useMemo(() => {
+    const tp = setsRes.data?.typePrices?.[wantedTypeKey]?.minSalePrice;
+    if (tp !== undefined && Number(tp) > 0) return paiseOf(tp);
+    if (tp !== undefined && Number(tp) === 0) return 0;
+    let p = setMinPrice;
+    let hasMin = setMinPrice > 0;
+    for (const b of byproducts) {
+      const w = wanted[b.id];
+      if (!w || !w.variationId) continue;
+      const v = b.variations.find((x) => x.id === w.variationId);
+      const len = b.productType === "measured" ? (w.lengthMilli ?? 0) / 1000 : 0;
+      if (v && (b.productType !== "measured" || len > 0)) {
+        const partMin = Number(v.minSalePrice) > 0 ? v.minSalePrice : v.salePrice;
+        if (Number(v.minSalePrice) > 0) hasMin = true;
+        p += partPaise(partMin, len, b.lengthUnit, b.productType === "measured");
+      }
+    }
+    return hasMin && p > 0 ? Math.max(0, p) : 0;
+  }, [setsRes.data?.typePrices, wantedTypeKey, setMinPrice, byproducts, wanted]);
+
+  const guideSalePrice = useMemo(() => {
+    const tp = setsRes.data?.typePrices?.[wantedTypeKey]?.salePrice;
+    if (tp !== undefined && Number(tp) > 0) return Math.round(Number(tp));
+    if (combinationPrice > 0) return Math.round(combinationPrice / 100);
+    return setPrice > 0 ? Math.round(setPrice / 100) : 0;
+  }, [setsRes.data?.typePrices, wantedTypeKey, combinationPrice, setPrice]);
+
+  const guideMinPrice = useMemo(() => {
+    if (combinationMinPrice > 0) return Math.round(combinationMinPrice / 100);
+    return setMinPrice > 0 ? Math.round(setMinPrice / 100) : 0;
+  }, [combinationMinPrice, setMinPrice]);
+
+  function priceOfSet(s: GroupSet | null, pickId: string, edits: Edits): number {
+    const custom = perSetPrices[pickId];
+    if (custom !== undefined && custom !== "") {
+      return paiseOf(custom);
+    }
+    if (sellingPrice !== "" && Number(sellingPrice) >= 0) {
+      return paiseOf(sellingPrice);
+    }
+    return 0;
+  }
+
   const pickedSets = picks.map((p) => setById.get(p.setId)!).filter(Boolean);
   const total = picks.reduce((t, p) => {
-    if (p.isWholeBackorder) return t + combinationPrice;
-    const s = setById.get(p.setId);
-    return s ? t + priceOf(s, edits) : t;
+    const s = setById.get(p.setId) ?? null;
+    return t + priceOfSet(s, p.setId, edits);
   }, 0);
 
   function next() {
     setError("");
     if (!complete) return setError(`Choose every required part${byproducts.some((b) => b.productType === "measured") ? " and its length" : ""}`);
     resetPlanChoices();
+    setPerSetPrices({});
     setStep(2);
   }
 
@@ -435,6 +506,14 @@ export function SaleSetsModal({
     if (!product || !info) return;
     setError("");
     if (!picks.length) return setError("No set can be used or made with this combination");
+    const hasInvalidPrice = picks.some((p) => {
+      const custom = perSetPrices[p.setId];
+      const val = custom !== undefined && custom !== "" ? custom : sellingPrice;
+      return !val || !/^\d+$/.test(val.trim());
+    });
+    if (hasInvalidPrice) {
+      return setError("Enter a whole rupee price");
+    }
     const out: { pick: SaleSetPick; price: number; summary: string; detail: SetDetail }[] = [];
     for (const p of picks) {
       if (p.isWholeBackorder) {
@@ -454,7 +533,7 @@ export function SaleSetsModal({
             changes: [],
             code: "BACKORDER",
           },
-          price: combinationPrice,
+          price: priceOfSet(null, p.setId, edits),
           summary: `${product.name} · ${wantText} (Backorder)`,
           detail: { rows: wantedRows, note: "Whole Backorder" },
         });
@@ -474,7 +553,7 @@ export function SaleSetsModal({
       });
       out.push({
         pick: { setId: s.id, version: s.version, ...(changes.length ? { changes } : {}), code: s.code },
-        price: priceOf(s, edits),
+        price: priceOfSet(s, s.id, edits),
         summary: summaryOf(s, edits),
         detail: detailOf(s, edits),
       });
@@ -596,6 +675,7 @@ export function SaleSetsModal({
                 <ul className="grid max-h-[50vh] gap-1.5 overflow-auto pr-1">
                   {types.map((t) => {
                     const match = complete && !diffSet(links, t.plan, wanted).length;
+                    const { sale: tSale, min: tMin } = typePriceOf(t.set);
                     return (
                       <li key={t.key}>
                         <button
@@ -607,14 +687,31 @@ export function SaleSetsModal({
                           <span className="flex items-start justify-between gap-2">
                             <span className="min-w-0">
                               {t.set.contents.length ? (
-                                t.set.contents.map((c) => (
-                                  <span key={c.name} className="block text-xs text-slate-600">
-                                    <span className="text-slate-400">{c.name}: </span>
-                                    <span className="font-medium text-slate-800">{c.value}</span>
-                                  </span>
-                                ))
+                                t.set.contents.map((c) => {
+                                  const { label, displayValue, isFitted, fullTitle } = formatContentItem(c);
+                                  return (
+                                    <span key={c.name} className="block text-xs text-slate-600" title={fullTitle}>
+                                      {isFitted ? (
+                                        <span className="font-medium text-slate-800">{displayValue}</span>
+                                      ) : (
+                                        <>
+                                          <span className="text-slate-400">{label}: </span>
+                                          <span className="font-medium text-slate-800">{displayValue}</span>
+                                        </>
+                                      )}
+                                    </span>
+                                  );
+                                })
                               ) : (
                                 <span className="text-xs text-slate-600">Main part only</span>
+                              )}
+                              {(tSale > 0 || tMin > 0) && (
+                                <span className="mt-1 block text-xs">
+                                  <span className="font-semibold text-brand-700">{fmtSellRate(null, tMin, tSale, "Sell: ")}</span>
+                                  {tMin > 0 && tMin < tSale && (
+                                    <span className="ml-1 text-[11px] font-normal text-slate-500">· Min {money(tMin)}</span>
+                                  )}
+                                </span>
                               )}
                             </span>
                             <span className="shrink-0 text-right text-xs">
@@ -639,10 +736,86 @@ export function SaleSetsModal({
           )}
 
           {step === 2 && (
-            <div className="grid max-h-[60vh] gap-2 overflow-auto pr-1">
-              <p className="text-sm text-slate-600">
-                Combination: <b className="text-slate-900">{wantText || "—"}</b> × {quantity}
-              </p>
+            <div className="grid max-h-[60vh] gap-3 overflow-auto pr-1">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                <div className="min-w-0">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Combination</span>
+                  <p className="text-sm text-slate-800">
+                    <b className="text-slate-900">{wantText || "—"}</b> × {quantity}
+                  </p>
+                  {(guideSalePrice > 0 || guideMinPrice > 0) && (
+                    <div className="mt-1 text-xs font-semibold text-brand-700">
+                      {fmtSellRate(null, guideMinPrice, guideSalePrice, "Sell: ")}
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col items-end gap-1.5">
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="sale-set-selling-price" className="text-xs font-semibold text-slate-700">
+                      Selling price:
+                    </label>
+                    <div className="relative flex items-center">
+                      <span className="pointer-events-none absolute left-2.5 text-sm font-semibold text-slate-400">₹</span>
+                      <input
+                        id="sale-set-selling-price"
+                        type="text"
+                        inputMode="numeric"
+                        className="w-28 rounded-lg border border-slate-300 bg-white py-1.5 pl-6 pr-2.5 text-right text-sm font-bold text-slate-900 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                        value={sellingPrice}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^\d.]/g, "");
+                          setSellingPrice(val);
+                          setPerSetPrices({});
+                          setError("");
+                        }}
+                        placeholder="0"
+                      />
+                      <span className="ml-1 text-xs text-slate-500">/ set</span>
+                    </div>
+                  </div>
+                  {(guideSalePrice > 0 || guideMinPrice > 0) && (
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                      <span className="font-medium text-slate-500">Price guide:</span>
+                      {guideMinPrice > 0 && (
+                        <button
+                          type="button"
+                          className={`rounded-full border px-2.5 py-0.5 transition-colors cursor-pointer ${
+                            sellingPrice === String(guideMinPrice)
+                              ? "border-emerald-500 bg-emerald-50 text-emerald-800 font-medium"
+                              : "border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                          }`}
+                          onClick={() => {
+                            setSellingPrice(String(guideMinPrice));
+                            setPerSetPrices({});
+                            setError("");
+                          }}
+                          title="Use minimum selling price"
+                        >
+                          Min {money(guideMinPrice)}
+                        </button>
+                      )}
+                      {guideSalePrice > 0 && (
+                        <button
+                          type="button"
+                          className={`rounded-full border px-2.5 py-0.5 transition-colors cursor-pointer ${
+                            sellingPrice === String(guideSalePrice)
+                              ? "border-emerald-500 bg-emerald-50 text-emerald-800 font-medium"
+                              : "border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                          }`}
+                          onClick={() => {
+                            setSellingPrice(String(guideSalePrice));
+                            setPerSetPrices({});
+                            setError("");
+                          }}
+                          title="Use standard selling price"
+                        >
+                          Selling {money(guideSalePrice)}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
               {readyPicks.length > 0 && (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
                   <div className="flex flex-wrap items-center gap-2">
@@ -651,8 +824,14 @@ export function SaleSetsModal({
                       {readyPicks.length} set{readyPicks.length === 1 ? "" : "s"} in stock with this combination
                     </span>
                     <span className="text-sm font-bold text-slate-900">
-                      {money(setPrice / 100)}
-                      {readyPicks.length > 1 ? " each" : ""}
+                      {priceOfSet(setById.get(readyPicks[0]!.setId) ?? null, readyPicks[0]!.setId, edits) > 0 ? (
+                        <>
+                          {money(priceOfSet(setById.get(readyPicks[0]!.setId) ?? null, readyPicks[0]!.setId, edits) / 100)}
+                          {readyPicks.length > 1 ? " each" : ""}
+                        </>
+                      ) : (
+                        <span className="text-xs font-normal text-slate-400">price not set</span>
+                      )}
                     </span>
                   </div>
                   {wh.enabled && (
@@ -684,7 +863,22 @@ export function SaleSetsModal({
                       )}
                       <span className="min-w-0 flex-1 text-sm font-semibold text-slate-900">From {s.name}</span>
                       {wh.enabled && s.warehouseId && <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-600">{wh.codeOf(s.warehouseId)}</span>}
-                      <span className="text-sm font-bold text-slate-900">{money(priceOf(s, edits) / 100)}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-slate-500">₹</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          className="w-24 rounded border border-slate-300 bg-white px-2 py-0.5 text-right text-sm font-bold text-slate-900 focus:border-brand-500 focus:outline-none"
+                          value={perSetPrices[p.setId] ?? sellingPrice}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/[^\d.]/g, "");
+                            setPerSetPrices((prev) => ({ ...prev, [p.setId]: val }));
+                            setError("");
+                          }}
+                          placeholder={sellingPrice || "0"}
+                          aria-label={`Selling price for set from ${s.name}`}
+                        />
+                      </div>
                     </div>
                     <ChangeList set={s} changes={p.changes} byproducts={byproducts} stock={stock} warehouseId={whOf(s)} onPiece={(bp, pieceId) => setChosenPieces((x) => ({ ...x, [s.id]: { ...(x[s.id] ?? {}), [bp]: pieceId } }))} />
                     <button type="button" className="mt-1 text-xs font-semibold text-brand-600 hover:underline" onClick={() => setOtherFor(otherFor === slot ? null : slot)}>
@@ -718,7 +912,22 @@ export function SaleSetsModal({
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded bg-rose-100 px-1.5 py-0.5 text-xs font-semibold text-rose-800">Backorder — Whole Combination</span>
                     <span className="min-w-0 flex-1 text-sm font-semibold text-slate-900">Set #{slot + 1}: {wantText}</span>
-                    <span className="text-sm font-bold text-slate-900">{money(combinationPrice / 100)}</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-slate-500">₹</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        className="w-24 rounded border border-slate-300 bg-white px-2 py-0.5 text-right text-sm font-bold text-slate-900 focus:border-brand-500 focus:outline-none"
+                        value={perSetPrices[p.setId] ?? sellingPrice}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^\d.]/g, "");
+                          setPerSetPrices((prev) => ({ ...prev, [p.setId]: val }));
+                          setError("");
+                        }}
+                        placeholder={sellingPrice || "0"}
+                        aria-label={`Selling price for backordered set #${slot + 1}`}
+                      />
+                    </div>
                   </div>
                   <p className="mt-1 text-xs text-rose-700">
                     Main component and by-products not in stock — will be held on a Customer Order and procured.
@@ -802,10 +1011,12 @@ export function SaleSetsModal({
             ) : (
               "Choose the combination"
             )
-          ) : (
+          ) : total > 0 ? (
             <>
               {picks.length} of {quantity} set{quantity === 1 ? "" : "s"} · <b>{money(total / 100)}</b>
             </>
+          ) : (
+            <span className="text-xs text-slate-500">Enter a selling price to see the total</span>
           )}
         </span>
         <div className="flex gap-2">

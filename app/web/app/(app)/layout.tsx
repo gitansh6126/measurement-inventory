@@ -59,23 +59,27 @@ const NAV: { section: string; items: NavItem[] }[] = [
     ],
   },
   {
-    section: "Admin",
-    items: [
-      { href: "/users", label: "Users", icon: <UsersIcon className={ic} />, permission: "user.manage" },
-      { href: "/backup", label: "Backup & Restore", icon: <DatabaseIcon className={ic} />, permission: "user.manage" },
-      { href: "/settings", label: "Settings", icon: <CogIcon className={ic} />, permission: "company.settings" },
-    ],
-  },
-  {
-    section: "Help",
-    items: [{ href: "/glossary", label: "Glossary", icon: <BookIcon className={ic} /> }],
-  },
-  {
     section: "Stock Tools",
     items: [
       { href: "/import", label: "Import", icon: <ArrowInIcon className={ic} />, permission: "catalog.view" },
       { href: "/shifts", label: "Shifts", icon: <ShiftIcon className={ic} />, permission: "catalog.view", warehousing: true },
       { href: "/warehouses", label: "Warehouses", icon: <WarehouseIcon className={ic} />, permission: "warehouse.manage" },
+    ],
+  },
+  {
+    section: "Admin",
+    items: [
+      { href: "/users", label: "Users", icon: <UsersIcon className={ic} />, permission: "user.manage" },
+      { href: "/backup", label: "Backup & Restore", icon: <DatabaseIcon className={ic} />, permission: "user.manage" },
+      { href: "/demo-data", label: "Demo Data", icon: <LayersIcon className={ic} />, permission: "company.settings" },
+      { href: "/settings", label: "Settings", icon: <CogIcon className={ic} />, permission: "company.settings" },
+    ],
+  },
+  {
+    section: "Help",
+    items: [
+      { href: "/rules", label: "Business Logic", icon: <SlidersIcon className={ic} /> },
+      { href: "/glossary", label: "Glossary", icon: <BookIcon className={ic} /> },
     ],
   },
 ];

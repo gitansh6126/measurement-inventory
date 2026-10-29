@@ -31,8 +31,8 @@ Prior to formulating refactoring recommendations, the codebase baseline was empi
 | Test / Check | Scope | Result | Details |
 |---|---|---|---|
 | **API Typecheck** | `@rs-v31/api` (`tsc --noEmit`) | **PASS** (Exit 0) | Clean compile, zero TypeScript errors. |
-| **API Unit Tests** | `vitest run tests/unit` | **PASS** (Exit 0) | 15 test files passed, 151 individual tests passed in 4.70s. |
-| **Web Typecheck** | `@rs-v31/web` (`tsc --noEmit`) | **FAIL** (Exit 2) | Pre-existing compilation errors in working tree:<br/>`ProductForm.tsx(476,10): TS17008: JSX element 'div' has no corresponding closing tag.`<br/>`ProductForm.tsx(635,165): TS1381: Unexpected token.`<br/>`ProductForm.tsx(636,7): TS1005: '}' expected.` |
+| **API Unit Tests** | `vitest run tests/unit` | **PASS** (Exit 0) | 15 test files passed, 152 individual tests passed in 4.17s. |
+| **Web Typecheck** | `@rs-v31/web` (`tsc --noEmit`) | **PASS** (Exit 0) | Clean compile, zero TypeScript errors (VF-08 syntax errors resolved). |
 | **Integration Tests** | `tests/integration/` | **HELD** | `global-setup.ts` invokes `prisma migrate reset --force`. In accordance with workspace rules and safety guardrails, resetting the database without explicit user confirmation is prohibited. |
 
 ---
@@ -234,73 +234,39 @@ Prior to formulating refactoring recommendations, the codebase baseline was empi
 
 ### Finding VF-07: Missing Database Indexes in `schema.prisma`
 - **Initial Audit Claim:** Potentially missing database indexes.
-- **Classification:** **B. Confirmed Performance Bottleneck**
-- **Severity:** Medium
+- **Classification:** **B. Confirmed Performance Bottleneck (RESOLVED)**
+- **Severity:** Medium (Resolved via Migration 0042)
 - **Confidence Level:** 100%
 - **Exact File References:**
-  - `app/api/prisma/schema.prisma` (`GroupSetPart` line 1321; `StockMovement` lines 441–444)
-  - `app/api/src/lib/documents.ts` (lines 529–532, 744–747)
-- **Reproduction & Evidence:**
-  - `GroupSetPart`: Currently has `@@index([variationId, status])` and `@@index([setId])`.
-    - Query in `inventory-query.ts:99` executes: `WHERE company_id = $1 AND status = 'ALLOCATED' GROUP BY variation_id`.
-    - The existing index lacks `companyId` as a leading column, resulting in multi-tenant index inefficiency.
-  - `StockMovement`: Foreign keys `saleId` and `purchaseId` are not indexed:
-    ```prisma
-    model StockMovement {
-      ...
-      saleId String? @map("sale_id")
-      purchaseId String? @map("purchase_id")
-      ...
-      @@index([variationId, occurredAt])
-      @@index([companyId, occurredAt])
-      @@index([transferId])
-      @@index([variationId, warehouseId])
-      @@map("stock_movements")
-    }
-    ```
-    - In `documents.ts:529, 744`, voiding and editing documents executes:
-      ```typescript
-      await tx.stockMovement.groupBy({
-        by: ["variationId", "warehouseId"],
-        where: { companyId, saleId: id, movementType: "SALE" }
-      });
-      ```
-    - Without an index on `sale_id` or `(company_id, sale_id)`, PostgreSQL must scan movements.
-- **Confirmed Impact:**
-  - Document revisions, void operations, and catalog rollups perform index/table scans that degrade as ledger volume increases.
-- **Recommended Fix:**
-  - Add to `schema.prisma`:
-    1. `GroupSetPart`: `@@index([companyId, status, variationId])`
-    2. `StockMovement`: `@@index([companyId, saleId])` and `@@index([companyId, purchaseId])`
-  - Generate and apply standard migration via Prisma.
-- **Risk & Rollback Strategy:**
-  - Risk: Very Low. Indexes are non-breaking additions.
-  - Rollback: Drop index migration (`DROP INDEX CONCURRENTLY ...`).
+  - `app/api/prisma/schema.prisma` (`GroupSetPart`, `StockMovement`)
+  - `app/api/prisma/migrations/0042_stock_movements_and_set_parts_indexes/migration.sql`
+- **Resolution:**
+  - Added `@@index([saleId])` and `@@index([purchaseId])` to `model StockMovement`.
+  - Added `@@index([companyId, status, variationId])` to `model GroupSetPart`.
+  - Applied migration `0042_stock_movements_and_set_parts_indexes` via `prisma migrate deploy`.
+  - Validated with `EXPLAIN (BUFFERS, COSTS)`:
+    - `group_set_parts`: Seq scan + Sort replaced with direct `Index Scan using group_set_parts_company_id_status_variation_id_idx` (Sort step completely eliminated).
+    - `stock_movements`: Company-wide scan replaced with direct `Index Scan using stock_movements_sale_id_idx` and `stock_movements_purchase_id_idx`.
 
 ---
 
 ### Finding VF-08: Pre-Existing Web Compilation Errors
 - **Finding ID:** `VF-08`
-- **Classification:** **A. Confirmed Bug / Compilation Failure**
-- **Severity:** High (Build Breaker)
+- **Classification:** **A. Confirmed Bug / Compilation Failure (RESOLVED)**
+- **Severity:** High (Build Breaker — Resolved)
 - **Confidence Level:** 100%
 - **Exact File References:**
   - `app/web/components/products/ProductForm.tsx` (lines 476, 635, 636)
 - **Reproduction & Evidence:**
-  - Running `npm run typecheck -w web` produces:
+  - Running `npm run typecheck -w web` previously produced:
     ```
     components/products/ProductForm.tsx(476,10): error TS17008: JSX element 'div' has no corresponding closing tag.
     components/products/ProductForm.tsx(635,165): error TS1381: Unexpected token. Did you mean `{'}'}` or `&rbrace;`?
     components/products/ProductForm.tsx(636,7): error TS1005: '}' expected.
     ```
-  - Uncommitted changes in `ProductForm.tsx` left an unclosed tag in the product configuration UI.
-- **Confirmed Impact:**
-  - Prevents production build (`next build`) and frontend typechecks from passing.
-- **Recommended Fix:**
-  - Fix the syntax errors in `ProductForm.tsx` before attempting any other frontend work.
-- **Risk & Rollback Strategy:**
-  - Risk: Low.
-  - Rollback: Git checkout or targeted patch.
+  - Uncommitted changes in `ProductForm.tsx` previously had an unclosed `<div id="field-head-categories">` and unbalanced braces in the action bar.
+  - **Resolution:** In commit `b323dbe` on branch `feature/v3.2-standard-sets-child-order`, the unclosed `div` was properly closed with `</div>` (line 602) and the form action container was properly structured.
+  - Verification: `npm run typecheck -w web` exits with code 0 (clean compilation).
 
 ---
 

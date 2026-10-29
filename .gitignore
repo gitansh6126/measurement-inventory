@@ -26,6 +26,7 @@
 
 # Shop data, backups, logs, runtime state (old in-folder locations included)
 *-Data/
+!app/web/app/**/demo-data/
 local-server/data/
 local-server/backups/
 local-server/logs/

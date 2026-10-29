@@ -179,7 +179,7 @@ function readJsonBackup(body: Buffer) {
 // Triggers switched off for the restore transaction only (append-only guards, commit-time
 // document checks, and the stock check — historic replay order can dip below zero briefly).
 // Never listed: stock_movements_maintain_balance (keeps stock_balances exact).
-const RESTORE_TRIGGERS: readonly (readonly [string, string])[] = [
+export const RESTORE_TRIGGERS: readonly (readonly [string, string])[] = [
   ["sales", "sales_no_update_delete"],
   ["sales", "sales_consistent"],
   ["sales", "sales_replace_consistent"],
@@ -211,8 +211,10 @@ const RESTORE_TRIGGERS: readonly (readonly [string, string])[] = [
 // log stay. The caller disables RESTORE_TRIGGERS first (the ledgers are append-only).
 export const WIPE_PHRASE = "DELETE ALL DATA";
 
-async function wipeCompanyData(tx: Prisma.TransactionClient, companyId: string) {
+export async function wipeCompanyData(tx: Prisma.TransactionClient, companyId: string) {
   // V2 tables first: they reference the rest.
+  // Measurement piece ledger references transfers, sales, purchases (0035 FKs with RESTRICT).
+  await tx.measurementPieceLedger.deleteMany({ where: { companyId } });
   // V3.1 shifts first: their lines point at pieces and sets, their movements at them.
   await tx.stockMovement.deleteMany({ where: { companyId, transferId: { not: null } } });
   await tx.stockTransferVoid.deleteMany({ where: { companyId } });
@@ -235,7 +237,6 @@ async function wipeCompanyData(tx: Prisma.TransactionClient, companyId: string) 
   await tx.order.deleteMany({ where: { companyId } });
   await tx.vendorPriceHistory.deleteMany({ where: { companyId } });
   await tx.vendorPrice.deleteMany({ where: { companyId } });
-  await tx.measurementPieceLedger.deleteMany({ where: { companyId } });
   // Children first: clear lineage, then delete (pieces reference each other).
   await tx.measurementPiece.updateMany({ where: { companyId, parentId: { not: null } }, data: { parentId: null, kind: "OPEN" } });
   await tx.measurementPiece.updateMany({ where: { companyId, setOrigin: true }, data: { setOrigin: false, kind: "OPEN" } });

@@ -11,7 +11,7 @@ import { nextDocNumber } from "./numbering.js";
 import { can, type Permission } from "./permissions.js";
 import { checkSetRows, holdOrderSets, releaseOrderSets, saleSetInput, setInput, unholdForDelivery, type SaleSetInput } from "./sets.js";
 import { lockVariations, money } from "./stock.js";
-import { isWarehousingOn, requireWarehouse, splitsInput, validateSplits, type Split } from "./warehouses.js";
+import { isWarehousingOn, requireWarehouse, requireWarehouses, splitsInput, validateSplits, type Split } from "./warehouses.js";
 import { bumpVersion, versionField } from "./versions.js";
 
 // Sale and purchase orders (v2/docs/orders/ORDER-LIFECYCLE-PLAN.md).
@@ -205,7 +205,8 @@ async function priceLines(tx: Tx, companyId: string, kind: OrderKind, input: z.i
   // V3.1 (WH-13): saved splits need warehousing on and warehouses of this company.
   if (input.some((l) => l.splits)) {
     if (!(await isWarehousingOn(tx, companyId))) throw new AppError(400, "WAREHOUSING_OFF", "Warehousing is not set up yet");
-    for (const w of new Set(input.flatMap((l) => (l.splits ?? []).map((s) => s.warehouseId)))) await requireWarehouse(tx, companyId, w);
+    const splitWarehouseIds = input.flatMap((l) => (l.splits ?? []).map((s) => s.warehouseId));
+    await requireWarehouses(tx, companyId, splitWarehouseIds);
   }
   // Purchase-order lines bought for a customer order (its shortages, from the purchase cart): the
   // sale-order line must be one of this company's sale orders.

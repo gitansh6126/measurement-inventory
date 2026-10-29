@@ -7,6 +7,7 @@ import { errorHandler, notFound } from "./lib/errors.js";
 import { accessLog, noStore, requestId, sameOrigin } from "./lib/middleware.js";
 import { authRoutes } from "./routes/auth.js";
 import { backupRoutes } from "./routes/backup.js";
+import { demoRoutes } from "./routes/demo.js";
 import { catalogRoutes } from "./routes/catalog.js";
 import { categoryRoutes } from "./routes/categories.js";
 import { categoryHeadRoutes } from "./routes/category-heads.js";
@@ -60,6 +61,7 @@ export function createApp(env: Env) {
   app.use("/api/sales", saleRoutes());
   app.use("/api/purchases", purchaseRoutes());
   app.use("/api/backup", backupRoutes(env));
+  app.use("/api/demo", demoRoutes(env));
   app.use("/api/import", importRoutes());
   app.use("/api/drafts", draftRoutes());
   app.use("/api/orders", orderRoutes());

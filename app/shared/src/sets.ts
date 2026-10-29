@@ -133,7 +133,15 @@ export function diffSet(links: readonly PlanLink[], set: PlanSet, want: SetWant)
     }
     const lengthMilli = l.measured ? (w.lengthMilli ?? 0) : null;
     if (has && has.variationId === w.variationId && (!l.measured || has.lengthMilli === lengthMilli)) continue;
-    out.push({ byproductId: l.id, action: has ? "REPLACE" : "ADD", variationId: w.variationId, ...(l.measured ? { lengthMilli: lengthMilli! } : {}), from: has });
+    const isShorten = l.measured && has?.variationId === w.variationId && (has?.lengthMilli ?? 0) >= (lengthMilli ?? 0);
+    out.push({
+      byproductId: l.id,
+      action: has ? "REPLACE" : "ADD",
+      variationId: w.variationId,
+      ...(l.measured ? { lengthMilli: lengthMilli! } : {}),
+      from: has,
+      ...(isShorten ? { shortenInPlace: true } : {}),
+    });
   }
   return out;
 }
@@ -299,7 +307,12 @@ export function planSets(
     }
     const candidates = (preferred ? [preferred] : sets.filter((s) => !used.has(s.id)))
       .map((s, i) => ({ s, i, diff: diffSet(links, s, want) }))
-      .sort((a, b) => a.diff.length - b.diff.length || cuts(links, a.diff) - cuts(links, b.diff) || a.i - b.i);
+      .sort((a, b) =>
+        bundleCuts(links, a.diff) - bundleCuts(links, b.diff) ||
+        a.diff.length - b.diff.length ||
+        shortenExcess(a.diff) - shortenExcess(b.diff) ||
+        a.i - b.i
+      );
     let done = false;
     let firstProblem: PlanProblem | null = null;
     for (const c of candidates) {
@@ -350,9 +363,30 @@ export function planSets(
   return { picks, problems, backorders };
 }
 
-/** Measured parts a change set would cut (a cut uses up part of a bundle, so fewer is better). */
-const cuts = (links: readonly PlanLink[], changes: readonly PlanChange[]) =>
-  changes.filter((c) => c.action !== "REMOVE" && links.find((l) => l.id === c.byproductId)?.measured).length;
+/** Measured parts a change set would cut from a free bundle (fewer is better; shorten-in-place cuts existing fitted chain without using a free bundle). */
+export function bundleCuts(links: readonly PlanLink[], changes: readonly PlanChange[]): number {
+  return changes.filter((c) => {
+    if (c.action === "REMOVE") return false;
+    const l = links.find((x) => x.id === c.byproductId);
+    if (!l?.measured) return false;
+    if (c.shortenInPlace) return false;
+    const isShorten = c.from && c.from.variationId === c.variationId && (c.from.lengthMilli ?? 0) >= (c.lengthMilli ?? 0);
+    return !isShorten;
+  }).length;
+}
+
+/** Backward compatible alias for bundleCuts */
+export const cuts = bundleCuts;
+
+/** Millimetres of excess chain cut off when shortening fitted chain (less waste is better). */
+export function shortenExcess(changes: readonly PlanChange[]): number {
+  return changes.reduce((sum, c) => {
+    if (c.shortenInPlace || (c.from && c.from.variationId === c.variationId && (c.from.lengthMilli ?? 0) >= (c.lengthMilli ?? 0))) {
+      return sum + Math.max(0, (c.from?.lengthMilli ?? 0) - (c.lengthMilli ?? 0));
+    }
+    return sum;
+  }, 0);
+}
 
 /** The other sets that could fill a slot instead, each with its changes (for "Other set…"). */
 export function alternatives(links: readonly PlanLink[], sets: readonly PlanSet[], want: SetWant, stock: PlanStock, exclude: readonly string[]): SetStatus[] {
@@ -360,5 +394,10 @@ export function alternatives(links: readonly PlanLink[], sets: readonly PlanSet[
     .filter((s) => !exclude.includes(s.id))
     .map((s) => setStatus(links, s, want, stock))
     .filter((s) => s.status !== "CANNOT")
-    .sort((a, b) => (a.status === "READY" ? 0 : a.changes.length) - (b.status === "READY" ? 0 : b.changes.length) || (a.status === "READY" ? 0 : cuts(links, a.changes)) - (b.status === "READY" ? 0 : cuts(links, b.changes)));
+    .sort((a, b) =>
+      (a.status === "READY" ? 0 : 1) - (b.status === "READY" ? 0 : 1) ||
+      (a.status === "READY" ? 0 : bundleCuts(links, a.changes)) - (b.status === "READY" ? 0 : bundleCuts(links, b.changes)) ||
+      (a.status === "READY" ? 0 : a.changes.length) - (b.status === "READY" ? 0 : b.changes.length) ||
+      (a.status === "READY" ? 0 : shortenExcess(a.changes)) - (b.status === "READY" ? 0 : shortenExcess(b.changes))
+    );
 }

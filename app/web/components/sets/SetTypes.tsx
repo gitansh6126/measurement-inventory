@@ -13,6 +13,7 @@ import type { GroupSet, SetStatus, SetTypeRow } from "@/lib/types";
 import { errorText, useApi } from "@/lib/useApi";
 import { moved, useRowOrder } from "@/lib/useRowOrder";
 import { useWarehouses } from "@/lib/useWarehouses";
+import { formatContentItem } from "./SetContents";
 
 // V3.1 grouped products shown like variation products (owner, 2026-10-23): a grouped row expands
 // into child rows, one per *set type* — sets with the same parts, the way a variation is one
@@ -123,8 +124,9 @@ export function SetTypesTable({
   return (
     <>
     {orderError && <p className="mb-1 text-sm text-rose-600">{orderError}</p>}
-    <table className="table table-stack rounded-md bg-white">
-      <thead>
+    <div className="w-full overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-xs">
+    <table className="table table-stack w-full min-w-full">
+      <thead className="bg-slate-50 text-slate-700">
         <tr>
           {orderable ? <th>Order</th> : <th className="w-10">#</th>}
           {hasNamedSets && <th>Set</th>}
@@ -195,14 +197,28 @@ export function SetTypesTable({
                   );
                 })
               ) : (
-                <td className="md:min-w-[15rem]">
-                  <div className="flex flex-wrap gap-1">
+                <td className="max-w-xs md:max-w-sm">
+                  <div className="flex flex-wrap items-center gap-1.5 py-0.5">
                     {t.contents.length ? (
-                      t.contents.map((c) => (
-                        <span key={c.name} className="rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] text-slate-700">
-                          {c.name}: <b>{c.value}</b>
-                        </span>
-                      ))
+                      t.contents.map((c) => {
+                        const { label, displayValue, isFitted, fullTitle } = formatContentItem(c);
+                        return (
+                          <span
+                            key={c.name}
+                            className="inline-flex items-center gap-1 rounded-md border border-slate-200/90 bg-slate-50/90 px-1.5 py-0.5 text-[11px] leading-tight text-slate-700 shadow-2xs hover:bg-slate-100 transition-colors"
+                            title={fullTitle}
+                          >
+                            {isFitted ? (
+                              <span className="font-semibold text-slate-800">{displayValue}</span>
+                            ) : (
+                              <>
+                                <span className="text-slate-500 font-medium">{label}:</span>
+                                <b className="font-semibold text-slate-900">{displayValue}</b>
+                              </>
+                            )}
+                          </span>
+                        );
+                      })
                     ) : (
                       <span className="text-xs text-slate-400">Main part only</span>
                     )}
@@ -242,6 +258,7 @@ export function SetTypesTable({
         })}
       </tbody>
     </table>
+    </div>
     </>
   );
 }

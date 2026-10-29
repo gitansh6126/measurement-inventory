@@ -7,6 +7,7 @@ import { BoxesIcon, CogIcon, EditIcon, EyeIcon, PackageIcon, PlusIcon, RupeeIcon
 import { ColumnsMenu } from "@/components/ColumnsMenu";
 import { PageMobileSidebar, SidebarField, SidebarSection } from "@/components/PageMobileSidebar";
 import { ViewToggle } from "@/components/catalog/ViewToggle";
+import { CategoryHeadSelect, PRODUCT_TYPE_KEY } from "@/components/catalog/CategoryHeadSelect";
 import { CategoryRail } from "@/components/catalog/CategoryRail";
 import { ShopLayout } from "@/components/catalog/ShopLayout";
 import { useCan } from "@/components/MeContext";
@@ -24,12 +25,13 @@ import { variationAttributeColumns } from "@/lib/variationColumns";
 import { fetchAllInventory } from "@/lib/inventoryExport";
 import { downloadInventoryPdf } from "@/lib/pdf";
 import { PRODUCT_REPORT_COLUMNS, exportRows, filterProductTableRows, type ColumnDef } from "@/lib/inventoryColumns";
-import type { CategoryStatsList, Product, ProductActivityStatus, StockProduct, StockVariation } from "@/lib/types";
+import type { CategoryHead, CategoryStatsList, Product, ProductActivityStatus, StockProduct, StockVariation } from "@/lib/types";
 import { errorText, useApi } from "@/lib/useApi";
 import { useTableColumns } from "@/lib/useTableColumns";
 import { useViewMode } from "@/lib/useViewMode";
 import { fmtLen, fmtRate, fmtSellRate, metaOf, ratePerOf, type LengthUnit, type MeasureMeta } from "@/lib/measure";
 import { useLengthView } from "@/lib/lengthView";
+import { LengthViewToggle } from "@/components/measure/LengthViewToggle";
 
 // main v2 ProductsView (index.html) rebuilt with marble UI (D23): KPI strip, All/Active/Inactive
 // stages, toolbar filters, grouped table whose variation products expand into their variations.
@@ -82,10 +84,17 @@ function ProductsPage() {
   const canManageStock = canAdjust || canViewCost;
 
   const { data, error, reload } = useApi<{ products: StockProduct[] }>("/inventory?status=all");
-  const cats = useApi<CategoryStatsList>("/categories?stats=1");
+  const heads = useApi<{ heads: CategoryHead[] }>("/category-heads");
+  const [headKey, setHeadKey] = useState<string>(() => params.get("head") ?? PRODUCT_TYPE_KEY);
+  const cats = useApi<CategoryStatsList>(`/categories?stats=1&headId=${headKey}`);
   const [groupMode, setGroupMode] = useState<"all" | "category">("category");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(() => params.get("category") ?? params.get("categoryId") ?? "");
+
+  const handleHeadChange = (nextHead: string) => {
+    setHeadKey(nextHead);
+    setCategory("");
+  };
   const [activityStage, setActivityStage] = useState<ProductActivityStatus | "">("");
   const [quick, setQuick] = useState<Quick>("");
   const [showInventoryValue, setShowInventoryValue] = useState(false);
@@ -137,11 +146,12 @@ function ProductsPage() {
 
   const activeFiltersCount = useMemo(() => {
     let count = 0;
+    if (headKey !== PRODUCT_TYPE_KEY) count++;
     if (category) count++;
     if (activityStage) count++;
     if (quick) count++;
     return count;
-  }, [category, activityStage, quick]);
+  }, [headKey, category, activityStage, quick]);
 
   const [modal, setModal] = useState<{ product: Product | null; presetCategoryId?: string } | null>(null);
   const [viewing, setViewing] = useState<{ product: StockProduct; variationId?: string } | null>(null);
@@ -279,6 +289,7 @@ function ProductsPage() {
           activityStage ? `Sales activity: ${activityStage}` : "",
           quick ? `Stock: ${quick}` : "",
           search.trim() ? `Search: "${search.trim()}"` : "",
+          headKey !== PRODUCT_TYPE_KEY ? `Head: ${heads.data?.heads.find((h) => (h.id ?? PRODUCT_TYPE_KEY) === headKey)?.name ?? headKey}` : "",
           category ? `Category: ${category === "none" ? "Uncategorized" : cats.data?.categories.find((c) => c.id === category)?.name ?? ""}` : "",
         ].filter(Boolean).join("  ·  ") || "All products",
         columns: reportColumns,
@@ -327,9 +338,11 @@ function ProductsPage() {
   const priceRange = (p: StockProduct, field: "salePrice" | "minSalePrice", vars = p.variations.filter((v) => v.active)) =>
     range(vars.map((v) => Number(v[field])), p.measure?.lengthUnit);
   const headLabel: Record<string, string> = { image: "Image", product: "Name", sku: "SKU", category: "Category", type: "Type", stock: "Stock on Hand", salePrice: "Selling Price", minSalePrice: "Min. Selling Price", activity: "Sales Activity", actions: "Actions" };
+  const hasMeasuredRows = rows.some((p) => p.productType === "measured");
   const headCell = (id: string) => (
     <th key={id} {...cols.headerDrag(id)} className={`${cols.headerDrag(id).className ?? ""} ${id === "actions" || id === "salePrice" || id === "minSalePrice" ? "text-right" : ""} ${id === "product" ? "col-product" : ""}`}>
       {headLabel[id]}
+      {id === "stock" && hasMeasuredRows && <LengthViewToggle className="ml-1.5" />}
     </th>
   );
 
@@ -374,9 +387,15 @@ function ProductsPage() {
         <SearchInput value={search} onChange={setSearch} placeholder="Search products, category…" />
 
         {/* Mobile Active filter chips */}
-        {(search || category || activityStage || quick) && (
+        {(search || category || headKey !== PRODUCT_TYPE_KEY || activityStage || quick) && (
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs [scrollbar-width:none]">
             <span className="text-[11px] font-medium text-slate-400 shrink-0">Filters:</span>
+            {headKey !== PRODUCT_TYPE_KEY && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-200/90 px-2.5 py-0.5 font-medium text-slate-800 text-[11px]">
+                Head: {heads.data?.heads.find((h) => (h.id ?? PRODUCT_TYPE_KEY) === headKey)?.name ?? headKey}
+                <button type="button" onClick={() => handleHeadChange(PRODUCT_TYPE_KEY)} className="hover:text-slate-950 font-bold ml-0.5" aria-label="Remove head filter">×</button>
+              </span>
+            )}
             {quick && (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100/90 px-2.5 py-0.5 font-medium text-amber-800 text-[11px]">
                 {quick === "low" ? "Low Stock" : "Out of Stock"}
@@ -403,7 +422,7 @@ function ProductsPage() {
             )}
             <button
               type="button"
-              onClick={() => { setSearch(""); setCategory(""); setActivityStage(""); setQuick(""); }}
+              onClick={() => { setSearch(""); setCategory(""); setHeadKey(PRODUCT_TYPE_KEY); setActivityStage(""); setQuick(""); }}
               className="shrink-0 text-[11px] font-semibold text-slate-500 hover:text-brand-600 underline ml-1 cursor-pointer"
             >
               Clear all
@@ -473,6 +492,14 @@ function ProductsPage() {
                 { value: "all", label: "All Products" },
                 { value: "category", label: "By Category" },
               ]}
+            />
+          </SidebarField>
+
+          <SidebarField label="Category Head" description="Switch category grouping head">
+            <CategoryHeadSelect
+              heads={heads.data?.heads}
+              value={headKey}
+              onChange={handleHeadChange}
             />
           </SidebarField>
 
@@ -725,6 +752,13 @@ function ProductsPage() {
 
         <Toolbar>
           <SearchInput value={search} onChange={setSearch} placeholder="Search products, category…" />
+          <div className="w-40 shrink-0">
+            <CategoryHeadSelect
+              heads={heads.data?.heads}
+              value={headKey}
+              onChange={handleHeadChange}
+            />
+          </div>
           <select className="input w-auto" value={activityStage} onChange={(e) => setActivityStage(e.target.value as ProductActivityStatus | "")} aria-label="Sales activity">
             <option value="">All sales activity</option>
             <option value="Active">Active</option>
@@ -732,8 +766,8 @@ function ProductsPage() {
             <option value="Inactive">Inactive</option>
             <option value="Never Sold">Never Sold</option>
           </select>
-          {(search || category || activityStage || quick) && (
-            <button className="btn-secondary" onClick={() => { setSearch(""); setCategory(""); setActivityStage(""); setQuick(""); }}>Clear All</button>
+          {(search || category || headKey !== PRODUCT_TYPE_KEY || activityStage || quick) && (
+            <button className="btn-secondary" onClick={() => { setSearch(""); setCategory(""); setHeadKey(PRODUCT_TYPE_KEY); setActivityStage(""); setQuick(""); }}>Clear All</button>
           )}
         </Toolbar>
 
@@ -1106,6 +1140,7 @@ function ProductsPage() {
     );
 
         if (groupMode === "category") {
+          const currentHead = heads.data?.heads.find((h) => (h.id ?? PRODUCT_TYPE_KEY) === headKey);
           return (
             <ShopLayout
               rail={
@@ -1114,6 +1149,14 @@ function ProductsPage() {
                   selected={category || "all"}
                   onSelect={(key) => setCategory(key === "all" ? "" : key)}
                   alerts
+                  includeUncategorized={headKey === PRODUCT_TYPE_KEY}
+                  headDropdown={
+                    <CategoryHeadSelect
+                      heads={heads.data?.heads}
+                      value={headKey}
+                      onChange={handleHeadChange}
+                    />
+                  }
                 />
               }
               title={
@@ -1121,6 +1164,8 @@ function ProductsPage() {
                   ? "Uncategorized"
                   : category
                   ? cats.data?.categories.find((c) => c.id === category)?.name ?? "Category"
+                  : currentHead && currentHead.id !== null
+                  ? `All ${currentHead.name}`
                   : "All Categories"
               }
               count={`${rows.length} product${rows.length === 1 ? "" : "s"}`}

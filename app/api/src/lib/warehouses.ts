@@ -61,10 +61,36 @@ export async function defaultWarehouse(db: Db, companyId: string) {
 
 /** A warehouse of this company; `active` refuses inactive ones (new receipts, shifts). */
 export async function requireWarehouse(db: Db, companyId: string, id: string, opts: { active?: boolean } = {}) {
-  const w = await db.warehouse.findFirst({ where: { id, companyId }, select: { id: true, code: true, name: true, active: true, isDefault: true } });
-  if (!w) throw new AppError(400, "UNKNOWN_WAREHOUSE", "That warehouse was not found");
-  if (opts.active && !w.active) throw new AppError(400, "WAREHOUSE_INACTIVE", `${w.code} ${w.name} is inactive`);
-  return w;
+  const map = await requireWarehouses(db, companyId, [id], opts);
+  return map.get(id)!;
+}
+
+/**
+ * Validates warehouses of this company in one batch; `active` refuses inactive ones.
+ * Returns a Map from warehouse ID to the warehouse record.
+ * Throws UNKNOWN_WAREHOUSE if any requested ID is missing or belongs to another company.
+ * Throws WAREHOUSE_INACTIVE if active is requested and any warehouse is inactive.
+ */
+export async function requireWarehouses(
+  db: Db,
+  companyId: string,
+  ids: readonly string[],
+  opts: { active?: boolean } = {}
+): Promise<Map<string, { id: string; code: string; name: string; active: boolean; isDefault: boolean }>> {
+  const uniqueIds = [...new Set(ids)];
+  const out = new Map<string, { id: string; code: string; name: string; active: boolean; isDefault: boolean }>();
+  if (!uniqueIds.length) return out;
+  const rows = await db.warehouse.findMany({
+    where: { id: { in: uniqueIds }, companyId },
+    select: { id: true, code: true, name: true, active: true, isDefault: true },
+  });
+  for (const r of rows) out.set(r.id, r);
+  for (const id of uniqueIds) {
+    const w = out.get(id);
+    if (!w) throw new AppError(400, "UNKNOWN_WAREHOUSE", "That warehouse was not found");
+    if (opts.active && !w.active) throw new AppError(400, "WAREHOUSE_INACTIVE", `${w.code} ${w.name} is inactive`);
+  }
+  return out;
 }
 
 /**

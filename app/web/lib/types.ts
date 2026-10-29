@@ -94,7 +94,7 @@ export interface GroupedInfo {
     decimals: number | null;
     required: boolean;
     active: boolean;
-    variations: { id: string; shortName: string; attributes: Attributes; label: string; salePrice: string }[];
+    variations: { id: string; shortName: string; attributes: Attributes; label: string; salePrice: string; minSalePrice?: string }[];
   }[];
 }
 

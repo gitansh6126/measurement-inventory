@@ -37,9 +37,14 @@ export function EnvBanner() {
       <span>
         v{info.releaseVersion} · deployed {deployed} · schema {info.migrationVersion ?? "not migrated"}
       </span>
+      {info.environment === "DEMO" && (
+        <a href="/demo-data" className="ml-auto rounded bg-white/90 px-2 py-0.5 text-xs font-semibold text-amber-950 shadow-sm hover:bg-white border border-amber-900/20">
+          Demo Data Tools →
+        </a>
+      )}
       {info.switchUrl && (
         // Opens the other environment; it has its own sign-in, data and session.
-        <a href={info.switchUrl} className="ml-auto rounded bg-white/80 px-2 py-0.5 font-semibold text-slate-900 shadow-sm hover:bg-white">
+        <a href={info.switchUrl} className={`${info.environment === "DEMO" ? "ml-2" : "ml-auto"} rounded bg-white/80 px-2 py-0.5 font-semibold text-slate-900 shadow-sm hover:bg-white`}>
           {info.environment === "CLIENT_READY" ? "Switch to Demo company →" : "Switch to Real company →"}
         </a>
       )}

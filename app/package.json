@@ -14,6 +14,9 @@
   "scripts": {
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test -w api",
-    "test:integration": "npm run test:integration -w api"
+    "test:integration": "npm run test:integration -w api",
+    "build:hosting": "npm run build -w web",
+    "start:hosting": "node hosting/start.mjs",
+    "typecheck:hosting": "tsc -p hosting"
   }
 }

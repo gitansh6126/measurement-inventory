@@ -928,8 +928,18 @@ function StockIn() {
         );
       case "newStock": return measuredRows ? "Add stock" : whFilter ? `New Stock (${wh.codeOf(whFilter)})` : "New Stock";
       case "change": return "Change";
-      case "minSalePrice": return <span title="Minimum Selling Price — stored as a reference and not enforced">Minimum Selling Price ₹</span>;
-      case "salePrice": return <span title="Selling Price — what the customer pays">Selling Price ₹</span>;
+      case "minSalePrice":
+        return (
+          <span className="inline-block whitespace-normal leading-tight max-w-[6.5rem]" title="Minimum Selling Price — stored as a reference and not enforced">
+            Min Selling<span className="block text-[10px] font-normal text-slate-500">Price ₹</span>
+          </span>
+        );
+      case "salePrice":
+        return (
+          <span className="inline-block whitespace-normal leading-tight max-w-[5.5rem]" title="Selling Price — what the customer pays">
+            Selling<span className="block text-[10px] font-normal text-slate-500">Price ₹</span>
+          </span>
+        );
       case "minStock": return <span title="Minimum stock level — warns when stock drops to or below it">Min Stock</span>;
       default: return null;
     }
@@ -938,7 +948,8 @@ function StockIn() {
   const headCells = (ids: string[], { measuredRows = false, drag = true } = {}) =>
     ids.map((id) => {
       const dragProps = drag ? cols.headerDrag(id) : {};
-      return <th key={id} {...dragProps} className={`${dragProps.className ?? ""} ${id === "product" ? "col-product" : ""}`}>{headOf(id, measuredRows)}</th>;
+      const dataLabel = id === "minSalePrice" ? "Min Selling Price" : id === "salePrice" ? "Selling Price" : undefined;
+      return <th key={id} {...dragProps} data-label={dataLabel} className={`${dragProps.className ?? ""} ${id === "product" ? "col-product" : ""}`}>{headOf(id, measuredRows)}</th>;
     });
   const editHeadsFor = (all = false, measuredRows = false) => headCells(editIds(all), { measuredRows, drag: !all });
   // expand + the user's columns

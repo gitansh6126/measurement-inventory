@@ -15,6 +15,7 @@ import {
 } from "@/components/icons";
 import { Restricted } from "@/components/Restricted";
 import { Alert, Modal, PageHeader, StatCell, StatStrip } from "@/components/ui";
+import { DemoDataManager } from "@/components/DemoDataManager";
 import { errorText, useApi } from "@/lib/useApi";
 
 interface SummaryData {
@@ -231,6 +232,8 @@ function BackupManager() {
           />
         </StatStrip>
       )}
+
+      <DemoDataManager onDone={() => void reloadSummary()} compact />
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {/* DOWNLOAD CARD */}

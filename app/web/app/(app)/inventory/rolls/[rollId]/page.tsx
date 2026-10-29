@@ -12,6 +12,7 @@ import { ACTION_LABEL, KIND_CLASS, KIND_LABEL, fmtLen, fmtRate, kindPhrase, meta
 import { useApi } from "@/lib/useApi";
 import { useWarehouses } from "@/lib/useWarehouses";
 import { useLengthView } from "@/lib/lengthView";
+import { LengthViewToggle } from "@/components/measure/LengthViewToggle";
 
 // Roll record (wireframe W8, V2 plan §2.5) with its full history (W19): identity, lengths,
 // where it came from, what it cost, and what happened to it. Notes are edited
@@ -68,6 +69,7 @@ export default function RollPage() {
           <>
             <span className={`rounded px-2 py-0.5 text-xs font-semibold ${KIND_CLASS[p.kind]}`}>{KIND_LABEL[p.kind]}</span>
             <span className={`rounded px-2 py-0.5 text-xs font-semibold ${active ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}>{active ? "Active" : "Used up"}</span>
+            <LengthViewToggle />
           </>
         }
         subtitle={`${p.product.name} · ${L(p.originalLength)} received ${day(p.receivedAt)}`}

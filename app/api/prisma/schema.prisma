@@ -441,6 +441,8 @@ model StockMovement {
   @@index([variationId, occurredAt])
   @@index([companyId, occurredAt])
   @@index([transferId])
+  @@index([saleId])
+  @@index([purchaseId])
   @@index([variationId, warehouseId])
   @@map("stock_movements")
 }
@@ -1319,6 +1321,7 @@ model GroupSetPart {
 
   @@index([setId])
   @@index([variationId, status])
+  @@index([companyId, status, variationId])
   @@map("group_set_parts")
 }
 

@@ -1087,6 +1087,7 @@ export function Checkout({ mode }: { mode: CartMode }) {
         <SaleSetsModal
           productId={lines[editingSets]!.productId}
           initial={lines[editingSets]!.saleSets}
+          initialPrice={lines[editingSets]!.price}
           orderId={cart.order?.id}
           excludeSetIds={lines.flatMap((l, j) => (j === editingSets ? [] : (l.saleSets ?? []).map((s) => s.setId)))}
           onClose={() => setEditingSets(null)}

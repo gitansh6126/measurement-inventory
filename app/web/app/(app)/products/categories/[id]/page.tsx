@@ -3,16 +3,19 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { PackageIcon, PlusIcon } from "@/components/icons";
+import { EditIcon, PackageIcon, PlusIcon } from "@/components/icons";
 import { useCan } from "@/components/MeContext";
 import { ProductThumb } from "@/components/ProductThumb";
+import { CategoryHeadSelect, PRODUCT_TYPE_KEY } from "@/components/catalog/CategoryHeadSelect";
+import { CategoryRail } from "@/components/catalog/CategoryRail";
+import { ShopLayout } from "@/components/catalog/ShopLayout";
 import { CategoryModal } from "@/components/products/CategoryModal";
 import { ViewToggle } from "@/components/catalog/ViewToggle";
 import { StockBadge } from "@/components/StockBadge";
 import { Alert, EmptyState, Menu, Modal, PageHeader, SearchInput, TableSkeleton, Toolbar } from "@/components/ui";
 import { api } from "@/lib/api";
 import { money, qty, variationLabel } from "@/lib/format";
-import type { Category, CategoryHead, Product, StockProduct } from "@/lib/types";
+import type { Category, CategoryHead, CategoryStatsList, Product, StockProduct } from "@/lib/types";
 import { errorText, useApi } from "@/lib/useApi";
 import { useViewMode } from "@/lib/useViewMode";
 
@@ -32,6 +35,7 @@ export default function CategoryDetailPage() {
   const { data, error, reload } = useApi<{ category: Category; products: CategoryProduct[] }>(`/categories/${id}`);
   const stock = useApi<{ products: StockProduct[] }>(`/inventory?status=all&categoryId=${id}`);
   const heads = useApi<{ heads: CategoryHead[] }>("/category-heads?status=all");
+  const [headKey, setHeadKey] = useState<string>(() => data?.category?.headId ?? PRODUCT_TYPE_KEY);
   const [flash, setFlash] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const [editing, setEditing] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -39,6 +43,29 @@ export default function CategoryDetailPage() {
   const [choosing, setChoosing] = useState<Product | null>(null);
   const [search, setSearch] = useState("");
   const [view, setView] = useViewMode("categories.products", "grid");
+
+  useEffect(() => {
+    if (data?.category) {
+      setHeadKey(data.category.headId ?? PRODUCT_TYPE_KEY);
+    }
+  }, [data?.category?.id, data?.category?.headId]);
+
+  const siblingCats = useApi<CategoryStatsList>(`/categories?stats=1&headId=${headKey}`);
+
+  async function handleHeadChange(nextHeadKey: string) {
+    if (nextHeadKey === headKey) return;
+    setHeadKey(nextHeadKey);
+    try {
+      const res = await api<{ categories: Category[] }>(`/categories?headId=${nextHeadKey}&status=all`);
+      if (res.categories && res.categories.length > 0) {
+        router.push(`/products/categories/${res.categories[0].id}`);
+      } else {
+        router.push(nextHeadKey === PRODUCT_TYPE_KEY ? "/products/categories" : `/products/categories?head=${nextHeadKey}`);
+      }
+    } catch {
+      router.push(nextHeadKey === PRODUCT_TYPE_KEY ? "/products/categories" : `/products/categories?head=${nextHeadKey}`);
+    }
+  }
 
   useEffect(() => {
     if (!focus || !data?.products?.length) return;
@@ -113,7 +140,12 @@ export default function CategoryDetailPage() {
     <div>
       <PageHeader
         back={{ href: backHref, label: headName ? `Categories · ${headName}` : "Categories" }}
-        title={category.name}
+        title={
+          <div className="flex items-center gap-2.5">
+            <ProductThumb src={category.imageUrl} name={category.name} className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 rounded-lg text-[8px]" />
+            <span>{category.name}</span>
+          </div>
+        }
         badge={!category.active ? <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600">Inactive</span> : undefined}
         subtitle={`${headName ? `${headName} · ` : ""}${category.productCount} active product${category.productCount === 1 ? "" : "s"}${
           data.products.some((p) => p.active && p.scope && p.scope !== "all")
@@ -121,40 +153,60 @@ export default function CategoryDetailPage() {
             : ""
         }`}
         actions={
-          category.active &&
-          (canWrite || canCreate) && (
-            <Menu
-              label="Add product"
-              trigger={<><PlusIcon className="h-4 w-4" /> Add Product</>}
-              items={[
-                ...(canWrite ? [{ label: "Add Existing Product", onClick: () => setAdding(true) }] : []),
-                ...(canCreate ? [{ label: "Add New Product", onClick: () => router.push(category.headId ? `/products/new?headCategoryId=${category.id}` : `/products/new?categoryId=${category.id}`) }] : []),
-              ]}
-            />
-          )
+          <div className="flex items-center gap-2">
+            {canWrite && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => setEditing(true)}
+                title="Edit category name and image"
+              >
+                <EditIcon className="h-4 w-4" /> <span>Edit Category</span>
+              </button>
+            )}
+            {category.active && (canWrite || canCreate) && (
+              <Menu
+                label="Add product"
+                trigger={<><PlusIcon className="h-4 w-4" /> Add Product</>}
+                items={[
+                  ...(canWrite ? [{ label: "Add Existing Product", onClick: () => setAdding(true) }] : []),
+                  ...(canCreate ? [{ label: "Add New Product", onClick: () => router.push(category.headId ? `/products/new?headCategoryId=${category.id}` : `/products/new?categoryId=${category.id}`) }] : []),
+                ]}
+              />
+            )}
+          </div>
         }
       />
       <Alert message={flash?.text} kind={flash?.kind} />
 
-      <div className="flex flex-col gap-4 md:flex-row">
-        {/* Pinned to the top (a stretched button centres its content) and a compact row on phones. */}
-        <button
-          type="button"
-          className="card flex shrink-0 items-center overflow-hidden text-left md:w-56 md:flex-col md:items-stretch md:self-start"
-          onClick={() => canWrite && setEditing(true)}
-          title={canWrite ? "Edit category" : undefined}
-          disabled={!canWrite}
-        >
-          <ProductThumb src={category.imageUrl} name={category.name} className="h-16 w-16 shrink-0 text-[8px] md:aspect-square md:h-auto md:w-full md:text-lg" />
-          <div className="p-3 font-semibold text-slate-900">{category.name}</div>
-        </button>
-
-        <div className="grid min-w-0 flex-1 content-start gap-3">
-        <Toolbar>
-          <SearchInput value={search} onChange={setSearch} placeholder="Search products in this category…" />
-          <span className="flex-1" />
-          <ViewToggle value={view} onChange={setView} />
-        </Toolbar>
+      <ShopLayout
+        rail={
+          <CategoryRail
+            data={siblingCats.data ?? null}
+            selected={id}
+            onSelect={(key) => {
+              if (key !== id) router.push(`/products/categories/${key}`);
+            }}
+            includeAll={false}
+            includeUncategorized={false}
+            alerts
+            headDropdown={
+              <CategoryHeadSelect
+                heads={heads.data?.heads}
+                value={headKey}
+                onChange={(next) => void handleHeadChange(next)}
+              />
+            }
+          />
+        }
+        toolbar={
+          <Toolbar>
+            <SearchInput value={search} onChange={setSearch} placeholder="Search products in this category…" />
+            <span className="flex-1" />
+            <ViewToggle value={view} onChange={setView} />
+          </Toolbar>
+        }
+      >
         <div className={view === "grid" && products.length > 0 ? "" : "card overflow-x-auto lg:overflow-x-visible"}>
           {products.length === 0 ? (
             term ? <EmptyState icon={<PackageIcon className="h-6 w-6" />} title="No products match the search" /> :
@@ -226,10 +278,9 @@ export default function CategoryDetailPage() {
             </table>
           )}
         </div>
-        </div>
-      </div>
+      </ShopLayout>
 
-      <CategoryModal open={editing} category={category} head={{ id: category.headId ?? null, name: headName }} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); void reload(); }} />
+      <CategoryModal open={editing} category={category} head={{ id: category.headId ?? null, name: headName }} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); void reload(); void siblingCats.reload(); }} />
       <AddExistingModal
         open={adding}
         categoryId={category.id}

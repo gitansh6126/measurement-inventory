@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { EnvBanner } from "@/components/EnvBanner";
 import { DISPLAY_PREFS_BOOT } from "@/lib/displayPrefsBoot";
 import "./globals.css";
 
@@ -17,7 +16,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <script dangerouslySetInnerHTML={{ __html: DISPLAY_PREFS_BOOT }} />
       </head>
       <body>
-        <EnvBanner />
         {children}
       </body>
     </html>

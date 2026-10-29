@@ -6,6 +6,19 @@ import type { SetContentRow, SetDetail } from "@/lib/types";
 // part name on the left, what is fitted on the right ("Load Chain Grade 80 → 8 mm · 3 m").
 // No set codes, piece codes, short names or SKUs (owner, 2026-10-22); codes stay for search only.
 
+/**
+ * Parses a content item: separates redundant product name prefix from role label,
+ * omits redundant "Fitted" status, and provides a clean label + display value for pills and tables.
+ */
+export function formatContentItem(c: { name: string; value: string }) {
+  const [pname, role] = c.name.includes(" · ") ? c.name.split(" · ") : [c.name, undefined];
+  const label = role || pname;
+  const isFitted = c.value === "Fitted";
+  const displayValue = isFitted ? pname : c.value;
+  const fullTitle = `${pname}${role ? ` · ${role}` : ""}${isFitted ? "" : `: ${c.value}`}`;
+  return { label, displayValue, isFitted, fullTitle, productName: pname, role };
+}
+
 /** One-line form for tables and documents: "Load Chain Grade 80 8 mm · 3 m, Safety Hook 1 Ton". */
 export const contentsText = (rows: readonly SetContentRow[]) => rows.map((r) => (r.value === "Fitted" ? r.name : `${r.name} ${r.value}`)).join(", ") || "Main part only";
 
@@ -13,12 +26,15 @@ export function SetContents({ rows, className = "" }: { rows: readonly SetConten
   if (!rows.length) return <div className={`text-xs text-slate-400 ${className}`}>Main part only</div>;
   return (
     <dl className={`grid gap-0.5 text-xs ${className}`}>
-      {rows.map((r, i) => (
-        <div key={`${r.name}-${i}`} className="flex justify-between gap-3">
-          <dt className="text-slate-500">{r.name}</dt>
-          <dd className="text-right font-medium text-slate-800">{r.value}</dd>
-        </div>
-      ))}
+      {rows.map((r, i) => {
+        const { label, displayValue, fullTitle } = formatContentItem(r);
+        return (
+          <div key={`${r.name}-${i}`} className="flex justify-between gap-3" title={fullTitle}>
+            <dt className="text-slate-500">{label}</dt>
+            <dd className="text-right font-medium text-slate-800">{displayValue}</dd>
+          </div>
+        );
+      })}
     </dl>
   );
 }

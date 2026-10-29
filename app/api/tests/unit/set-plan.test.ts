@@ -145,6 +145,30 @@ describe("planSets", () => {
       backorder: true,
     });
   });
+
+  it("prefers shortening an existing matching chain over replacing a different chain from a roll", () => {
+    // Set 1: 6mm 3m, 1T hook (needs 6mm replaced with 8mm cut from stock roll)
+    // Set 2: 8mm 3m, 1T hook (needs 8mm shortened from 3m to 2m in place)
+    const testSets: PlanSet[] = [
+      { id: "S1", warehouseId: null, parts: [{ byproductId: "chain", variationId: "6mm", lengthMilli: m(3) }, { byproductId: "hook", variationId: "1T", lengthMilli: null }] },
+      { id: "S2", warehouseId: null, parts: [{ byproductId: "chain", variationId: "8mm", lengthMilli: m(3) }, { byproductId: "hook", variationId: "1T", lengthMilli: null }] },
+    ];
+    // Customer wants: 8mm 2m with 1T hook
+    const r = planSets(links, testSets, want("8mm", 2, "1T"), 1, stock());
+    expect(r.picks).toHaveLength(1);
+    // S2 MUST be chosen before S1 because S2 shortens in place (cuts 1m from existing combination) without cutting free rolls
+    expect(r.picks[0]!.setId).toBe("S2");
+    expect(r.picks[0]!.changes).toEqual([
+      {
+        byproductId: "chain",
+        action: "REPLACE",
+        variationId: "8mm",
+        lengthMilli: m(2),
+        shortenInPlace: true,
+        from: { byproductId: "chain", variationId: "8mm", lengthMilli: m(3) },
+      },
+    ]);
+  });
 });
 
 describe("setStatus / alternatives / wantComplete", () => {

@@ -89,7 +89,7 @@ export function StockEditDrawer({
         className={`relative z-10 flex w-full flex-col overflow-hidden bg-white shadow-2xl transition-all duration-200 ${
           expanded
             ? "h-full max-h-none w-full max-w-none rounded-none"
-            : "h-[94vh] max-h-[94vh] w-full max-w-5xl rounded-t-2xl sm:h-[88vh] sm:max-h-[88vh] sm:rounded-2xl lg:max-w-6xl xl:max-w-7xl"
+            : "h-[94vh] max-h-[94vh] w-full max-w-5xl rounded-t-2xl sm:h-[88vh] sm:max-h-[88vh] sm:rounded-2xl md:max-w-6xl lg:max-w-7xl xl:max-w-[88rem]"
         }`}
       >
         <div className="flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-5 py-3.5 sm:px-6">
