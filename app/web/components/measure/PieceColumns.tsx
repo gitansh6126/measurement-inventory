@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { Menu } from "@/components/ui";
 import { KIND_COLUMN, KIND_LABEL, fmtLen, type MeasureMeta, type PieceKind, type PieceView } from "@/lib/measure";
+import { useLengthView } from "@/lib/lengthView";
 
 // Cut / Open / Closed stock view (owner design 2026-10-16, measurement-design.html): the pieces of
 // one variation in three columns, each column smallest first, with its count and total length.
@@ -10,7 +11,7 @@ import { KIND_COLUMN, KIND_LABEL, fmtLen, type MeasureMeta, type PieceKind, type
 // product page's "Rolls & Physical Bundles" section and the sale drawer's piece chooser.
 
 const KINDS: PieceKind[] = ["CUT", "OPEN", "CLOSED"];
-const COLUMN_BADGE: Record<PieceKind, string> = { CUT: "bg-amber-100 text-amber-800", OPEN: "bg-sky-100 text-sky-800", CLOSED: "bg-slate-200 text-slate-700" };
+export const COLUMN_BADGE: Record<PieceKind, string> = { CUT: "bg-amber-100 text-amber-800", OPEN: "bg-sky-100 text-sky-800", CLOSED: "bg-slate-200 text-slate-700" };
 const EMPTY: Record<PieceKind, string> = { CUT: "No cut pieces", OPEN: "No open pieces", CLOSED: "No sealed pieces" };
 
 export const dayMonth = (iso: string | number | Date) => new Date(iso).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short" });
@@ -30,6 +31,7 @@ export function PieceColumns<T extends { id: string; kind: PieceKind }>({
   /** Kinds whose pieces wrap as small tiles instead of a stacked list. */
   tileKinds?: PieceKind[];
 }) {
+  useLengthView();
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
       {KINDS.map((k) => {
@@ -76,6 +78,7 @@ const BAR_TONE: Record<PieceKind, string> = { OPEN: "bg-sky-500", CUT: "bg-amber
 
 /** A cut piece as a small tile: the length large, received date, actions menu. */
 export function PieceTile({ p, meta, actions, badge }: { p: PieceView; meta: MeasureMeta; actions: PieceActions; badge?: ReactNode }) {
+  useLengthView();
   return (
     <div
       role="link"
@@ -103,6 +106,7 @@ const BOX_TONE: Record<PieceKind, string> = {
 
 /** One open or sealed piece in a column: remaining against original with a bar, received date, actions menu. */
 export function PieceBox({ p, meta, actions, badge }: { p: PieceView; meta: MeasureMeta; actions: PieceActions; badge?: ReactNode }) {
+  useLengthView();
   const L = (n: number) => fmtLen(n, meta);
   const pct = p.originalLength > 0 ? Math.round((p.remainingLength / p.originalLength) * 100) : 0;
   return (

@@ -6,6 +6,7 @@ import { ProductThumb } from "@/components/ProductThumb";
 import { StockBadge } from "@/components/StockBadge";
 import { SearchInput, Segmented } from "@/components/ui";
 import { formatVariationAttributesString, money, qty } from "@/lib/format";
+import { fmtSellRate } from "@/lib/measure";
 import type { StockProduct, StockVariation } from "@/lib/types";
 import { MeasuredDrawer } from "@/components/measure/MeasuredDrawer";
 import { useSupplierRates } from "@/lib/useSupplierRates";
@@ -66,6 +67,15 @@ function CountedProductDrawer({
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [closing, setClosing] = useState(false);
   const closeTimer = useRef<number | undefined>(undefined);
+  // Compact header (RMS Tech reference, owner 2026-10-28): once the form scrolls, the header shrinks
+  // to a small thumbnail + one-line name so the product stays visible and the form gets the room.
+  // Only when the form overflows by more than the space saved, so it cannot flip back and forth.
+  const [compact, setCompact] = useState(false);
+  const onBodyScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (!compact && el.scrollTop > 32 && el.scrollHeight - el.clientHeight > 72) setCompact(true);
+    else if (compact && el.scrollTop < 4) setCompact(false);
+  };
 
   // Slide the sheet back down before unmounting (instant when reduced motion is on).
   const onClose = useCallback(() => {
@@ -155,12 +165,18 @@ function CountedProductDrawer({
     <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true" aria-label={`${isSale ? "Add sale" : "Add purchase"}: ${product.name}`}>
       <button className={`absolute inset-0 bg-slate-900/40 motion-reduce:animate-none ${closing ? "animate-fade-out" : "animate-fade-in"}`} aria-label="Close" onClick={onClose} />
       <div className={`relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl will-change-transform motion-reduce:animate-none sm:max-w-3xl ${closing ? "animate-sheet-out" : "animate-sheet-in"}`}>
-        <div className="flex shrink-0 items-start gap-3 px-5 pt-5 pb-4">
-          <ProductThumb src={chosen?.imageUrl ?? product.imageUrl} name={product.name} className="h-16 w-16 shrink-0 rounded-lg text-[9px]" />
+        <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-slate-200 sm:hidden" aria-hidden />
+        <div className={`flex shrink-0 gap-3 px-5 transition-all duration-200 ${compact ? "items-center pt-2 pb-2 shadow-[0_6px_12px_-10px_rgba(15,23,42,0.25)]" : "items-start pt-3 pb-4 sm:pt-5"}`}>
+          <ProductThumb src={chosen?.imageUrl ?? product.imageUrl} name={product.name} className={`shrink-0 rounded-lg transition-all duration-200 ${compact ? "h-10 w-10 text-[7px]" : "h-16 w-16 text-[9px]"}`} />
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{edit ? "Edit line" : isSale ? "Add sale" : "Add purchase"}</div>
-            <h2 className="text-lg font-bold text-slate-900">{product.name}</h2>
-            {chosen && variable && <div className="text-xs text-slate-500">{formatVariationAttributesString(chosen.attributes, product.attributes)}</div>}
+            {!compact && <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{edit ? "Edit line" : isSale ? "Add sale" : "Add purchase"}</div>}
+            <h2 className={`font-bold text-slate-900 ${compact ? "truncate text-sm" : "text-lg"}`} title={product.name}>{product.name}</h2>
+            {variable && (chosen || compact) && (
+              <div className="truncate text-xs text-slate-500">
+                {chosen ? formatVariationAttributesString(chosen.attributes, product.attributes) : "Select options"}
+                {compact && chosen && <> · <StockBadge quantity={chosen.quantity} state={chosen.state} unit={product.unit} /></>}
+              </div>
+            )}
           </div>
           <button className="flex h-8 w-8 items-center justify-center rounded-full text-xl leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700 active:scale-90 transition-all duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500" aria-label="Close" onClick={onClose}>×</button>
         </div>
@@ -173,6 +189,7 @@ function CountedProductDrawer({
               value={tab}
               onChange={(t) => {
                 setError("");
+                setCompact(false);
                 setTab(t);
               }}
               options={[
@@ -202,7 +219,7 @@ function CountedProductDrawer({
             )}
             {/* Properly sized table container with internal horizontal and vertical scrolling */}
             <div className="max-h-[50vh] min-h-0 w-full flex-1 overflow-auto rounded-lg border border-slate-200">
-              <table className="table min-w-full">
+              <table className={`table table-stack min-w-full ${variable ? "table-stack-all" : ""}`}>
                 <thead className="sticky top-0 z-10 bg-slate-50 shadow-xs">
                   <tr>
                     {!variable && <th className="bg-slate-50">Item</th>}
@@ -211,7 +228,7 @@ function CountedProductDrawer({
                         {a.name}{a.unit ? ` (${a.unit})` : ""}
                       </th>
                     ))}
-                    <th className="bg-slate-50 text-right">{isSale ? "Min Selling Price – Selling Price" : "Supplier Rate / Cost"}</th>
+                    <th className="bg-slate-50 text-right">{isSale ? "Selling Price" : "Supplier Rate / Cost"}</th>
                     <th className="bg-slate-50 text-right">In Stock</th>
                     {inCartOf && <th className="bg-slate-50 text-right">In cart · Left</th>}
                     <th className="bg-slate-50 text-center">Action</th>
@@ -240,9 +257,8 @@ function CountedProductDrawer({
                         ))}
                         <td className="whitespace-nowrap text-right text-slate-800">
                           {isSale ? (
-                            <div>
-                              <div className="font-semibold text-slate-900">{money(v.salePrice)} <span className="text-[11px] font-normal text-slate-500">(Sell)</span></div>
-                              <span className="block text-[11px] text-slate-500">Min: {Number(v.minSalePrice) > 0 ? money(v.minSalePrice) : "—"}</span>
+                            <div className="font-semibold text-slate-900">
+                              {fmtSellRate(null, v.minSalePrice, v.salePrice, "Sell: ")}
                             </div>
                           ) : (
                             <div>
@@ -262,7 +278,9 @@ function CountedProductDrawer({
                                   return (
                                     <>
                                       <div className="font-semibold text-slate-900">{money(vSug.cheapest.rate)}</div>
-                                      <span className="block text-[10px] text-slate-500">Best: {vSug.cheapest.supplierName}{vSug.rates.length > 1 ? ` · ${vSug.rates.length} suppliers` : ""}</span>
+                                      <span className="block text-[10px] text-slate-500">
+                                        {vSug.rates.length > 1 ? `Best: ${vSug.cheapest.supplierName} · ${vSug.rates.length} suppliers` : vSug.cheapest.supplierName}
+                                      </span>
                                       {Number(v.purchaseCost) > 0 && <span className="block text-[10px] text-slate-400">Cost: {money(v.purchaseCost)}</span>}
                                     </>
                                   );
@@ -333,7 +351,7 @@ function CountedProductDrawer({
           </div>
         ) : (
           /* Form Tab Body: Scrollable only inside this container, preserving pinned header & footer */
-          <div className="min-h-0 flex-1 overflow-y-auto px-5">
+          <div className="min-h-0 flex-1 overflow-y-auto px-5" onScroll={onBodyScroll}>
             {variable &&
               product.attributes.map((a) => (
                 <div key={a.name} className="mb-4">
@@ -381,12 +399,8 @@ function CountedProductDrawer({
                 </span>
                 <WarehouseStockChips rows={chosen.byWarehouse} />
                 {isSale ? (
-                  <span title="Minimum selling price is a reference only">
-                    <span className="text-slate-500">Min Selling Price:</span>{" "}
-                    <b>{Number(chosen.minSalePrice) > 0 ? money(chosen.minSalePrice) : "—"}</b>
-                    <span className="mx-2 text-slate-400">–</span>
-                    <span className="text-slate-500">Selling Price:</span>{" "}
-                    <b className="text-brand-700">{money(chosen.salePrice)}</b>
+                  <span className="font-semibold text-brand-700">
+                    {fmtSellRate(null, chosen.minSalePrice, chosen.salePrice, "Sell: ")}
                   </span>
                 ) : Number(chosen.purchaseCost) > 0 && <span>Last cost: <b>{money(chosen.purchaseCost)}</b></span>}
               </div>
@@ -398,7 +412,7 @@ function CountedProductDrawer({
                 <div className="flex w-fit items-center rounded-lg border border-slate-300 bg-slate-50 shadow-xs">
                   <button
                     type="button"
-                    className="flex h-10 w-10 items-center justify-center rounded-l-lg text-lg font-semibold text-slate-700 hover:bg-rose-50 hover:text-rose-600 active:bg-rose-100 active:scale-90 transition-all duration-150 cursor-pointer select-none disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                    className="flex h-11 w-11 items-center justify-center rounded-l-lg text-lg font-semibold text-slate-700 hover:bg-rose-50 hover:text-rose-600 active:bg-rose-100 active:scale-90 transition-all duration-150 cursor-pointer select-none disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
                     aria-label="Decrease quantity"
                     disabled={qtyVal <= 1}
                     onClick={() => setQtyVal((q) => Math.max(1, q - 1))}
@@ -406,7 +420,7 @@ function CountedProductDrawer({
                     −
                   </button>
                   <input
-                    className="h-10 w-16 border-x border-slate-300 bg-white text-center font-semibold outline-none focus:bg-brand-50/20"
+                    className="h-11 w-16 border-x border-slate-300 bg-white text-center font-semibold outline-none focus:bg-brand-50/20"
                     inputMode="numeric"
                     aria-label="Quantity"
                     value={qtyVal}
@@ -414,7 +428,7 @@ function CountedProductDrawer({
                   />
                   <button
                     type="button"
-                    className="flex h-10 w-10 items-center justify-center rounded-r-lg text-lg font-semibold text-slate-700 hover:bg-brand-50 hover:text-brand-600 active:bg-brand-100 active:scale-90 transition-all duration-150 cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                    className="flex h-11 w-11 items-center justify-center rounded-r-lg text-lg font-semibold text-slate-700 hover:bg-brand-50 hover:text-brand-600 active:bg-brand-100 active:scale-90 transition-all duration-150 cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                     aria-label="Increase quantity"
                     onClick={() => setQtyVal((q) => q + 1)}
                   >
@@ -497,7 +511,7 @@ function CountedProductDrawer({
         )}
 
         {/* Always Visible Sticky Footer */}
-        <div className="shrink-0 px-5 pt-4 pb-5">
+        <div className="shrink-0 border-t border-slate-100 px-5 pt-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-[0_-6px_12px_-10px_rgba(15,23,42,0.25)] sm:pt-4">
           {tab === "stock" ? (
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
               <div className="text-sm">
@@ -529,14 +543,26 @@ function CountedProductDrawer({
               </div>
             </div>
           ) : (
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="text-sm text-slate-500">
-                {subtotal > 0 && <>Subtotal <b className="text-lg text-slate-900">{money(subtotal / 100)}</b></>}
+            // Estimated total with its working (price × quantity) beside the main action, so the
+            // line can be checked before it goes into the cart (RMS Tech reference).
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 text-sm text-slate-500" aria-live="polite">
+                {subtotal > 0 ? (
+                  <>
+                    <div className="text-xs">{isSale ? "Line total" : "Line cost"}</div>
+                    <b className="block text-lg leading-tight text-slate-900">{money(subtotal / 100)}</b>
+                    <div className="truncate text-xs text-slate-400">
+                      {money(Number(price))} × {qty(qtyVal)}
+                    </div>
+                  </>
+                ) : (
+                  <span className="text-xs">{isSale ? "Enter a selling price" : "Enter a cost"} to see the total</span>
+                )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <button
                   type="button"
-                  className={`btn text-white transition-all duration-150 active:scale-[0.98] motion-reduce:transform-none ${
+                  className={`btn h-11 px-5 text-white sm:h-auto sm:px-3 transition-all duration-150 active:scale-[0.98] motion-reduce:transform-none ${
                     isSale
                       ? "bg-brand-600 hover:bg-brand-700 hover:shadow-md focus-visible:ring-brand-500"
                       : "bg-slate-900 hover:bg-slate-800 hover:shadow-md focus-visible:ring-slate-700"
@@ -564,3 +590,4 @@ function CountedProductDrawer({
     </div>
   );
 }
+

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { PackageIcon, PlusIcon } from "@/components/icons";
 import { useCan } from "@/components/MeContext";
@@ -18,13 +18,15 @@ import { useViewMode } from "@/lib/useViewMode";
 
 /** V3.1 (0038): how a product is in the category — whole, some variations, or a set via its parts. */
 type CategoryProduct = Product & { scope?: "all" | "variations" | "parts" };
-const hasVariations = (p: Product) => p.productType === "variable" || p.productType === "measured";
+const hasVariations = (p: Product) => p.productType === "variable" || p.productType === "measured" || p.productType === "grouped";
 
 // main v2 CategoryDetailView: side card (image + name, click to edit), product list with Remove,
 // and "+ Add Product" → Add Existing Product / Add New Product (preselected category).
 export default function CategoryDetailPage() {
   const id = String(useParams().id);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const focus = searchParams.get("focus");
   const canWrite = useCan("category.write");
   const canCreate = useCan("product.write");
   const { data, error, reload } = useApi<{ category: Category; products: CategoryProduct[] }>(`/categories/${id}`);
@@ -37,6 +39,14 @@ export default function CategoryDetailPage() {
   const [choosing, setChoosing] = useState<Product | null>(null);
   const [search, setSearch] = useState("");
   const [view, setView] = useViewMode("categories.products", "grid");
+
+  useEffect(() => {
+    if (!focus || !data?.products?.length) return;
+    setTimeout(() => {
+      const el = document.getElementById(`cat-product-${focus}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 150);
+  }, [focus, data]);
 
   async function run(fn: () => Promise<unknown>, ok: string) {
     setFlash(null);
@@ -59,7 +69,9 @@ export default function CategoryDetailPage() {
   const backHref = category.headId ? `/products/categories?head=${category.headId}` : "/products/categories";
   const term = search.trim().toLowerCase();
   const products = term ? data.products.filter((p) => p.name.toLowerCase().includes(term) || p.variations.some((v) => v.shortName.toLowerCase().includes(term))) : data.products;
+  // A product with variations shows no price on its row or card; each variation has its own.
   const priceRange = (p: Product) => {
+    if (hasVariations(p)) return "";
     const prices = p.variations.map((v) => Number(v.salePrice));
     if (!prices.length) return "—";
     return Math.min(...prices) === Math.max(...prices) ? money(prices[0] ?? 0) : `${money(Math.min(...prices))} – ${money(Math.max(...prices))}`;
@@ -84,9 +96,17 @@ export default function CategoryDetailPage() {
       </span>
     );
   };
-  const editVariations = (p: CategoryProduct) =>
-    canWrite && category.active && category.headId && hasVariations(p) && p.scope !== "parts" ? (
-      <button className="text-xs font-semibold text-brand-700 hover:underline" onClick={() => setChoosing(p)}>Edit variations</button>
+  // "⋯" menu per product: Edit variations (linked heads) and Remove from category.
+  const actions = (p: CategoryProduct, compact = false) =>
+    canWrite && p.scope !== "parts" ? (
+      <Menu
+        compact={compact}
+        label={`Actions for ${p.name}`}
+        items={[
+          ...(category.active && category.headId && hasVariations(p) ? [{ label: "Edit variations", onClick: () => setChoosing(p) }] : []),
+          { label: "Remove from category", danger: true, onClick: () => void remove(p) },
+        ]}
+      />
     ) : null;
 
   return (
@@ -103,30 +123,29 @@ export default function CategoryDetailPage() {
         actions={
           category.active &&
           (canWrite || canCreate) && (
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-slate-600"><PlusIcon className="inline h-4 w-4" /> Add Product</span>
-              <Menu
-                label="Add product"
-                items={[
-                  ...(canWrite ? [{ label: "Add Existing Product", onClick: () => setAdding(true) }] : []),
-                  ...(canCreate ? [{ label: "Add New Product", onClick: () => router.push(category.headId ? `/products/new?headCategoryId=${category.id}` : `/products/new?categoryId=${category.id}`) }] : []),
-                ]}
-              />
-            </div>
+            <Menu
+              label="Add product"
+              trigger={<><PlusIcon className="h-4 w-4" /> Add Product</>}
+              items={[
+                ...(canWrite ? [{ label: "Add Existing Product", onClick: () => setAdding(true) }] : []),
+                ...(canCreate ? [{ label: "Add New Product", onClick: () => router.push(category.headId ? `/products/new?headCategoryId=${category.id}` : `/products/new?categoryId=${category.id}`) }] : []),
+              ]}
+            />
           )
         }
       />
       <Alert message={flash?.text} kind={flash?.kind} />
 
       <div className="flex flex-col gap-4 md:flex-row">
+        {/* Pinned to the top (a stretched button centres its content) and a compact row on phones. */}
         <button
           type="button"
-          className="card shrink-0 overflow-hidden text-left md:w-56"
+          className="card flex shrink-0 items-center overflow-hidden text-left md:w-56 md:flex-col md:items-stretch md:self-start"
           onClick={() => canWrite && setEditing(true)}
           title={canWrite ? "Edit category" : undefined}
           disabled={!canWrite}
         >
-          <ProductThumb src={category.imageUrl} name={category.name} className="aspect-square w-full text-lg" />
+          <ProductThumb src={category.imageUrl} name={category.name} className="h-16 w-16 shrink-0 text-[8px] md:aspect-square md:h-auto md:w-full md:text-lg" />
           <div className="p-3 font-semibold text-slate-900">{category.name}</div>
         </button>
 
@@ -145,9 +164,9 @@ export default function CategoryDetailPage() {
               {products.map((p) => {
                 const s = qtyOf.get(p.id);
                 return (
-                  <div key={p.id} className={`group card flex flex-col overflow-hidden transition hover:-translate-y-0.5 hover:shadow-md ${p.active ? "" : "opacity-60"}`}>
-                    <Link href={`/products/${p.id}`} className="flex flex-1 flex-col focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500" aria-label={`Open ${p.name}`}>
-                      <div className="overflow-hidden bg-slate-100">
+                  <div key={p.id} id={`cat-product-${p.id}`} className={`group card relative flex flex-col transition hover:-translate-y-0.5 hover:shadow-md ${p.active ? "" : "opacity-60"} ${focus === p.id ? "card-highlight-blink" : ""}`}>
+                    <Link href={`/products/${p.id}`} className="flex flex-1 flex-col rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500" aria-label={`Open ${p.name}`}>
+                      <div className="overflow-hidden rounded-t-lg bg-slate-100">
                         <ProductThumb src={p.imageUrl ?? p.variations[0]?.imageUrl ?? null} name={p.name} className="aspect-[4/3] w-full text-xl transition-transform duration-300 group-hover:scale-105" />
                       </div>
                       <div className="grid flex-1 content-start gap-1 p-3">
@@ -156,16 +175,11 @@ export default function CategoryDetailPage() {
                           <span className="truncate">{p.productType === "variable" ? `${p.variations.length} variations` : p.variations[0]?.shortName}</span>
                           {s && <StockBadge quantity={s.quantity} state={s.state} unit={p.unit} />}
                         </div>
-                        <div className="text-sm font-semibold text-brand-700">{priceRange(p)}</div>
+                        {!hasVariations(p) && <div className="text-sm font-semibold text-brand-700">{priceRange(p)}</div>}
                       </div>
                     </Link>
                     {scopeLine(p) && <div className="px-3 pb-2">{scopeLine(p)}</div>}
-                    {canWrite && p.scope !== "parts" && (
-                      <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-3 py-2">
-                        <button className="text-xs font-semibold text-rose-600 hover:underline" onClick={() => remove(p)}>Remove from category</button>
-                        {editVariations(p)}
-                      </div>
-                    )}
+                    {actions(p) && <div className="absolute right-2 top-2 z-10">{actions(p)}</div>}
                   </div>
                 );
               })}
@@ -186,7 +200,7 @@ export default function CategoryDetailPage() {
                 {products.map((p) => {
                   const s = qtyOf.get(p.id);
                   return (
-                    <tr key={p.id}>
+                    <tr key={p.id} id={`cat-product-${p.id}`} className={focus === p.id ? "row-highlight-blink" : ""}>
                       <td>
                         <div className="flex items-center gap-3">
                           <ProductThumb src={p.imageUrl} name={p.name} className="h-10 w-10 shrink-0 rounded-md text-[7px]" />
@@ -198,18 +212,11 @@ export default function CategoryDetailPage() {
                       </td>
                       <td className="text-slate-600">{p.productType === "variable" ? `${p.variations.length} variations` : <span className="font-mono text-xs">{p.variations[0]?.shortName}</span>}</td>
                       <td>{priceRange(p)}</td>
-                      <td>{p.variations.some((v) => Number(v.minSalePrice) > 0) ? money(Math.min(...p.variations.filter((v) => Number(v.minSalePrice) > 0).map((v) => Number(v.minSalePrice)))) : "—"}</td>
+                      <td>{hasVariations(p) ? "" : p.variations.some((v) => Number(v.minSalePrice) > 0) ? money(Math.min(...p.variations.filter((v) => Number(v.minSalePrice) > 0).map((v) => Number(v.minSalePrice)))) : "—"}</td>
                       <td className={s && s.quantity <= s.lowStockThreshold ? "text-rose-600" : ""}>{s ? `${qty(s.quantity)} ${p.unit}` : "—"}</td>
                       {canWrite && (
                         <td className="text-right">
-                          {p.scope !== "parts" && (
-                            <div className="flex items-center justify-end gap-3">
-                              {editVariations(p)}
-                              <button className="btn-danger" onClick={() => remove(p)}>
-                                Remove
-                              </button>
-                            </div>
-                          )}
+                          <div className="flex justify-end">{actions(p)}</div>
                         </td>
                       )}
                     </tr>

@@ -14,7 +14,7 @@ import {
   WarnIcon,
 } from "@/components/icons";
 import { Restricted } from "@/components/Restricted";
-import { Alert, PageHeader, StatCell, StatStrip } from "@/components/ui";
+import { Alert, Modal, PageHeader, StatCell, StatStrip } from "@/components/ui";
 import { errorText, useApi } from "@/lib/useApi";
 
 interface SummaryData {
@@ -101,28 +101,8 @@ function BackupManager() {
     setDownloading(true);
     setDownloadSuccess(null);
     try {
-      const res = await fetch("/api/backup", {
-        headers: { Accept: "application/zip" },
-        cache: "no-store",
-      });
-      if (!res.ok) {
-        throw new Error(`Failed to generate ZIP backup (${res.status})`);
-      }
-      const blob = await res.blob();
-      const disposition = res.headers.get("content-disposition") || "";
-      const filenameMatch = disposition.match(/filename="?([^";]+)"?/);
-      const filename = filenameMatch ? filenameMatch[1] : `rs-inventory-backup-${new Date().toISOString().slice(0, 10)}.zip`;
-
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-      setDownloadSuccess(`Complete backup archive downloaded: ${filename} (${(blob.size / (1024 * 1024)).toFixed(2)} MB)`);
+      const { filename, bytes } = await downloadBackupZip();
+      setDownloadSuccess(`Complete backup archive downloaded: ${filename} (${(bytes / (1024 * 1024)).toFixed(2)} MB)`);
     } catch (err) {
       alert(`Download failed: ${errorText(err)}`);
     } finally {
@@ -454,6 +434,169 @@ function BackupManager() {
           )}
         </div>
       </div>
+
+      <DeleteAllData onDone={reloadSummary} />
+    </div>
+  );
+}
+
+/** Downloads the complete ZIP backup to the browser; throws when the server cannot build it. */
+async function downloadBackupZip(): Promise<{ filename: string; bytes: number }> {
+  const res = await fetch("/api/backup", {
+    headers: { Accept: "application/zip" },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to generate ZIP backup (${res.status})`);
+  }
+  const blob = await res.blob();
+  const disposition = res.headers.get("content-disposition") || "";
+  const filenameMatch = disposition.match(/filename="?([^";]+)"?/);
+  const filename = filenameMatch ? filenameMatch[1] : `rs-inventory-backup-${new Date().toISOString().slice(0, 10)}.zip`;
+
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  return { filename, bytes: blob.size };
+}
+
+// The API still requires this phrase; the page sends it once both confirmations are given.
+const WIPE_PHRASE = "DELETE ALL DATA";
+
+// Danger zone: empties the company. Users, company profile and audit log stay.
+// Two confirmations: "are you sure?", then a final dialog whose "download a backup first"
+// box is ticked by default.
+function DeleteAllData({ onDone }: { onDone: () => unknown }) {
+  const [step, setStep] = useState<0 | 1 | 2>(0);
+  const [backupFirst, setBackupFirst] = useState(true);
+  const [deleting, setDeleting] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  function close() {
+    if (!deleting) setStep(0);
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    setError(null);
+    setDone(false);
+    try {
+      if (backupFirst) {
+        setStatus("Downloading backup…");
+        await downloadBackupZip();
+      }
+      setStatus("Deleting all data…");
+      const res = await fetch("/api/backup/wipe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: WIPE_PHRASE }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result?.error?.message || `Delete failed (${res.status})`);
+      }
+      setDone(true);
+      setStep(0);
+      await onDone();
+    } catch (err) {
+      // A failed backup stops here: nothing is deleted.
+      setError(errorText(err));
+      setStep(0);
+    } finally {
+      setDeleting(false);
+      setStatus(null);
+      setBackupFirst(true);
+    }
+  }
+
+  return (
+    <div className="card space-y-4 border-rose-200 p-6">
+      <div className="flex items-center gap-3">
+        <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-rose-100 text-rose-600">
+          <WarnIcon className="h-5 w-5" />
+        </span>
+        <div>
+          <h2 className="text-base font-semibold text-slate-900">Delete All Data</h2>
+          <p className="text-xs text-slate-500">Start again with an empty inventory</p>
+        </div>
+      </div>
+
+      <p className="text-xs leading-relaxed text-slate-600">
+        Permanently deletes every product, variation, category, stock movement, measured piece, set,
+        warehouse, sale, purchase, order, draft, contact, supplier price and image. Users, logins, the
+        company profile and the audit log stay. <strong>Download a backup first</strong> — this cannot be undone.
+      </p>
+
+      {error && <Alert kind="error">{error}</Alert>}
+      {done && <Alert kind="success">All data deleted. The inventory is now empty.</Alert>}
+
+      <button
+        type="button"
+        onClick={() => {
+          setError(null);
+          setDone(false);
+          setStep(1);
+        }}
+        disabled={deleting}
+        className="btn-danger flex w-full items-center justify-center gap-2 py-2.5 font-medium disabled:opacity-50"
+      >
+        <WarnIcon className="h-4 w-4" />
+        {deleting ? "Deleting All Data…" : "Delete All Data"}
+      </button>
+
+      <Modal open={step === 1} title="Delete all data?" onClose={close}>
+        <div className="space-y-4 text-sm text-slate-700">
+          <p>
+            This deletes every product, stock record, sale, purchase, order, contact and image in this
+            company. Users, logins, the company profile and the audit log stay.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={close}>
+              Cancel
+            </button>
+            <button type="button" className="btn-danger" onClick={() => setStep(2)}>
+              Yes, continue
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={step === 2} title="Are you absolutely sure?" onClose={close}>
+        <div className="space-y-4 text-sm text-slate-700">
+          <p className="font-medium text-rose-800">This cannot be undone.</p>
+          <label className="flex cursor-pointer items-start gap-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+            <input
+              type="checkbox"
+              checked={backupFirst}
+              onChange={(e) => setBackupFirst(e.target.checked)}
+              disabled={deleting}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300"
+            />
+            <span>
+              <span className="font-medium text-slate-900">Download a backup first</span>
+              <span className="block text-xs text-slate-500">
+                Saves a complete .zip backup before anything is deleted. If the backup fails, nothing is deleted.
+              </span>
+            </span>
+          </label>
+          {status && <p className="text-xs text-slate-500">{status}</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn-secondary" onClick={close} disabled={deleting}>
+              Cancel
+            </button>
+            <button type="button" className="btn-danger" onClick={handleDelete} disabled={deleting}>
+              {deleting ? "Working…" : "Delete All Data"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

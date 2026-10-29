@@ -27,11 +27,11 @@ function NewProductContent() {
   }
 
   const handleSaved = (p: Product) => {
-    router.push(fromStockIn ? `/inventory?focus=${p.id}` : "/products");
+    router.push(fromStockIn ? `/inventory?focus=${p.id}` : `/products?focus=${p.id}`);
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6 pb-20">
       <PageHeader
         back={{ href: backHref, label: fromStockIn ? "Stock In" : "Products" }}
         title="Add Product"

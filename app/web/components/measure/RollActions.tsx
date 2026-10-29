@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { fmtLen, pieceName, rollWord, type MeasureMeta } from "@/lib/measure";
 import { errorText } from "@/lib/useApi";
 import { useWarehouses } from "@/lib/useWarehouses";
+import { useLengthView } from "@/lib/lengthView";
 
 // Roll operations (wireframes W9–W11): add rolls (opening / found stock), open, cut, write off,
 // correct length and edit details. Every length change goes through /api/measure and is
@@ -71,6 +72,7 @@ export function AddRollsModal({
   /** V3.1: warehouse pre-selected (the Stock In filter); default warehouse otherwise. */
   warehouseId?: string | null;
 }) {
+  useLengthView();
   const wh = useWarehouses();
   const [chosenWarehouse, setWarehouse] = useState(warehouseId ?? "");
   const warehouse = chosenWarehouse || wh.defaultWarehouse?.id || "";
@@ -124,7 +126,7 @@ export function AddRollsModal({
         Opening or found stock: specify quantity, length, and condition of physical {rollWord(meta, 2)}. Purchases receive {rollWord(meta, 2)} themselves.
       </p>
       <div className="max-h-[50vh] overflow-auto rounded-xl border border-slate-200">
-        <table className="table">
+        <table className="table table-stack">
           <thead>
             <tr>
               <th>#</th>
@@ -137,7 +139,7 @@ export function AddRollsModal({
           <tbody>
             {rows.map((r, i) => (
               <tr key={i}>
-                <td className="text-slate-500">{i + 1}</td>
+                <td className="text-slate-500"><span className="capitalize md:hidden">{word} </span>{i + 1}</td>
                 <td>
                   <input
                     type="number"
@@ -152,7 +154,7 @@ export function AddRollsModal({
                     aria-label={`Number of ${word}s for row ${i + 1}`}
                   />
                 </td>
-                <td>
+                <td className="stack-full">
                   <LengthField compact base={meta.lengthUnit} decimals={meta.decimals} label={`${word} ${i + 1} length`} value={Number.isFinite(r.length) ? r.length : null} onChange={(v) => patch(i, { length: v })} onEnter={addRow} autoFocus={i > 0 && i === rows.length - 1} />
                   {r.kind === "OPEN" && (
                     <div className="mt-2">
@@ -226,6 +228,7 @@ export function AddRollsModal({
 // ---------------------------------------------------------------------------
 
 export function CutModal({ piece, meta, open, onClose, onDone, openOnly }: { piece: PieceTarget; meta: MeasureMeta; open: boolean; onClose: () => void; onDone: (message: string) => void; openOnly?: boolean }) {
+  useLengthView();
   const [mode, setMode] = useState<"one" | "many">("one");
   const [lengths, setLengths] = useState<number[]>([NaN]);
   const [reason, setReason] = useState("Pre-cut for stock");
@@ -376,6 +379,7 @@ export function CutModal({ piece, meta, open, onClose, onDone, openOnly }: { pie
 const WRITE_OFF_REASONS = ["Damaged", "Scrap", "Sample", "Lost"];
 
 export function WriteOffModal({ piece, meta, open, onClose, onDone }: { piece: PieceTarget; meta: MeasureMeta; open: boolean; onClose: () => void; onDone: (message: string) => void }) {
+  useLengthView();
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -417,6 +421,7 @@ export function WriteOffModal({ piece, meta, open, onClose, onDone }: { piece: P
 }
 
 export function CorrectModal({ piece, meta, open, onClose, onDone }: { piece: PieceTarget; meta: MeasureMeta; open: boolean; onClose: () => void; onDone: (message: string) => void }) {
+  useLengthView();
   const [length, setLength] = useState(NaN);
   const [zero, setZero] = useState(false);
   const [note, setNote] = useState("");
@@ -474,6 +479,7 @@ export function CorrectModal({ piece, meta, open, onClose, onDone }: { piece: Pi
 // ---------------------------------------------------------------------------
 
 export function EditPieceModal({ piece, open, onClose, onDone }: { piece: PieceTarget; open: boolean; onClose: () => void; onDone: (message: string) => void }) {
+  useLengthView();
   const [f, setF] = useState({ notes: piece.notes ?? "" });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);

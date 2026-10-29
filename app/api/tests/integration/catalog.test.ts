@@ -26,6 +26,7 @@ interface Card {
   costMin?: string | null;
   stockValue?: string;
   category: { id: string; name: string } | null;
+  saleCount30d?: number;
 }
 
 async function setup() {
@@ -210,6 +211,22 @@ describe("catalog browse: product cards", () => {
     const { manager } = await setup();
     const r = await manager.get("/api/inventory?sort=price_asc");
     expect(r.body.products.map((p: { name: string }) => p.name)).toEqual(["Zip Tie", "Rope Clip", "Hook", "Bow Shackle"]);
+  });
+
+  it("sorts by high_moving based on 30-day sales frequency", async () => {
+    const { manager, rope, hook } = await setup();
+    await post(manager, "/api/sales", { lines: [{ variationId: hook.variations[0].id, quantity: 1, price: 50 }] });
+    await post(manager, "/api/sales", { lines: [{ variationId: rope.variations[0].id, quantity: 1, price: 40 }] });
+    await post(manager, "/api/sales", { lines: [{ variationId: rope.variations[0].id, quantity: 1, price: 40 }] });
+
+    const defaultCards = (await cards(manager, "")).products;
+    expect(defaultCards.map((p) => p.name)).toEqual(["Rope Clip", "Hook", "Bow Shackle", "Zip Tie"]);
+    expect(defaultCards.find((p) => p.name === "Rope Clip")?.saleCount30d).toBe(2);
+    expect(defaultCards.find((p) => p.name === "Hook")?.saleCount30d).toBe(1);
+    expect(defaultCards.find((p) => p.name === "Bow Shackle")?.saleCount30d).toBe(0);
+
+    const inv = await manager.get("/api/inventory");
+    expect(inv.body.products.map((p: { name: string }) => p.name)).toEqual(["Rope Clip", "Hook", "Bow Shackle", "Zip Tie"]);
   });
 });
 

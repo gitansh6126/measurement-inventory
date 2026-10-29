@@ -7,7 +7,7 @@ import { getEnv } from "../../src/env.js";
 import { hashPassword } from "../../src/lib/auth.js";
 
 export const PASSWORD = "correct-horse-battery";
-export const ORIGIN = "http://localhost:3000";
+export const ORIGIN = getEnv().allowedOrigins[0] ?? "http://localhost:3510";
 
 export const app = () => createApp(getEnv());
 

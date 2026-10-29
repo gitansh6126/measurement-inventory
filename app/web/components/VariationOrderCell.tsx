@@ -125,6 +125,23 @@ export function VariationOrderCell({
       >
         ↓
       </button>
+      {/* Position dropdown (owner 2026-10-28): jump straight to a place, e.g. 7 → 2. */}
+      {count > 2 && (
+        <select
+          className="ml-1 h-6 rounded border border-slate-300 bg-white px-0.5 text-[11px] text-slate-700 disabled:text-slate-300"
+          aria-label={`Position of ${label}`}
+          title="Position"
+          disabled={disabled}
+          value={index + 1}
+          onChange={(e) => onMove(index, Number(e.target.value) - 1)}
+        >
+          {Array.from({ length: count }, (_, i) => (
+            <option key={i} value={i + 1}>
+              {i + 1}
+            </option>
+          ))}
+        </select>
+      )}
     </td>
   );
 }

@@ -11,14 +11,14 @@ import type { GroupedInfo, GroupSet, Product, SetContentRow, SetStatus } from "@
 import { errorText, useApi } from "@/lib/useApi";
 import { SetContents } from "./SetContents";
 import { buildSets, emptyRow, SetSheetTable, type SheetRow } from "./SetSheet";
-import type { ViewMode } from "@/lib/useViewMode";
+import { moved } from "@/lib/useRowOrder";
+import { useViewMode } from "@/lib/useViewMode";
 import { useWarehouses } from "@/lib/useWarehouses";
 
 // V3.1 grouped product page → Sets (docs\GROUPED-PRODUCTS-V3-PLAN.md §4): what a set contains,
 // the sets in stock (named by contents, D18; codes are never shown, search only), admin opening sets (D20) and
 // cancelling an untouched one, and changing the by-product links (§2 Edit).
 
-const VIEW_KEY = "rs-v31-sets-view";
 
 const STATUS_LABEL: Record<SetStatus, string> = { IN_STOCK: "In stock", HELD: "Held on order", SOLD: "Sold", CANCELLED: "Cancelled" };
 const STATUS_CLASS: Record<SetStatus, string> = {
@@ -38,21 +38,7 @@ export function SetsPanel({ product, onChanged }: { product: Product; onChanged:
   const [cancelling, setCancelling] = useState<GroupSet | null>(null);
   const [flash, setFlash] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   // Table (default, like a variation product's rows) or Grid cards; the choice is remembered.
-  const [view, setViewState] = useState<ViewMode>(() => {
-    try {
-      return localStorage.getItem(VIEW_KEY) === "grid" ? "grid" : "table";
-    } catch {
-      return "table";
-    }
-  });
-  const setView = (v: ViewMode) => {
-    setViewState(v);
-    try {
-      localStorage.setItem(VIEW_KEY, v);
-    } catch {
-      /* private window: keep the choice for this visit only */
-    }
-  };
+  const [view, setView] = useViewMode("sets", "table");
   const info = product.grouped;
   const counts = sets.data?.counts;
   const wh = useWarehouses();
@@ -285,7 +271,7 @@ function OpeningSetsModal({ product, info, onClose, onSaved }: { product: Produc
   async function save() {
     setError("");
     try {
-      const sets = buildSets(info, rows, { rateRequired: false });
+      const sets = buildSets(info, rows, { rateRequired: false, prices: true });
       setSaving(true);
       const res = await api<{ sets: { code: string }[] }>("/sets/opening", { method: "POST", body: { groupId: product.id, date: new Date(`${date}T09:00:00`).toISOString(), sets } });
       onSaved(res.sets.length);
@@ -305,7 +291,7 @@ function OpeningSetsModal({ product, info, onClose, onSaved }: { product: Produc
         <span className="label">Date</span>
         <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
       </label>
-      <SetSheetTable info={info} rows={rows} setRows={setRows} defaultRate={defaultRate} defaultWarehouseLabel={`Default (${wh.codeOf(wh.defaultWarehouse?.id)})`} />
+      <SetSheetTable groupId={product.id} prices info={info} rows={rows} setRows={setRows} defaultRate={defaultRate} defaultWarehouseLabel={`Default (${wh.codeOf(wh.defaultWarehouse?.id)})`} />
       <div className="mt-2 text-xs text-slate-500">
         {rows.length} set{rows.length === 1 ? "" : "s"} · total value {money(String(rows.reduce((s, r) => s + (Number(r.rate) || 0), 0)))}
       </div>
@@ -363,23 +349,32 @@ function CancelSetModal({ set, onClose, onSaved }: { set: GroupSet; onClose: () 
   );
 }
 
+let defSeq = 0;
+
 function DefinitionModal({ product, info, onClose, onSaved }: { product: Product; info: GroupedInfo; onClose: () => void; onSaved: () => void }) {
-  const [rows, setRows] = useState(() => info.byproducts.map((b) => ({ productId: b.productId, name: b.name, required: b.required })));
+  // One row per link; the same product may repeat (two chains), told apart by its label.
+  type Row = { key: string; linkId: string | null; productId: string; name: string; label: string; required: boolean };
+  const [rows, setRows] = useState<Row[]>(() =>
+    info.byproducts.map((b) => ({ key: b.id, linkId: b.id, productId: b.productId, name: b.productName ?? b.name, label: b.label ?? "", required: b.required })),
+  );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const list = useApi<{ products: Product[] }>("/products?status=active&pageSize=200");
   const options = useMemo(
-    () =>
-      (list.data?.products ?? [])
-        .filter((p) => p.productType !== "grouped" && !rows.some((r) => r.productId === p.id))
-        .map((p) => ({ id: p.id, label: p.name, sublabel: p.productType })),
-    [list.data, rows],
+    () => (list.data?.products ?? []).filter((p) => p.productType !== "grouped").map((p) => ({ id: p.id, label: p.name, sublabel: p.productType })),
+    [list.data],
   );
+  const patch = (key: string, p: Partial<Row>) => setRows((rs) => rs.map((x) => (x.key === key ? { ...x, ...p } : x)));
+  // V3.2 A2: the part order (columns in set tables, set names, documents); saved with the list.
+  const move = (from: number, to: number) => setRows((rs) => (to < 0 || to >= rs.length || from === to ? rs : moved(rs, from, to)));
   async function save() {
     setSaving(true);
     setError("");
     try {
-      await api(`/sets/definition/${product.id}`, { method: "PUT", body: { byproducts: rows.map((r) => ({ productId: r.productId, required: r.required })) } });
+      await api(`/sets/definition/${product.id}`, {
+        method: "PUT",
+        body: { byproducts: rows.map((r) => ({ ...(r.linkId ? { linkId: r.linkId } : {}), productId: r.productId, required: r.required, label: r.label.trim() || null })) },
+      });
       onSaved();
     } catch (e) {
       setError(errorText(e));
@@ -388,16 +383,45 @@ function DefinitionModal({ product, info, onClose, onSaved }: { product: Product
   }
   return (
     <Modal open title={`By-products of ${product.name}`} onClose={onClose} wide>
-      <p className="mb-3 text-xs text-slate-500">Changes apply to sets added from now on. Sets already in stock keep the parts they have.</p>
+      <p className="mb-3 text-xs text-slate-500">
+        Changes apply to sets added from now on. Sets already in stock keep the parts they have. A product can be added more than once (e.g. two chains); give each a label.
+      </p>
       <ul className="grid gap-2">
-        {rows.map((r) => (
-          <li key={r.productId} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+        {rows.map((r, i) => (
+          <li key={r.key} className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+            <span className="flex items-center whitespace-nowrap">
+              <button type="button" className="px-1 text-slate-600 hover:text-slate-950 disabled:text-slate-300" aria-label={`Move ${r.name} up`} title="Move up" disabled={i === 0} onClick={() => move(i, i - 1)}>
+                ↑
+              </button>
+              <button type="button" className="px-1 text-slate-600 hover:text-slate-950 disabled:text-slate-300" aria-label={`Move ${r.name} down`} title="Move down" disabled={i === rows.length - 1} onClick={() => move(i, i + 1)}>
+                ↓
+              </button>
+              {rows.length > 2 && (
+                <select className="ml-1 h-6 rounded border border-slate-300 bg-white px-0.5 text-[11px]" aria-label={`Position of ${r.name}`} value={i + 1} onChange={(e) => move(i, Number(e.target.value) - 1)}>
+                  {rows.map((_, n) => (
+                    <option key={n} value={n + 1}>
+                      {n + 1}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </span>
             <span className="font-medium text-slate-800">{r.name}</span>
+            {rows.filter((x) => x.productId === r.productId).length > 1 && (
+              <input
+                className="input h-8 w-44 py-1 text-xs"
+                maxLength={60}
+                aria-label={`${r.name} label`}
+                placeholder={`Label, e.g. Hand chain (blank = #${rows.filter((x) => x.productId === r.productId).findIndex((x) => x.key === r.key) + 1})`}
+                value={r.label}
+                onChange={(e) => patch(r.key, { label: e.target.value })}
+              />
+            )}
             <label className="ml-auto flex items-center gap-2 text-xs text-slate-600">
-              <input type="checkbox" checked={r.required} onChange={(e) => setRows((rs) => rs.map((x) => (x.productId === r.productId ? { ...x, required: e.target.checked } : x)))} />
+              <input type="checkbox" checked={r.required} onChange={(e) => patch(r.key, { required: e.target.checked })} />
               Required
             </label>
-            <button type="button" className="text-xs text-rose-600 hover:underline" onClick={() => setRows((rs) => rs.filter((x) => x.productId !== r.productId))} disabled={rows.length <= 1}>
+            <button type="button" className="text-xs text-rose-600 hover:underline" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} disabled={rows.length <= 1}>
               Remove
             </button>
           </li>
@@ -410,7 +434,7 @@ function DefinitionModal({ product, info, onClose, onSaved }: { product: Product
           options={options}
           onSelect={(id) => {
             const p = list.data?.products.find((x) => x.id === id);
-            if (p) setRows((rs) => [...rs, { productId: p.id, name: p.name, required: true }]);
+            if (p) setRows((rs) => [...rs, { key: `new-${++defSeq}`, linkId: null, productId: p.id, name: p.name, label: "", required: true }]);
           }}
           placeholder="Search products…"
         />

@@ -35,10 +35,11 @@ export function CategoryRail({
     : [];
 
   return (
-    <nav aria-label="Categories" className="flex flex-col gap-1 border-r border-slate-200 pr-2">
+    // Phones: one swipeable row under the top bar; sm and up: the vertical rail on the left.
+    <nav aria-label="Categories" className="flex snap-x gap-1 overflow-x-auto border-b border-slate-200 py-1.5 [scrollbar-width:none] sm:flex-col sm:overflow-x-visible sm:border-b-0 sm:border-r sm:py-0 sm:pr-2">
       {!data &&
         Array.from({ length: 6 }, (_, i) => (
-          <div key={i} className="mx-auto my-1 h-14 w-12 animate-pulse rounded-lg bg-slate-100 sm:w-14" aria-hidden />
+          <div key={i} className="mx-auto my-1 h-14 w-14 shrink-0 animate-pulse rounded-lg bg-slate-100" aria-hidden />
         ))}
       {items.map((c) => {
         const on = selected === c.key;
@@ -50,7 +51,7 @@ export function CategoryRail({
             onClick={() => onSelect(c.key)}
             aria-current={on ? "true" : undefined}
             title={`${c.name} · ${c.count} products${alerts && c.low ? ` · ${c.low} low` : ""}${alerts && c.out ? ` · ${c.out} out` : ""}`}
-            className={`relative flex flex-col items-center gap-1 rounded-lg px-1 py-1.5 text-center text-[11px] leading-tight transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 sm:text-xs ${
+            className={`relative flex w-[4.5rem] shrink-0 snap-start flex-col items-center gap-1 rounded-lg px-1 py-1.5 text-center sm:w-auto text-[11px] leading-tight transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 sm:text-xs ${
               on ? "bg-brand-50 font-semibold text-brand-700 ring-1 ring-inset ring-brand-500" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
             }`}
           >

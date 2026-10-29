@@ -10,6 +10,7 @@ import { variationLabel } from "@/lib/format";
 import { fmtLen, metaOf } from "@/lib/measure";
 import type { StockProduct, StockVariation } from "@/lib/types";
 import { variationAttributeColumns } from "@/lib/variationColumns";
+import { useLengthView } from "@/lib/lengthView";
 
 // Stock In grid → drawer (same shell as the cart ProductDrawer). Shows every active variation in
 // one table with the Stock In edit cells (Current / New Stock, Min Selling Price, Selling Price,
@@ -49,6 +50,7 @@ export function StockEditDrawer({
   /** Shown under the table: V3.1 a grouped product's set types (like variation rows). */
   extra?: ReactNode;
 }) {
+  useLengthView();
   const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState("");
   const variable = product.productType === "variable";
@@ -128,7 +130,7 @@ export function StockEditDrawer({
             </div>
           )}
           <div className={`min-h-0 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-xs ${extra ? "shrink-0" : "flex-1"}`}>
-            <table className="table min-w-full">
+            <table className="table table-stack min-w-full">
               <thead className="sticky top-0 z-10 bg-slate-50 shadow-xs">
                 <tr>
                   {(variable || measured) && <th className="w-14 bg-slate-50" aria-label="Image" />}

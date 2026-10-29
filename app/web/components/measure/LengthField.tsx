@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { baseLabel, baseToEntry, entryOptions, fmtLen, typedToBase, type LengthUnit } from "@/lib/measure";
+import { baseLabel, baseToEntry, entryOptions, fmtLenNative, typedToBase, type LengthUnit } from "@/lib/measure";
 
 // A length typed in any length unit of the product (W14): metres products accept m, cm, mm, ft
 // and in; feet + inches products take a feet / inches pair (or in, ft, m). The value reported
@@ -149,7 +149,7 @@ export function LengthField({
           ))}
         </select>
       </div>
-      {converted && <p className="mt-1 text-xs text-slate-500">= {fmtLen(v, { lengthUnit: base, decimals })} ({baseLabel(base)})</p>}
+      {converted && <p className="mt-1 text-xs text-slate-500">= {fmtLenNative(v, { lengthUnit: base, decimals })} ({baseLabel(base)})</p>}
     </div>
   );
 }

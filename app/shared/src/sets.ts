@@ -6,6 +6,27 @@
 
 import type { PieceKind } from "./measure.js";
 
+/** Shown name of a by-product link: "Load Chain · Hand chain"; the product name when unlabelled. */
+export function byproductName(productName: string, label: string | null | undefined): string {
+  return label?.trim() ? `${productName} · ${label.trim()}` : productName;
+}
+
+/**
+ * Labels for a grouped product's by-product rows: a product listed more than once gets "#1",
+ * "#2"… on each repeat left unlabelled; a typed label is kept. Same length/order as `rows`.
+ */
+export function repeatLabels(rows: readonly { productId: string; label?: string | null }[]): (string | null)[] {
+  const count = new Map<string, number>();
+  for (const r of rows) count.set(r.productId, (count.get(r.productId) ?? 0) + 1);
+  const seen = new Map<string, number>();
+  return rows.map((r) => {
+    const n = (seen.get(r.productId) ?? 0) + 1;
+    seen.set(r.productId, n);
+    const typed = r.label?.trim() || null;
+    return typed ?? ((count.get(r.productId) ?? 0) > 1 ? `#${n}` : null);
+  });
+}
+
 /** A by-product link of the grouped product. */
 export interface PlanLink {
   id: string;
@@ -58,6 +79,8 @@ export interface PlanChange {
   backorder?: true;
   /** The part taken out (REPLACE / REMOVE): it goes back to free stock. */
   from: PlanPart | null;
+  /** When true, the fitted chain is shortened in place (same variation, smaller length). */
+  shortenInPlace?: boolean;
 }
 
 export type PlanProblem =
@@ -70,12 +93,24 @@ export interface SetOption {
   /** No change needed. */
   ready: boolean;
   changes: PlanChange[];
+  /** When true, no physical set exists in stock; the entire set/combination is on backorder. */
+  isWholeBackorder?: boolean;
+  /** Wanted parts for a whole backorder set. */
+  combination?: { byproductId: string; variationId: string; lengthMilli: number | null }[];
 }
 
 export type SetStatus = { setId: string; status: "READY" | "CHANGE"; changes: PlanChange[] } | { setId: string; status: "CANNOT"; problem: PlanProblem };
 
 const KIND_ORDER: Record<PieceKind, number> = { CUT: 0, OPEN: 1, CLOSED: 2 };
 export const countedKey = (variationId: string, warehouseId: string | null) => `${variationId}|${warehouseId ?? ""}`;
+
+/** "bp:variation:milli|…" sorted by by-product, so the same parts always give the same key. */
+export function setTypeKey(parts: readonly { byproductId: string; variationId: string; length?: number | null }[]) {
+  return [...parts]
+    .map((p) => `${p.byproductId}:${p.variationId}:${p.length ?? ""}`)
+    .sort()
+    .join("|");
+}
 
 /** True when every required by-product has a variation, and every measured one a length. */
 export function wantComplete(links: readonly PlanLink[], want: SetWant): boolean {
@@ -134,6 +169,51 @@ export function takeParts(
     const link = links.find((l) => l.id === c.byproductId)!;
     if (link.measured) {
       const need = c.lengthMilli ?? 0;
+
+      // CASE 2A: Same variation and SMALLER length -> shorten in place!
+      if (
+        c.from &&
+        c.from.variationId === c.variationId &&
+        (c.from.lengthMilli ?? 0) >= need &&
+        !chosenPieces[c.byproductId]
+      ) {
+        const leftover = (c.from.lengthMilli ?? 0) - need;
+        if (leftover > 0) {
+          const cutPiece: PlanPiece = {
+            id: `leftover-${set.id}-${c.byproductId}`,
+            variationId: c.variationId!,
+            kind: "CUT",
+            remainingMilli: leftover,
+            warehouseId: set.warehouseId,
+          };
+          stock.pieces.push(cutPiece);
+          undo.push(() => {
+            const idx = stock.pieces.indexOf(cutPiece);
+            if (idx >= 0) stock.pieces.splice(idx, 1);
+          });
+        }
+        out.push({ ...c, shortenInPlace: true });
+        continue;
+      }
+
+      // If c.from is replaced (different variation, or same variation but LARGER),
+      // the fitted piece goes back to free stock!
+      let releasedPiece: PlanPiece | null = null;
+      if (c.from && c.from.lengthMilli && c.from.lengthMilli > 0) {
+        releasedPiece = {
+          id: `released-${set.id}-${c.byproductId}`,
+          variationId: c.from.variationId,
+          kind: "CUT",
+          remainingMilli: c.from.lengthMilli,
+          warehouseId: set.warehouseId,
+        };
+        stock.pieces.push(releasedPiece);
+        undo.push(() => {
+          const idx = stock.pieces.indexOf(releasedPiece!);
+          if (idx >= 0) stock.pieces.splice(idx, 1);
+        });
+      }
+
       const fits = piecesThatFit(stock, c.variationId!, set.warehouseId, need);
       const piece = fits.find((p) => p.id === chosenPieces[c.byproductId]) ?? fits[0];
       if (!piece && backorder) {
@@ -243,6 +323,24 @@ export function planSets(
         if (!problems.length) problems.push(firstProblem);
         continue;
       }
+    }
+    // Whole combination backorder when no candidates remain (no sets / main component in stock)
+    if (!done && opts.backorder && !candidates.length) {
+      const combination = links.map((l) => ({
+        byproductId: l.id,
+        variationId: want[l.id]?.variationId ?? "",
+        lengthMilli: l.measured ? (want[l.id]?.lengthMilli ?? null) : null,
+      }));
+      picks.push({
+        setId: `backorder-slot-${slot}`,
+        ready: false,
+        isWholeBackorder: true,
+        combination,
+        changes: [],
+      });
+      backorders += 1;
+      if (!problems.length) problems.push({ kind: "NO_SETS" });
+      continue;
     }
     if (!done) {
       problems.push(firstProblem ?? { kind: "NO_SETS" });

@@ -148,6 +148,7 @@ interface ProductDef {
     description?: string;
     baseShortName?: string;
     shortName?: string;
+    officialSku?: string;
     attributes?: {
       name: string;
       unit?: string;
@@ -169,6 +170,7 @@ const PRODUCTS: ProductDef[] = [
       productType: "simple",
       name: "Electric Hoist 1 Ton",
       shortName: "EH-1T",
+      officialSku: "8901234500011",
       unit: "pcs",
       description: "Motorized electric wire rope hoist with pendant control.",
     },
@@ -184,6 +186,7 @@ const PRODUCTS: ProductDef[] = [
       productType: "simple",
       name: "Beam Clamp 2 Ton",
       shortName: "BC-2T",
+      officialSku: "8901234500028",
       unit: "pcs",
       description: "Universal adjustable I-beam rigging clamp.",
     },
@@ -267,6 +270,7 @@ const PARTIES = [
     city: "Surat",
     contactPerson: "Capt. R. Menon (Procurement)",
     shippingAddress: "Jetty No. 3, Hazira Port, Surat",
+    creditScore: 620,
   },
   {
     type: "SUPPLIER",
@@ -494,7 +498,9 @@ export async function seedThroughApi(call: ReturnType<typeof client>) {
   }
 
   // 7b. V3.1 grouped product (set): Chain Hoist Set = Hoist Body (main, new) + Load Chain
-  // (required, measured) + Safety Hook (optional, created inline). Three admin opening sets.
+  // (required, measured) + Safety Hook (optional, created inline) + a second Load Chain link,
+  // "Hand chain" (optional, 0040: the same product twice, each with its own size/length per
+  // set). Three admin opening sets; the first has both chains.
   const vChain6 = chainProduct.variations.find((v) => v.attributes.Size === "6")!;
   await call("PATCH", `/api/inventory/variations/${vChain6.id}`, { salePrice: "240", purchaseCost: "185", lowStockThreshold: 20 });
   await call("POST", `/api/measure/variations/${vChain6.id}/rolls`, {
@@ -512,30 +518,74 @@ export async function seedThroughApi(call: ReturnType<typeof client>) {
       description: "Manual chain hoist sold as a set: hoist body with load chain fitted to length, safety hook optional.",
       main: { name: "Hoist Body 1 Ton", shortName: "HB-1T", unit: "Nos" },
       byproducts: [
-        { productId: chainProduct.id, required: true },
+        { productId: chainProduct.id, required: true, label: "Load chain" },
         { newProduct: { productType: "simple", name: "Safety Hook 1 Ton", unit: "Nos", shortName: "SH-1T", categoryId: categoryId.get("Chains & Fittings") }, required: false },
+        { productId: chainProduct.id, required: false, label: "Hand chain" },
       ],
     },
   ).then((r) => r.product);
-  const [linkChain, linkHook] = hoistSet.grouped.byproducts as [
+  const [linkChain, linkHook, linkHandChain] = hoistSet.grouped.byproducts as [
+    (typeof hoistSet.grouped.byproducts)[number],
     (typeof hoistSet.grouped.byproducts)[number],
     (typeof hoistSet.grouped.byproducts)[number],
   ];
   const hookVariationId = linkHook.variations[0]!.id;
-  await call("PATCH", `/api/inventory/variations/${hoistSet.variations[0]!.id}`, { salePrice: "8500", minSalePrice: "7800", lowStockThreshold: 1 });
+  // 0041: no price on the grouped product itself; prices and minimum stock are per set type.
   await call("PATCH", `/api/inventory/variations/${hookVariationId}`, { salePrice: "450", minSalePrice: "400", purchaseCost: "320", lowStockThreshold: 2 });
   // A few loose hooks too (free stock beside the ones fitted in sets).
   await call("POST", "/api/inventory/adjustments", { variationId: hookVariationId, type: "OPENING", quantity: 4, reason: "Initial opening stock", occurredAt: openingDate.toISOString() });
   const chain = (size: string) => linkChain.variations.find((v) => v.attributes.Size === size)!.id;
-  await call("POST", "/api/sets/opening", {
+  const { sets: openingSets } = await call<{ sets: { id: string }[] }>("POST", "/api/sets/opening", {
     groupId: hoistSet.id,
     date: openingDate.toISOString(),
     sets: [
-      { rate: "6200", parts: [{ byproductId: linkChain.id, variationId: chain("8"), length: 3 }, { byproductId: linkHook.id, variationId: hookVariationId }] },
+      {
+        rate: "6600",
+        notes: "Load chain + hand chain fitted",
+        // 0041: the Add sets sheet sets this set type's prices.
+        salePrice: "9800",
+        minSalePrice: "9200",
+        lowStockThreshold: 0,
+        parts: [
+          { byproductId: linkChain.id, variationId: chain("8"), length: 3 },
+          { byproductId: linkHook.id, variationId: hookVariationId },
+          { byproductId: linkHandChain.id, variationId: chain("6"), length: 6 },
+        ],
+      },
       { rate: "7400", parts: [{ byproductId: linkChain.id, variationId: chain("8"), length: 4.5 }] },
       { rate: "5800", notes: "Lighter chain for workshop use", parts: [{ byproductId: linkChain.id, variationId: chain("6"), length: 3 }, { byproductId: linkHook.id, variationId: hookVariationId }] },
     ],
   });
+
+  // 7c. 0041 standard sets of the Chain Hoist Set (product form step 4), each with its own
+  // selling price, minimum selling price and minimum stock. "Long 4.5 m" and "Workshop 6 mm"
+  // match opening sets above; "Standard 3 m + hook" starts at 0 and Stock In raises it to 1
+  // (the set is built from its parts as new stock).
+  await call("PUT", `/api/sets/types/${hoistSet.id}/standard`, {
+    sets: [
+      {
+        name: "Standard 3 m + hook",
+        parts: [{ byproductId: linkChain.id, variationId: chain("8"), length: 3 }, { byproductId: linkHook.id, variationId: hookVariationId }],
+        salePrice: "8500",
+        minSalePrice: "7800",
+        lowStockThreshold: 1,
+      },
+      { name: "Long 4.5 m", parts: [{ byproductId: linkChain.id, variationId: chain("8"), length: 4.5 }], salePrice: "9200", minSalePrice: "8600", lowStockThreshold: 1 },
+      {
+        name: "Workshop 6 mm",
+        parts: [{ byproductId: linkChain.id, variationId: chain("6"), length: 3 }, { byproductId: linkHook.id, variationId: hookVariationId }],
+        salePrice: "6900",
+        minSalePrice: "6400",
+        lowStockThreshold: 0,
+      },
+    ],
+  });
+  const { types: hoistTypes } = await call<{ types: { typeKey: string; name: string | null; count: number }[] }>("GET", `/api/sets/types/${hoistSet.id}`);
+  const std3m = hoistTypes.find((t) => t.name === "Standard 3 m + hook")!;
+  await call("POST", `/api/sets/types/${hoistSet.id}/stock-in`, { reason: "Opening Stock", rows: [{ typeKey: std3m.typeKey, expectedCount: std3m.count, count: 1 }] });
+  // V3.2 A2: a saved child-row order (Workshop 6 mm first), the same on Stock In and Products.
+  const workshop = hoistTypes.find((t) => t.name === "Workshop 6 mm")!;
+  await call("PUT", `/api/sets/types/${hoistSet.id}/order`, { typeKeys: [workshop.typeKey, ...hoistTypes.filter((t) => t !== workshop).map((t) => t.typeKey)] });
 
   // 8. Purchases (2 total: 1 counted, 1 measured rolls)
   // Purchase 1: Counted items from Crossbee
@@ -633,6 +683,26 @@ export async function seedThroughApi(call: ReturnType<typeof client>) {
       lines: [{ variationId: bcVar.variation.id, quantity: bcBal, price: "3200" }],
     });
   }
+
+  // Sale 6 (V3.2): a set sold, then edited — the customer asked for a safety hook, so the
+  // revision adds one from the loose hooks and reprices the set (+ hook sale price, D12).
+  const setSale = await call<{ id: string; number: string }>("POST", "/api/sales", {
+    partyId: parties.get("Apex Marine & Offshore Ltd"),
+    date: dToday(11, 30).toISOString(),
+    notes: "Chain hoist set for the jetty crane",
+    clientRef: randomUUID(),
+    paymentMode: "UPI",
+    lines: [{ variationId: hoistSet.variations[0]!.id, price: "8500", saleSets: [{ setId: openingSets[1]!.id }] }],
+  });
+  await call("POST", `/api/sales/${setSale.id}/edit`, {
+    reason: "Customer asked for a safety hook on the set",
+    expectedNumber: setSale.number,
+    clientRef: randomUUID(),
+    partyId: parties.get("Apex Marine & Offshore Ltd"),
+    notes: "Chain hoist set for the jetty crane — safety hook fitted",
+    paymentMode: "UPI",
+    lines: [{ variationId: hoistSet.variations[0]!.id, price: "8950", saleSets: [{ setId: openingSets[1]!.id, changes: [{ byproductId: linkHook.id, action: "ADD", variationId: hookVariationId }] }] }],
+  });
 
   // 10. Orders (5 total: covering all kinds & shortage/procurement flow)
   // SO 1: PLACED (Open Sales Order)
@@ -736,6 +806,11 @@ export async function seedThroughApi(call: ReturnType<typeof client>) {
     [vRope10, "Usha Martin Wire Ropes", [56, 54]], // Rate revision history!
     [vRope10, "Crossbee Industries", [52]],
     [ehVar.variation, "Crossbee Industries", [36000]],
+    // Second and third quotes for Vendor Pricing > By product (best rate and spread).
+    [gcVar8.variation, "Usha Martin Wire Ropes", [620]],
+    [ehVar.variation, "Deccan Lifting Services", [37500]],
+    [vChain8, "Crossbee Industries", [245]],
+    [vChain8, "Deccan Lifting Services", [262]],
   ];
   for (const [v, supplierName, rates] of rateCards) {
     const sId = parties.get(supplierName);
@@ -748,6 +823,11 @@ export async function seedThroughApi(call: ReturnType<typeof client>) {
         notes: k === 0 ? "Annual contract rate" : "Revised quarterly rate",
       });
     }
+  }
+  // A paused quote: shown on the product rate sheet, never counted as the best rate.
+  const deccanId = parties.get("Deccan Lifting Services");
+  if (deccanId) {
+    await call("PUT", "/api/vendor-prices", { variationId: vRope10.id, supplierId: deccanId, rate: "50", active: false, notes: "Quote on hold" });
   }
 
   // 12. Drafts (Held Carts)
@@ -850,7 +930,8 @@ export async function seedThroughApi(call: ReturnType<typeof client>) {
     variationCategories,
     products: PRODUCTS.length + 5,
     variations: all.length + 9,
-    groupedSets: 3,
+    groupedSets: 4,
+    standardSets: 3,
     warehouses: 2,
     shifts: 2,
     parties: parties.size,

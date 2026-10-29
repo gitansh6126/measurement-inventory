@@ -9,6 +9,7 @@ import { useApi } from "@/lib/useApi";
 // component is always created new and is always Simple (D2, D3); by-products are linked as
 // products — existing, or a new Simple product typed here (D5) — required or optional (D6).
 // No variation, quantity or length is fixed here: those are chosen per set at purchase (D7, D8).
+// The same product may be added more than once (a hoist with two chains); a label tells them apart.
 
 export interface MainDraft {
   name: string;
@@ -21,6 +22,7 @@ export interface ByproductDraft {
   mode: "existing" | "new";
   productId: string | null;
   required: boolean;
+  label: string;
   newName: string;
   newShortName: string;
   newUnit: string;
@@ -34,6 +36,7 @@ export const newByproductDraft = (): ByproductDraft => ({
   mode: "existing",
   productId: null,
   required: true,
+  label: "",
   newName: "",
   newShortName: "",
   newUnit: "Nos",
@@ -49,7 +52,7 @@ export function groupedBodyParts(main: MainDraft, rows: readonly ByproductDraft[
     byproducts: rows.map((r, i) => {
       if (r.mode === "existing") {
         if (!r.productId) throw new Error(`By-product ${i + 1}: choose a product or switch to "Create new"`);
-        return { productId: r.productId, required: r.required };
+        return { productId: r.productId, required: r.required, label: r.label.trim() || null };
       }
       if (!r.newName.trim() || !r.newShortName.trim()) throw new Error(`By-product ${i + 1}: enter the new product's name and Short Name`);
       return {
@@ -165,15 +168,27 @@ export function GroupedSetCard({
                 </button>
               </div>
 
-              {r.mode === "existing" ? (
+              {r.mode === "existing" && (
                 <Combobox
                   value={r.productId}
-                  options={options.filter((o) => o.id === r.productId || !rows.some((x) => x.productId === o.id))}
+                  options={options}
                   onSelect={(id) => update(r.key, { productId: id })}
                   placeholder={list.loading ? "Loading products…" : "Search Simple, Variable or Measured products…"}
                   emptyText="No matching product — use “Create new”"
                 />
-              ) : (
+              )}
+              {r.mode === "existing" && r.productId && rows.filter((x) => x.mode === "existing" && x.productId === r.productId).length > 1 && (
+                <Field label="Label (tells repeats apart)" className="mt-3">
+                  <input
+                    className="input"
+                    maxLength={60}
+                    placeholder={`e.g. Load chain / Hand chain — blank = #${rows.filter((x) => x.mode === "existing" && x.productId === r.productId).findIndex((x) => x.key === r.key) + 1}`}
+                    value={r.label}
+                    onChange={(e) => update(r.key, { label: e.target.value })}
+                  />
+                </Field>
+              )}
+              {r.mode === "new" && (
                 <div className="grid gap-3 sm:grid-cols-3">
                   <Field label="Name *" className="sm:col-span-3">
                     <input className="input" maxLength={150} placeholder="e.g. Safety Hook 1 Ton" value={r.newName} onChange={(e) => update(r.key, { newName: e.target.value })} />

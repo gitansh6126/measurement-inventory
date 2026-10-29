@@ -6,8 +6,9 @@ import { DataView } from "@/components/catalog/DataView";
 import { ProductThumb } from "@/components/ProductThumb";
 import { useViewMode } from "@/lib/useViewMode";
 import { money, qty } from "@/lib/format";
+import { fmtSellRate } from "@/lib/measure";
 import { useApi } from "@/lib/useApi";
-import type { StockProduct } from "@/lib/types";
+import type { StockProduct, StockVariation } from "@/lib/types";
 import { OptionButtons } from "@/components/cart/OptionButtons";
 import { MeasuredDrawer } from "@/components/measure/MeasuredDrawer";
 import { useSupplierRates } from "@/lib/useSupplierRates";
@@ -36,6 +37,15 @@ export function ProductOptionsPage({
   return <CountedProductOptionsPage product={product} mode={mode} onClose={onClose} />;
 }
 
+// Before an option is picked: the lowest to highest selling price over the variations.
+const priceRange = (vars: StockVariation[]) => {
+  const prices = vars.map((v) => Number(v.salePrice)).filter((n) => n > 0);
+  if (!prices.length) return "—";
+  const lo = Math.min(...prices);
+  const hi = Math.max(...prices);
+  return lo === hi ? money(lo) : `${money(lo)} – ${money(hi)}`;
+};
+
 function CountedProductOptionsPage({
   product,
   mode,
@@ -59,15 +69,10 @@ function CountedProductOptionsPage({
     supplierId
   );
 
-  const [pick, setPick] = useState<Record<string, string>>(() => {
-    if (product.productType !== "variable") return {};
-    const first = active[0];
-    const next: Record<string, string> = {};
-    for (const attribute of product.attributes) {
-      if (first?.attributes[attribute.name]) next[attribute.name] = first.attributes[attribute.name];
-    }
-    return next;
-  });
+  // Nothing is picked up front (owner 2026-10-27) unless there is only one variation.
+  const [pick, setPick] = useState<Record<string, string>>(() =>
+    product.productType === "variable" && active.length === 1 ? { ...active[0].attributes } : {},
+  );
 
   const [quantity, setQuantity] = useState(1);
   const [price, setPrice] = useState("");
@@ -77,7 +82,7 @@ function CountedProductOptionsPage({
   const [showVendorModal, setShowVendorModal] = useState(false);
 
   const chosen = product.productType === "variable"
-    ? active.find((v) => product.attributes.every((a) => v.attributes[a.name] === pick[a.name])) ?? active[0]
+    ? active.find((v) => product.attributes.every((a) => (v.attributes[a.name] ?? "") === (pick[a.name] ?? "")))
     : active[0] ?? product.variations[0];
 
   const sug = chosen ? suggestions.get(chosen.id) : undefined;
@@ -158,7 +163,7 @@ function CountedProductOptionsPage({
           <div className="flex flex-wrap items-center gap-3">
             <div className="text-xl font-bold text-brand-700" title={isSale ? "Selling price" : "Cost / Supplier rate"}>
               {isSale ? (
-                chosen ? (Number(chosen.minSalePrice) > 0 ? `${money(chosen.minSalePrice)} – ${money(chosen.salePrice)}` : money(chosen.salePrice)) : "—"
+                chosen ? fmtSellRate(null, chosen.minSalePrice, chosen.salePrice, "Sell: ") : priceRange(active)
               ) : (
                 sug?.supplierRate ? (
                   <span>{money(sug.supplierRate)} <span className="text-xs font-normal text-slate-500">({cart.party?.name ?? "supplier"})</span></span>
@@ -177,10 +182,21 @@ function CountedProductOptionsPage({
               active={active}
               picks={pick}
               onChange={(name, value) => {
-                setPick((prev) => ({ ...prev, [name]: value }));
+                // Tapping the picked value again clears it.
+                setPick((prev) => {
+                  const next = { ...prev };
+                  if (next[name] === value) delete next[name];
+                  else next[name] = value;
+                  return next;
+                });
                 setError("");
               }}
             />
+          )}
+          {product.productType === "variable" && !chosen && (
+            <div className="text-xs text-amber-700">
+              Choose {product.attributes.filter((a) => !pick[a.name] && active.some((v) => v.attributes[a.name])).map((a) => a.name).join(", ") || "another combination"}
+            </div>
           )}
           <div className="flex flex-wrap items-center gap-3">
             <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50">
@@ -235,6 +251,7 @@ function CountedProductOptionsPage({
 
               {sug?.cheapest && (!sug.supplierRate || sug.cheapest.supplierId !== supplierId) && (() => {
                 const ch = sug.cheapest;
+                const multi = (sug.rates?.length ?? 0) > 1;
                 return (
                   <button
                     type="button"
@@ -246,9 +263,9 @@ function CountedProductOptionsPage({
                     onClick={() => {
                       setPrice(String(Math.round(Number(ch.rate))));
                     }}
-                    title={`Use best rate from ${ch.supplierName}`}
+                    title={multi ? `Use best rate from ${ch.supplierName}` : `Use rate from ${ch.supplierName}`}
                   >
-                    Best {money(ch.rate)} ({ch.supplierName})
+                    {multi ? `Best ${money(ch.rate)} (${ch.supplierName})` : `${ch.supplierName} ${money(ch.rate)}`}
                   </button>
                 );
               })()}
@@ -320,7 +337,7 @@ function CountedProductOptionsPage({
                 </div>
                 <div className="font-semibold text-slate-900">
                   {isSale ? (
-                    Number(row.minSalePrice) > 0 ? `${money(row.minSalePrice)} – ${money(row.salePrice)}` : money(row.salePrice)
+                    fmtSellRate(null, row.minSalePrice, row.salePrice, "Sell: ")
                   ) : (
                     vSug?.supplierRate ? (
                       `${money(vSug.supplierRate)} (rate)`
@@ -338,14 +355,14 @@ function CountedProductOptionsPage({
             { id: "stock", header: <span>Stock</span>, cell: (row) => <td>{qty(row.quantity)}</td> },
             {
               id: "price",
-              header: <span className="text-right">{isSale ? "Minimum Selling Price – Selling Price" : "Supplier Rate / Cost"}</span>,
+              header: <span className="text-right">{isSale ? "Selling Price" : "Supplier Rate / Cost"}</span>,
               align: "right",
               cell: (row) => {
                 const vSug = suggestions.get(row.id);
                 return (
                   <td className="text-right">
                     {isSale ? (
-                      Number(row.minSalePrice) > 0 ? `${money(row.minSalePrice)} – ${money(row.salePrice)}` : money(row.salePrice)
+                      fmtSellRate(null, row.minSalePrice, row.salePrice, "Sell: ")
                     ) : (
                       vSug?.supplierRate ? (
                         <div>

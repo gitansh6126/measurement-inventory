@@ -135,7 +135,7 @@ export function Combobox({
         autoComplete="off"
         autoFocus={autoFocus}
         required={required && !value && !selectedLabel}
-        className={`input pr-14 ${!open && shownLabel ? 'font-medium text-slate-900' : ''}`}
+        className={`input ${!open && badge ? 'pr-24' : 'pr-14'} ${!open && shownLabel ? 'font-medium text-slate-900' : ''}`}
         placeholder={open ? shownLabel || placeholder : placeholder}
         value={open ? query : shownLabel}
         onFocus={() => !open && openMenu()}

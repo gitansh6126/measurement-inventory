@@ -5,7 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, Modal, TableSkeleton } from "@/components/ui";
 import { api } from "@/lib/api";
 import { dateTime, money, variationLabel } from "@/lib/format";
-import { perRate, rateLabel } from "@/lib/measure";
+import { fmtRate } from "@/lib/measure";
+import { LengthScopeProvider, useLengthView } from "@/lib/lengthView";
+import { LengthViewToggle } from "@/components/measure/LengthViewToggle";
 import type { StockProduct } from "@/lib/types";
 import { errorText, useApi } from "@/lib/useApi";
 
@@ -32,24 +34,32 @@ interface HistoryItem {
 
 /**
  * Read-only vendor price view for one variation: each supplier's last price,
- * date, status and history. Rate entry lives on the Supplier Prices page.
+ * date, status and history. Rate entry lives on the Supplier Prices page
+ * (By supplier or By product view).
  */
-export function VendorPricingModal({
-  productId,
-  variationId,
-  onClose,
-}: {
+type Props = {
   productId: string;
   variationId?: string;
   onClose: () => void;
   /** Kept for caller compatibility; this view no longer edits rates. */
   onSaved?: () => void;
-}) {
+};
+
+/** Vendor prices are purchase figures: they follow the purchase length view (metres by default). */
+export function VendorPricingModal(props: Props) {
+  return (
+    <LengthScopeProvider scope="purchase">
+      <VendorPricing {...props} />
+    </LengthScopeProvider>
+  );
+}
+
+function VendorPricing({ productId, variationId, onClose }: Props) {
+  useLengthView();
   const productApi = useApi<{ product: StockProduct }>(`/inventory/products/${productId}`);
   const product = productApi.data?.product ?? null;
   // Measured rates are per m, or per ft on a feet + inches product (0028).
   const lu = product?.measure?.lengthUnit;
-  const per = lu ? ` / ${rateLabel(lu)}` : "";
   const ratesApi = useApi<{ prices: RateRecord[] }>(`/vendor-prices?productId=${productId}`);
   const prices = useMemo(() => ratesApi.data?.prices ?? [], [ratesApi.data]);
 
@@ -74,7 +84,8 @@ export function VendorPricingModal({
         return Number(a.rate) - Number(b.rate);
       });
   }, [prices, selectedId]);
-  const bestId = rows[0]?.active && Number(rows[0].rate) > 0 ? rows[0].id : null;
+  const activeRows = rows.filter((r) => r.active && Number(r.rate) > 0);
+  const bestId = activeRows.length > 1 ? activeRows[0]!.id : null;
 
   const [openHistory, setOpenHistory] = useState<string | null>(null);
   const [history, setHistory] = useState<Record<string, HistoryItem[]>>({});
@@ -97,7 +108,7 @@ export function VendorPricingModal({
     }
   }
 
-  const manageHref = `/supplier-prices?q=${encodeURIComponent(product?.name ?? "")}`;
+  const manageHref = product ? `/supplier-prices?view=product&productId=${product.id}&focus=${product.id}` : "/supplier-prices?view=product";
   const showPicker = !variationId && variations.length > 1;
 
   return (
@@ -115,6 +126,11 @@ export function VendorPricingModal({
     >
       <div className="space-y-3">
         <Alert message={error ?? undefined} kind="error" />
+        {lu && (
+          <div className="flex items-center justify-end gap-1.5 text-xs text-slate-500">
+            Rates per <LengthViewToggle />
+          </div>
+        )}
 
         {showPicker && (
           <select
@@ -140,7 +156,7 @@ export function VendorPricingModal({
           <div className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center">
             <p className="text-sm font-semibold text-slate-700">No supplier prices for this variation yet.</p>
             {selected && Number(selected.purchaseCost) > 0 && (
-              <p className="mt-1 text-xs text-slate-500">Purchase cost {money(selected.purchaseCost)}{per}</p>
+              <p className="mt-1 text-xs text-slate-500">Purchase cost {fmtRate(lu, selected.purchaseCost)}</p>
             )}
           </div>
         ) : (
@@ -168,7 +184,7 @@ export function VendorPricingModal({
                       <div className="text-[11px] text-slate-400">{dateTime(rec.effectiveAt)}</div>
                     </div>
                     <span className={`text-base font-semibold ${rec.active ? "text-slate-900" : "text-slate-400 line-through"}`}>
-                      {money(rec.rate)}{per}
+                      {fmtRate(lu, rec.rate)}
                     </span>
                     <button
                       type="button"
@@ -195,8 +211,7 @@ export function VendorPricingModal({
                                 {h.recordedBy ? ` · ${h.recordedBy}` : ""}
                               </span>
                               <span className={`font-semibold ${h.active ? "text-slate-800" : "text-slate-400"}`}>
-                                {money(h.rate)}
-                                {lu ? ` / ${rateLabel(lu)}` : ""}
+                                {fmtRate(lu, h.rate)}
                                 {!h.active && <span className="ml-1 font-normal">(paused)</span>}
                               </span>
                             </li>
@@ -212,9 +227,11 @@ export function VendorPricingModal({
         )}
 
         <div className="flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
-          <Link href={manageHref} target="_blank" className="text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline">
-            Edit in Supplier Prices ↗
-          </Link>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <Link href={manageHref} target="_blank" className="text-xs font-medium text-brand-600 hover:text-brand-700 hover:underline">
+              Compare &amp; edit by product ↗
+            </Link>
+          </div>
           <button type="button" onClick={onClose} className="btn-secondary text-xs">
             Close
           </button>

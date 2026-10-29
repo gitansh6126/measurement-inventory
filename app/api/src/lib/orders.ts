@@ -246,7 +246,17 @@ async function priceLines(tx: Tx, companyId: string, kind: OrderKind, input: z.i
         qtyMilli = l.saleSets.length * 1000;
         // Stored as entered (lengths in base units, not milli): delivery and the order page read it
         // back through saleSetInput, which converts again.
-        setLines.push({ lineNo: i + 1, groupId: v.groupId, json: l.saleSets.map((s) => ({ setId: s.setId, changes: s.changes.map((c) => (c.length !== undefined ? { ...c, length: c.length / 1000 } : c)) })), saleSets: l.saleSets });
+        setLines.push({
+          lineNo: i + 1,
+          groupId: v.groupId,
+          json: l.saleSets.map((s) => ({
+            setId: s.setId || null,
+            isWholeBackorder: s.isWholeBackorder,
+            combination: s.combination?.map((c) => (c.length !== undefined ? { ...c, length: c.length / 1000 } : c)),
+            changes: s.changes.map((c) => (c.length !== undefined ? { ...c, length: c.length / 1000 } : c)),
+          })),
+          saleSets: l.saleSets,
+        });
       } else {
         if (l.saleSets) throw new AppError(400, "BAD_LINE", `${v.group.name}: a purchase order expects new sets`);
         if (l.sets) {
@@ -648,6 +658,9 @@ export async function fulfillOrder(ctx: OrderContext, id: string, body: z.infer<
         if (item.fulfillMilli !== milliOf(l.quantity) - milliOf(l.fulfilledQuantity)) throw new AppError(400, "WHOLE_SETS", `${name}: deliver all its sets at once`);
         const saleSets = z.array(saleSetInput).parse(storedSets.get(l.id) ?? []);
         if (saleSets.length * 1000 !== item.fulfillMilli) throw new AppError(409, "SETS_REQUIRED", `${name}: edit the order and pick its sets again`);
+        if (saleSets.some((s) => s.isWholeBackorder || !s.setId)) {
+          throw new AppError(409, "SET_BACKORDERED", `${name}: set is on backorder — edit order and pick the set once received`);
+        }
         setsFor.set(l.id, { saleSets });
       } else {
         const typed = reqByLineId?.get(l.id)?.sets;
@@ -659,7 +672,7 @@ export async function fulfillOrder(ctx: OrderContext, id: string, body: z.infer<
       }
     }
     if (o.kind === "SALE") {
-      await unholdForDelivery(tx, companyId, id, [...setsFor.values()].flatMap((s) => (s.saleSets ?? []).map((x) => x.setId)));
+      await unholdForDelivery(tx, companyId, id, [...setsFor.values()].flatMap((s) => (s.saleSets ?? []).map((x) => x.setId).filter(Boolean)));
     }
 
     const planItems = itemsToFulfill.map((item) => ({

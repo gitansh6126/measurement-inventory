@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alternatives, planSets, setStatus, wantComplete, type PlanLink, type PlanSet, type PlanStock, type SetWant } from "@rs-v31/shared/sets";
+import { alternatives, byproductName, planSets, repeatLabels, setStatus, wantComplete, type PlanLink, type PlanSet, type PlanStock, type SetWant } from "@rs-v31/shared/sets";
 
 // docs\SET-BUILD-IN-SALE-PLAN.md §3.1: Ready sets first, else the set needing the fewest changes
 // whose new parts are in free stock; two sets never count on the same piece.
@@ -95,8 +95,55 @@ describe("planSets", () => {
     expect(fine.picks[0]!.changes[0]!.backorder).toBeUndefined();
   });
 
-  it("says when there are no sets at all", () => {
+  it("says when there are no sets at all, or backorders the whole combination if backorder is allowed", () => {
     expect(planSets(links, [], want("8mm", 3, null), 1, stock()).problems).toEqual([{ kind: "NO_SETS" }]);
+    const bo = planSets(links, [], want("8mm", 3, "1T"), 2, stock(), { backorder: true });
+    expect(bo.backorders).toBe(2);
+    expect(bo.picks).toHaveLength(2);
+    expect(bo.picks[0]).toMatchObject({
+      isWholeBackorder: true,
+      ready: false,
+      combination: [
+        { byproductId: "chain", variationId: "8mm", lengthMilli: m(3) },
+        { byproductId: "hook", variationId: "1T", lengthMilli: null },
+      ],
+    });
+  });
+
+  it("shortens fitted chain in place when wanted length is SMALLER, even if stock has 0 pieces", () => {
+    const emptyStock: PlanStock = { pieces: [], counted: { "1T|": 5 } };
+    // Set C has 6mm chain of 5m. Customer wants 6mm chain of 3m.
+    const r = planSets(links, [sets[2]!], want("6mm", 3, "1T"), 1, emptyStock);
+    expect(r.problems).toEqual([]);
+    expect(r.picks).toHaveLength(1);
+    expect(r.picks[0]!.changes).toEqual([
+      {
+        byproductId: "chain",
+        action: "REPLACE",
+        variationId: "6mm",
+        lengthMilli: m(3),
+        shortenInPlace: true,
+        from: { byproductId: "chain", variationId: "6mm", lengthMilli: m(5) },
+      },
+    ]);
+  });
+
+  it("cannot lengthen fitted chain in place when wanted length is LARGER; cuts from stock or backorders", () => {
+    // Set A has 6mm 3m. Customer wants 6mm 5m.
+    const emptyStock: PlanStock = { pieces: [], counted: { "1T|": 5 } };
+    const fail = planSets(links, [sets[0]!], want("6mm", 5, "1T"), 1, emptyStock);
+    expect(fail.picks).toEqual([]);
+    expect(fail.problems).toEqual([{ kind: "NO_PIECE", byproductId: "chain", variationId: "6mm", lengthMilli: m(5) }]);
+
+    const bo = planSets(links, [sets[0]!], want("6mm", 5, "1T"), 1, emptyStock, { backorder: true });
+    expect(bo.backorders).toBe(1);
+    expect(bo.picks[0]!.changes[0]).toMatchObject({
+      byproductId: "chain",
+      action: "REPLACE",
+      variationId: "6mm",
+      lengthMilli: m(5),
+      backorder: true,
+    });
   });
 });
 
@@ -112,5 +159,14 @@ describe("setStatus / alternatives / wantComplete", () => {
     expect(wantComplete(links, want("8mm", 3, null))).toBe(true);
     expect(wantComplete(links, { chain: { variationId: "8mm", lengthMilli: 0 }, hook: null })).toBe(false);
     expect(wantComplete(links, { chain: { variationId: "8mm", lengthMilli: m(3) } })).toBe(false);
+  });
+});
+
+describe("repeated by-products (0040)", () => {
+  it("numbers unlabelled repeats of one product and keeps typed labels", () => {
+    expect(repeatLabels([{ productId: "chain" }, { productId: "hook" }])).toEqual([null, null]);
+    expect(repeatLabels([{ productId: "chain", label: "Load chain" }, { productId: "hook" }, { productId: "chain", label: " " }])).toEqual(["Load chain", null, "#2"]);
+    expect(byproductName("Load Chain", "Hand chain")).toBe("Load Chain · Hand chain");
+    expect(byproductName("Hook", null)).toBe("Hook");
   });
 });

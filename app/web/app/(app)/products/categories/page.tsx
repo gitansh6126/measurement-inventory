@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { EditIcon, LayersIcon, PlusIcon } from "@/components/icons";
+import { EditIcon, LayersIcon, PlusIcon, SlidersIcon } from "@/components/icons";
+import { PageMobileSidebar, SidebarField, SidebarSection } from "@/components/PageMobileSidebar";
 import { useCan } from "@/components/MeContext";
 import { ProductThumb } from "@/components/ProductThumb";
 import { CategoryHeadModal } from "@/components/products/CategoryHeadModal";
@@ -31,6 +32,8 @@ export default function CategoriesPage() {
   const [flash, setFlash] = useState<{ kind: "error" | "success"; text: string } | null>(null);
   const [search, setSearch] = useState("");
   const [view, setView] = useViewMode("categories", "grid");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const activeFiltersCount = headKey !== PRODUCT_TYPE ? 1 : 0;
 
   // The open tab is kept in the address (?head=…) so the back link from a category returns to it.
   useEffect(() => {
@@ -66,71 +69,285 @@ export default function CategoriesPage() {
   const headInactive = !!head && !head.active;
   return (
     <div>
-      <PageHeader
-        title="Categories"
-        subtitle={
-          data
-            ? builtIn
-              ? `${all.length} categories · ${data.uncategorizedCount} products without a category`
-              : `${all.length} categories under ${headName} · a product can be in several`
-            : undefined
-        }
-        actions={
-          canEdit &&
-          !headInactive && (
-            <button className="btn-primary" onClick={() => setModal({ category: null })}>
-              <PlusIcon className="h-4 w-4" /> Add Category
-            </button>
-          )
-        }
-      />
-
-      {/* Category heads */}
-      <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2" role="tablist" aria-label="Category heads">
-        {headList.map((h) => {
-          const key = h.id ?? PRODUCT_TYPE;
-          const on = key === (head?.id ?? PRODUCT_TYPE);
-          return (
+      {/* Mobile-only compact header (<1024px) */}
+      <div className="mb-3 space-y-2 lg:hidden">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="truncate text-lg font-bold text-slate-900">Categories</h1>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+              {list.length}
+            </span>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {canEdit && !headInactive && (
+              <button
+                type="button"
+                className="btn-primary !px-2.5 !py-1 text-xs"
+                onClick={() => setModal({ category: null })}
+              >
+                <PlusIcon className="h-3.5 w-3.5" /> Add
+              </button>
+            )}
             <button
-              key={key}
-              role="tab"
-              aria-selected={on}
-              onClick={() => openHead(key)}
-              className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${on ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-100"} ${h.active ? "" : "opacity-60"}`}
+              type="button"
+              onClick={() => setMobileSidebarOpen(true)}
+              className="relative inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
             >
-              {h.name}
-              <span className={`ml-1.5 text-xs ${on ? "text-brand-100" : "text-slate-400"}`}>{h.categoryCount}</span>
+              <SlidersIcon className="h-3.5 w-3.5 text-slate-500" />
+              Options
+              {activeFiltersCount > 0 && (
+                <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-brand-600 px-1 text-[10px] font-bold text-white">
+                  {activeFiltersCount}
+                </span>
+              )}
             </button>
-          );
-        })}
-        {canEdit && (
-          <button
-            className="rounded-md border border-dashed border-brand-300 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-50"
-            onClick={() => setHeadModal({ head: null })}
-          >
-            <PlusIcon className="inline h-4 w-4" /> New Head
-          </button>
-        )}
-        {canEdit && head && !head.builtIn && (
-          <span className="ml-auto">
-            <Menu
-              label={`${head.name} actions`}
-              items={[
-                { label: "Rename head", onClick: () => setHeadModal({ head }) },
-                head.active
-                  ? { label: "Deactivate head", onClick: () => window.confirm(`Deactivate ${head.name}? Its categories stop showing on product forms; products keep them.`) && void setHeadActive(head, false) }
-                  : { label: "Activate head", onClick: () => void setHeadActive(head, true) },
-              ]}
-            />
-          </span>
+          </div>
+        </div>
+
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder={`Search ${headName} categories…`}
+        />
+
+        {headKey !== PRODUCT_TYPE && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-xs">
+            <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-0.5 font-medium text-brand-700 ring-1 ring-inset ring-brand-200">
+              Head: {headName}
+              <button
+                type="button"
+                onClick={() => openHead(PRODUCT_TYPE)}
+                className="ml-0.5 text-brand-500 hover:text-brand-900"
+                aria-label="Reset head filter"
+              >
+                ✕
+              </button>
+            </span>
+            <button
+              type="button"
+              onClick={() => openHead(PRODUCT_TYPE)}
+              className="text-xs font-semibold text-slate-500 underline hover:text-slate-800"
+            >
+              Reset
+            </button>
+          </div>
         )}
       </div>
 
-      <Toolbar>
-        <SearchInput value={search} onChange={setSearch} placeholder={`Search ${headName} categories…`} />
-        <span className="flex-1" />
-        <ViewToggle value={view} onChange={setView} />
-      </Toolbar>
+      {/* Desktop header, head tabs, and toolbar (>=1024px) */}
+      <div className="hidden lg:block">
+        <PageHeader
+          title="Categories"
+          subtitle={
+            data
+              ? builtIn
+                ? `${all.length} categories · ${data.uncategorizedCount} products without a category`
+                : `${all.length} categories under ${headName} · a product can be in several`
+              : undefined
+          }
+          actions={
+            canEdit &&
+            !headInactive && (
+              <button className="btn-primary" onClick={() => setModal({ category: null })}>
+                <PlusIcon className="h-4 w-4" /> Add Category
+              </button>
+            )
+          }
+        />
+
+        {/* Category heads */}
+        <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2" role="tablist" aria-label="Category heads">
+          {headList.map((h) => {
+            const key = h.id ?? PRODUCT_TYPE;
+            const on = key === (head?.id ?? PRODUCT_TYPE);
+            return (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={on}
+                onClick={() => openHead(key)}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${on ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-100"} ${h.active ? "" : "opacity-60"}`}
+              >
+                {h.name}
+                <span className={`ml-1.5 text-xs ${on ? "text-brand-100" : "text-slate-400"}`}>{h.categoryCount}</span>
+              </button>
+            );
+          })}
+          {canEdit && (
+            <button
+              className="rounded-md border border-dashed border-brand-300 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-50"
+              onClick={() => setHeadModal({ head: null })}
+            >
+              <PlusIcon className="inline h-4 w-4" /> New Head
+            </button>
+          )}
+          {canEdit && head && !head.builtIn && (
+            <span className="ml-auto">
+              <Menu
+                label={`${head.name} actions`}
+                items={[
+                  { label: "Rename head", onClick: () => setHeadModal({ head }) },
+                  head.active
+                    ? { label: "Deactivate head", onClick: () => window.confirm(`Deactivate ${head.name}? Its categories stop showing on product forms; products keep them.`) && void setHeadActive(head, false) }
+                    : { label: "Activate head", onClick: () => void setHeadActive(head, true) },
+                ]}
+              />
+            </span>
+          )}
+        </div>
+
+        <Toolbar>
+          <SearchInput value={search} onChange={setSearch} placeholder={`Search ${headName} categories…`} />
+          <span className="flex-1" />
+          <ViewToggle value={view} onChange={setView} />
+        </Toolbar>
+      </div>
+
+      {/* Page Mobile Sidebar */}
+      <PageMobileSidebar
+        open={mobileSidebarOpen}
+        onClose={() => setMobileSidebarOpen(false)}
+        title="Category Options"
+        subtitle="Layout, heads & actions"
+        badge={
+          activeFiltersCount > 0 ? (
+            <span className="rounded-full bg-brand-100 px-2 py-0.5 text-[11px] font-bold text-brand-700">
+              {activeFiltersCount} active
+            </span>
+          ) : undefined
+        }
+        footer={
+          <button
+            type="button"
+            className="btn-primary w-full justify-center !py-2 text-sm"
+            onClick={() => setMobileSidebarOpen(false)}
+          >
+            Show {list.length} categories
+          </button>
+        }
+      >
+        {canEdit && (
+          <SidebarSection title="Quick Actions">
+            <div className="space-y-2">
+              {!headInactive && (
+                <button
+                  type="button"
+                  className="btn-primary w-full justify-center !py-2.5 text-sm"
+                  onClick={() => {
+                    setMobileSidebarOpen(false);
+                    setModal({ category: null });
+                  }}
+                >
+                  <PlusIcon className="h-4 w-4" /> Add Category
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn-secondary w-full justify-center !py-2 text-xs"
+                onClick={() => {
+                  setMobileSidebarOpen(false);
+                  setHeadModal({ head: null });
+                }}
+              >
+                <PlusIcon className="h-3.5 w-3.5" /> Add Category Head
+              </button>
+            </div>
+          </SidebarSection>
+        )}
+
+        <SidebarSection title="Category Head">
+          <div className="space-y-1.5">
+            {headList.map((h) => {
+              const key = h.id ?? PRODUCT_TYPE;
+              const on = key === (head?.id ?? PRODUCT_TYPE);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => openHead(key)}
+                  className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition-all ${
+                    on
+                      ? "bg-brand-600 text-white shadow-sm"
+                      : "bg-slate-50 text-slate-700 hover:bg-slate-100 ring-1 ring-inset ring-slate-200"
+                  } ${h.active ? "" : "opacity-60"}`}
+                >
+                  <span>{h.name}</span>
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                      on ? "bg-white/25 text-white" : "bg-slate-200 text-slate-700"
+                    }`}
+                  >
+                    {h.categoryCount}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {canEdit && head && !head.builtIn && (
+            <div className="mt-3 flex gap-2 border-t border-slate-100 pt-2">
+              <button
+                type="button"
+                className="btn-secondary flex-1 !py-1 text-xs"
+                onClick={() => {
+                  setMobileSidebarOpen(false);
+                  setHeadModal({ head });
+                }}
+              >
+                Rename {head.name}
+              </button>
+              {head.active ? (
+                <button
+                  type="button"
+                  className="btn-secondary flex-1 !py-1 text-xs text-rose-600 hover:text-rose-700"
+                  onClick={() => {
+                    if (window.confirm(`Deactivate ${head.name}? Its categories stop showing on product forms; products keep them.`)) {
+                      void setHeadActive(head, false);
+                    }
+                  }}
+                >
+                  Deactivate
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-secondary flex-1 !py-1 text-xs text-emerald-600 hover:text-emerald-700"
+                  onClick={() => void setHeadActive(head, true)}
+                >
+                  Activate
+                </button>
+              )}
+            </div>
+          )}
+        </SidebarSection>
+
+        <SidebarSection title="View Mode">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setView("grid")}
+              className={`rounded-lg px-3 py-2 text-xs font-medium text-center transition-all ${
+                view === "grid"
+                  ? "bg-brand-600 text-white shadow-sm"
+                  : "bg-slate-50 text-slate-700 hover:bg-slate-100 ring-1 ring-inset ring-slate-200"
+              }`}
+            >
+              Grid view
+            </button>
+            <button
+              type="button"
+              onClick={() => setView("table")}
+              className={`rounded-lg px-3 py-2 text-xs font-medium text-center transition-all ${
+                view === "table"
+                  ? "bg-brand-600 text-white shadow-sm"
+                  : "bg-slate-50 text-slate-700 hover:bg-slate-100 ring-1 ring-inset ring-slate-200"
+              }`}
+            >
+              Table view
+            </button>
+          </div>
+        </SidebarSection>
+      </PageMobileSidebar>
       <Alert message={flash?.text} kind={flash?.kind} />
       <Alert message={error || heads.error} />
       {headInactive && <Alert message={`${headName} is inactive: its categories are hidden from product forms.`} />}

@@ -87,10 +87,13 @@ describe("assertAttributeEditSafe (never destroys a variation's identity)", () =
     expect(edit([{ name: "Size", values: ["6", "10"] }, { name: "Brand", values: ["Crossbee"] }])).toBe("VALUE_IN_USE");
   });
 
-  it("refuses renaming, adding, removing or reordering attributes once variations exist", () => {
+  it("refuses renaming, adding or removing attributes once variations exist", () => {
     expect(edit([{ name: "Diameter", values: ["6", "8", "10"] }, { name: "Brand", values: ["Crossbee", "Halfen"] }])).toBe("ATTRIBUTES_LOCKED");
-    expect(edit([{ name: "Brand", values: ["Crossbee", "Halfen"] }, { name: "Size", values: ["6", "8", "10"] }])).toBe("ATTRIBUTES_LOCKED");
     expect(edit([{ name: "Size", values: ["6", "8", "10"] }])).toBe("ATTRIBUTES_LOCKED");
+  });
+
+  it("allows reordering attributes once variations exist", () => {
+    expect(edit([{ name: "Brand", values: ["Crossbee", "Halfen"] }, { name: "Size", values: ["6", "8", "10"] }])).toBe("OK");
   });
 });
 

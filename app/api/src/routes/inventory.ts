@@ -426,6 +426,15 @@ export function inventoryRoutes() {
       const beforeRows = await tx.productVariation.findMany({ where: { companyId, id: { in: priced.map((r) => r.variationId) } }, select: { id: true, salePrice: true, minSalePrice: true, lowStockThreshold: true } });
       const before = new Map(beforeRows.map((b) => [b.id, b]));
       for (const r of priced) {
+        const b = before.get(r.variationId);
+        if (b) {
+          const effectiveSalePrice = r.salePrice !== undefined ? Number(r.salePrice) : Number(b.salePrice);
+          const effectiveMinSalePrice = r.minSalePrice !== undefined ? Number(r.minSalePrice) : Number(b.minSalePrice);
+          if (effectiveMinSalePrice > effectiveSalePrice) {
+            const name = info.get(r.variationId)?.short_name ?? "Product";
+            throw new AppError(400, "INVALID_PRICE", `${name}: minimum selling price (${effectiveMinSalePrice}) cannot be higher than selling price (${effectiveSalePrice})`);
+          }
+        }
         await tx.productVariation.update({ where: { id: r.variationId }, data: { salePrice: r.salePrice, minSalePrice: r.minSalePrice, lowStockThreshold: r.lowStockThreshold, updatedById: actorId } });
       }
       await auditMany(tx, [
@@ -474,6 +483,11 @@ export function inventoryRoutes() {
     const variation = await prisma.$transaction(async (tx) => {
       const before = await tx.productVariation.findFirst({ where: { id: String(req.params.id), companyId }, select });
       if (!before) throw new AppError(404, "NOT_FOUND", "Variation not found");
+      const effectiveSalePrice = body.salePrice !== undefined ? Number(body.salePrice) : Number(before.salePrice);
+      const effectiveMinSalePrice = body.minSalePrice !== undefined ? Number(body.minSalePrice) : Number(before.minSalePrice);
+      if (effectiveMinSalePrice > effectiveSalePrice) {
+        throw new AppError(400, "INVALID_PRICE", `Minimum selling price (${effectiveMinSalePrice}) cannot be higher than selling price (${effectiveSalePrice})`);
+      }
       const after = await tx.productVariation.update({ where: { id: before.id }, data: { ...body, updatedById: actorId }, select });
       await audit(tx, { companyId, actorId, action: "INVENTORY_CONFIGURE", entityType: "ProductVariation", entityId: before.id, before: view(before), after: view(after), requestId });
       return view(after);

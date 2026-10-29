@@ -8,16 +8,19 @@ import { useCan } from "@/components/MeContext";
 import { CategoryModal } from "./CategoryModal";
 import { HeadCategoryPicker } from "./HeadCategoryPicker";
 import { Alert, Field } from "@/components/ui";
+import { scrollToAndHighlightField } from "@/lib/formFeedback";
 import { api } from "@/lib/api";
 import { UNIT_SUGGESTIONS, type CategoryList, type Product, type ProductType } from "@/lib/types";
 import { errorText, useApi } from "@/lib/useApi";
 import { GroupedSetCard, groupedBodyParts, newByproductDraft, newMainDraft, type ByproductDraft, type MainDraft } from "./GroupedSetCard";
+import { DraftStandardSets, saveDraftStandardSets, standardSetsBody, useDraftLinks, type StdDraft } from "@/components/sets/StandardSetsEditor";
 import { MeasurementCard, newMeasureDraft, type MeasureDraft } from "./MeasurementCard";
 import { ProductImageGallery } from "./ProductImageGallery";
 import {
   VariationBuilder,
   draftsFromStored,
   newAttr,
+  orderedKeys,
   refreshCombos,
   storedDefs,
   type Combo,
@@ -67,6 +70,9 @@ export function ProductForm({
   const [measure, setMeasure] = useState<MeasureDraft>(newMeasureDraft);
   const [main, setMain] = useState<MainDraft>(newMainDraft);
   const [byproducts, setByproducts] = useState<ByproductDraft[]>(() => [newByproductDraft()]);
+  // 0041: step 4 standard sets of a new grouped product, saved right after it is created.
+  const [stdRows, setStdRows] = useState<StdDraft[]>([]);
+  const stdLinks = useDraftLinks(byproducts);
   const [f, setF] = useState({
     name: "",
     shortName: "",
@@ -82,14 +88,28 @@ export function ProductForm({
   const [images, setImages] = useState<string[]>([]);
   const [defs, setDefsState] = useState<AttributeDraft[]>([newAttr()]);
   const [combos, setCombosState] = useState<Combo[]>([]);
+  // Variation keys (saved and new) in the order arranged in the builder.
+  const [varOrder, setVarOrder] = useState<string[]>([]);
   const [savedVariationImages, setSavedVariationImages] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  const clearFieldError = (key: string) => {
+    setFieldErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    setError("");
+  };
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setError("");
     setSaving(false);
     setCombosState([]);
+    setVarOrder(product ? product.variations.map((v) => comboKey(v.attributes)) : []);
 
     if (product) {
       setType(product.productType);
@@ -205,6 +225,35 @@ export function ProductForm({
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    setFieldErrors({});
+
+    // Client-side validations with smooth scroll & pulse to first missing field
+    if (!f.name.trim()) {
+      setFieldErrors((prev) => ({ ...prev, name: "Product name is required" }));
+      setError("Please enter the Product Name");
+      scrollToAndHighlightField("field-product-name");
+      return;
+    }
+
+    if (!f.shortName.trim()) {
+      setFieldErrors((prev) => ({ ...prev, shortName: "Short name is required" }));
+      setError("Please enter the Short Name / Code");
+      scrollToAndHighlightField("field-product-shortname");
+      return;
+    }
+
+    if (type !== "measured" && !f.unit.trim()) {
+      setFieldErrors((prev) => ({ ...prev, unit: "Unit is required" }));
+      setError("Please select or type a unit");
+      scrollToAndHighlightField("field-product-unit");
+      return;
+    }
+
+    if (type === "grouped" && !main.name.trim()) {
+      setError("Please enter the main component name for this set");
+      scrollToAndHighlightField("field-grouped-main");
+      return;
+    }
 
     const primaryImage = images.length > 0 ? images[0] : null;
     // V3.1 (0038): "Only some" applies to Variable / Measured products only; else all variations.
@@ -213,6 +262,7 @@ export function ProductForm({
     const emptyScope = Object.entries(scoped).find(([, keys]) => keys.length === 0);
     if (emptyScope) {
       setError("A category set to “Only some” has no variation ticked: tick at least one, or choose All variations.");
+      scrollToAndHighlightField("field-head-categories");
       return;
     }
     const scopedOf = (key: string) => Object.entries(scoped).filter(([, keys]) => keys.includes(key)).map(([id]) => id);
@@ -232,7 +282,9 @@ export function ProductForm({
       if (!measured || !c.rollLength?.trim() || !Number.isFinite(n) || n <= 0) return {};
       return { defaultRollLength: measure.lengthUnit === "ft_in" ? Math.round(n * 12 * 1000) / 1000 : n };
     };
-    const newVariations = combos.map((c) => ({
+    const keysInOrder = orderedKeys(varOrder, [...saved.map((s) => s.key), ...combos.map((c) => c.key)]);
+    const rank = (k: string) => keysInOrder.indexOf(k);
+    const newVariations = [...combos].sort((a, b) => rank(a.key) - rank(b.key)).map((c) => ({
       attributes: c.attrs,
       shortName: c.shortName,
       officialSku: c.sku.trim() || null,
@@ -250,8 +302,12 @@ export function ProductForm({
     try {
       let result: Product;
       if (!isEdit) {
-        if ((type === "variable" || type === "measured") && !newVariations.length) {
-          throw new Error(measured ? "A measured product needs at least one variation: create it in step 2 of the builder" : "Create at least one variation in step 2 of the builder");
+        if ((type === "variable" || type === "measured") && !newVariations.length && !saved.length) {
+          const msg = measured ? "A measured product needs at least one variation: create it in step 2 of the builder" : "Create at least one variation in step 2 of the builder";
+          setError(msg);
+          setSaving(false);
+          scrollToAndHighlightField("field-variation-builder");
+          return;
         }
         const body =
           type === "grouped"
@@ -280,7 +336,18 @@ export function ProductForm({
                 variations: newVariations,
                 ...(measured ? { measure: measureBody } : {}),
               };
+        // Checked before the product is created, so a mistake there creates nothing.
+        const stdSets = type === "grouped" ? standardSetsBody(stdLinks, stdRows) : [];
         result = (await api<{ product: Product }>("/products", { method: "POST", body })).product;
+        if (stdSets.length) {
+          try {
+            await saveDraftStandardSets(result, byproducts, stdSets);
+          } catch {
+            // The product exists: finish the standard sets on its edit page instead of creating it twice.
+            window.location.assign(`/products/${result.id}/edit#standard-sets`);
+            return;
+          }
+        }
       } else {
         const patch: Record<string, unknown> = { ...common };
         const had = (product!.categories ?? []).map((c) => c.id);
@@ -325,6 +392,15 @@ export function ProductForm({
           ).product;
         }
 
+        // New variations are appended on the server: apply the order arranged in the builder.
+        if (withScopes && result.variations.length > 1) {
+          const sorted = [...result.variations].sort((a, b) => rank(comboKey(a.attributes)) - rank(comboKey(b.attributes)));
+          if (keysInOrder.length === sorted.length && sorted.some((v, i) => v.id !== result.variations[i]!.id)) {
+            await api(`/products/${product!.id}/variations/order`, { method: "PUT", body: { variationIds: sorted.map((v) => v.id) } });
+            result = { ...result, variations: sorted };
+          }
+        }
+
         // Update images of any existing variations that changed
         if (product && (product.productType === "variable" || product.productType === "measured") && product.variations) {
           for (const v of product.variations) {
@@ -340,8 +416,25 @@ export function ProductForm({
       }
       onSaved(result, !isEdit);
     } catch (err) {
-      setError(err instanceof Error && !("status" in err) ? err.message : errorText(err));
+      const msg = err instanceof Error && !("status" in err) ? err.message : errorText(err);
+      setError(msg);
       setSaving(false);
+
+      const lower = msg.toLowerCase();
+      if (lower.includes("short name") || lower.includes("short_name")) {
+        setFieldErrors((prev) => ({ ...prev, shortName: msg }));
+        scrollToAndHighlightField("field-product-shortname");
+      } else if (lower.includes("sku") || lower.includes("official_sku")) {
+        setFieldErrors((prev) => ({ ...prev, sku: msg }));
+        scrollToAndHighlightField("field-product-sku");
+      } else if (lower.includes("name") && (lower.includes("product") || lower.includes("taken"))) {
+        setFieldErrors((prev) => ({ ...prev, name: msg }));
+        scrollToAndHighlightField("field-product-name");
+      } else if (lower.includes("variation") || lower.includes("combination")) {
+        scrollToAndHighlightField("field-variation-builder");
+      } else {
+        scrollToAndHighlightField("form-general-error");
+      }
     }
   }
 
@@ -381,55 +474,87 @@ export function ProductForm({
       <section className={isPage ? "card p-6" : ""}>
         {isPage && <h2 className="mb-4 text-base font-semibold text-slate-900">{grouped && !isEdit ? "Step 1 · Set details" : "Basic Information"}</h2>}
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={grouped ? "Set Name *" : "Product Name *"} className="sm:col-span-2">
+          <Field label={grouped ? "Set Name *" : "Product Name *"} className="sm:col-span-2" error={fieldErrors.name} id="field-product-name">
             <input
+              id="product-name-input"
               className="input"
               required
               maxLength={150}
               placeholder={grouped ? "e.g. Chain Hoist Set" : "e.g. Wire Rope Slings, D-Shackle"}
               value={f.name}
-              onChange={(e) => setF({ ...f, name: e.target.value })}
+              onChange={(e) => {
+                setF({ ...f, name: e.target.value });
+                clearFieldError("name");
+              }}
             />
           </Field>
 
-          <Field label={variable ? "Base Short Name * (variations auto-extend)" : grouped ? "Set Short Name * (starts every set code)" : "Short Name *"}>
+          <Field
+            label={variable ? "Base Short Name * (variations auto-extend)" : grouped ? "Set Short Name * (starts every set code)" : "Short Name *"}
+            error={fieldErrors.shortName}
+            id="field-product-shortname"
+          >
             <input
+              id="product-shortname-input"
               className="input font-mono uppercase"
               required
               maxLength={80}
               placeholder={variable ? "e.g. WRS" : grouped ? "e.g. CHS" : "e.g. DSH-01"}
               value={f.shortName}
-              onChange={(e) => setBase(e.target.value)}
+              onChange={(e) => {
+                setBase(e.target.value);
+                clearFieldError("shortName");
+              }}
             />
           </Field>
 
           {!variable && (
-            <Field label="Official SKU (shown on bills)">
+            <Field label="Official SKU (shown on bills)" error={fieldErrors.sku} id="field-product-sku">
               <input
+                id="product-sku-input"
                 className="input font-mono"
                 maxLength={80}
                 placeholder="Leave blank if not assigned"
                 value={f.sku}
-                onChange={(e) => setF({ ...f, sku: e.target.value })}
+                onChange={(e) => {
+                  setF({ ...f, sku: e.target.value });
+                  clearFieldError("sku");
+                }}
               />
             </Field>
           )}
 
-          {!measured && <div>
-            <span className="label">Unit *</span>
-            <Combobox
-              value={f.unit}
-              options={[...new Set([...UNIT_SUGGESTIONS, f.unit].filter(Boolean))].map((u) => ({
-                id: u,
-                label: u,
-              }))}
-              onSelect={(u) => setF({ ...f, unit: u ?? "" })}
-              onCreate={(q) => setF({ ...f, unit: q.trim() })}
-              createLabel={(q) => `Use unit “${q}”`}
-              placeholder="Select unit…"
-              required
-            />
-          </div>}
+          {!measured && (
+            <div id="field-product-unit">
+              <span className="label">Unit *</span>
+              <Combobox
+                value={f.unit}
+                options={[...new Set([...UNIT_SUGGESTIONS, f.unit].filter(Boolean))].map((u) => ({
+                  id: u,
+                  label: u,
+                }))}
+                onSelect={(u) => {
+                  setF({ ...f, unit: u ?? "" });
+                  clearFieldError("unit");
+                }}
+                onCreate={(q) => {
+                  setF({ ...f, unit: q.trim() });
+                  clearFieldError("unit");
+                }}
+                createLabel={(q) => `Use unit “${q}”`}
+                placeholder="Select unit…"
+                required
+              />
+              {fieldErrors.unit && (
+                <span className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-rose-600 animate-fade-in" role="alert">
+                  <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  {fieldErrors.unit}
+                </span>
+              )}
+            </div>
+          )}
 
           <div>
             <span className="label">Category (Product Type)</span>
@@ -461,7 +586,8 @@ export function ProductForm({
               )}
           </div>
 
-          <HeadCategoryPicker
+          <div id="field-head-categories" className="sm:col-span-2">
+            <HeadCategoryPicker
             value={headCats}
             onChange={setHeadCats}
             current={[...(product?.categories ?? []), ...(product?.variationCategories ?? [])]}
@@ -473,6 +599,7 @@ export function ProductForm({
             scopes={varScopes}
             onScopesChange={setVarScopes}
           />
+          </div>
 
           <Field label="Description" className="sm:col-span-2">
             <textarea
@@ -506,7 +633,8 @@ export function ProductForm({
       )}
 
       {/* V3.1 grouped product: main component + by-products (new products only) */}
-      {grouped && !isEdit && <GroupedSetCard main={main} setMain={setMain} rows={byproducts} setRows={setByproducts} isPage={isPage} />}
+      {grouped && !isEdit && <div id="field-grouped-main"><GroupedSetCard main={main} setMain={setMain} rows={byproducts} setRows={setByproducts} isPage={isPage} /></div>}
+      {grouped && !isEdit && <DraftStandardSets byproducts={byproducts} rows={stdRows} setRows={setStdRows} isPage={isPage} />}
       {grouped && isEdit && (
         <section className={isPage ? "card p-6" : ""}>
           <div className="text-sm font-semibold text-slate-900">Set contents</div>
@@ -520,7 +648,7 @@ export function ProductForm({
 
       {/* Variable Product Builder */}
       {variable && (
-        <section className={isPage ? "card p-6" : ""}>
+        <section id="field-variation-builder" className={isPage ? "card p-6" : ""}>
           <VariationBuilder
             base={f.shortName}
             defs={defs}
@@ -529,22 +657,49 @@ export function ProductForm({
             setCombos={setCombos}
             saved={saved}
             onUpdateSavedImage={handleUpdateSavedImage}
+            order={varOrder}
+            setOrder={setVarOrder}
             rollLengthLabel={measured ? `Default ${(measure.rollName || "roll").toLowerCase()} (${measure.lengthUnit === "m" ? "m" : "ft"})` : undefined}
           />
         </section>
       )}
 
-      <Alert message={error} />
+      {error && !isPage && <Alert message={error} />}
 
-      {/* Actions */}
-      <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 pt-4">
-        <div className="flex items-center gap-3">
+      {/* Sticky Actions Bar (Always visible at bottom on long forms) */}
+      <div
+        className={
+          isPage
+            ? "sticky bottom-[3.75rem] lg:bottom-0 z-30 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-3 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] flex flex-wrap items-center justify-between gap-3 mt-8 transition-all"
+            : "flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4 mt-6"
+        }
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          {error ? (
+            <div
+              id="form-general-error"
+              className="flex items-center gap-1.5 text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-md animate-fade-in max-w-md truncate"
+              role="alert"
+            >
+              <svg className="h-4 w-4 shrink-0 text-rose-500" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <span className="truncate">{error}</span>
+            </div>
+          ) : (
+            <div className="text-xs text-slate-500 hidden sm:block">
+              {isEdit ? "Review details above and update product" : "Fill required fields marked with *"}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3 shrink-0 ml-auto">
           {onCancel && (
             <button type="button" className="btn-secondary" onClick={onCancel} disabled={saving}>
               Cancel
             </button>
           )}
-          <button type="submit" className="btn-primary" disabled={saving}>
+          <button type="submit" className="btn-primary shadow-sm" disabled={saving}>
             {saving ? "Saving…" : isEdit ? "Update Product" : grouped ? "Create Set Product" : "Save Product"}
           </button>
         </div>

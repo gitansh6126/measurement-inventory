@@ -1,11 +1,12 @@
 import { Prisma } from "@prisma/client";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import express, { Router, type RequestHandler } from "express";
 import AdmZip from "adm-zip";
 import { prisma } from "../db.js";
 import { audit } from "../lib/audit.js";
+import { setTypeKey } from "../lib/set-types.js";
 import { requirePermission } from "../lib/auth.js";
 import { AppError } from "../lib/errors.js";
 import { recalculateAllProductActivity } from "../lib/product-activity.js";
@@ -87,6 +88,8 @@ export interface RSInventoryData {
   groupSets?: any[];
   groupSetParts?: any[];
   groupSetPartChanges?: any[];
+  // Set types / standard sets with their prices (0041); absent in older archives.
+  groupSetTypes?: any[];
   // V3.1 category heads and product ↔ category links (0033); absent in older archives.
   categoryHeads?: any[];
   productCategories?: any[];
@@ -114,7 +117,7 @@ const OPTIONAL_TABLES = [
   "users", "documentVoids", "draftOrders", "orders", "vendorPrices", "vendorPriceHistory",
   "measurementPieces", "measurementPieceLedger", "groupByproducts", "groupSets", "groupSetParts",
   "groupSetPartChanges", "categoryHeads", "productCategories", "variationCategories", "warehouses",
-  "stockTransfers", "stockTransferVoids",
+  "stockTransfers", "stockTransferVoids", "groupSetTypes",
 ] as const;
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -203,6 +206,61 @@ const RESTORE_TRIGGERS: readonly (readonly [string, string])[] = [
   ["stock_transfer_voids", "stock_transfer_voids_consistent"],
 ];
 
+// Deletes every business record of one company in dependency order: the restore runs it before
+// importing, "Delete all data" on its own. Users, the company profile, preferences and the audit
+// log stay. The caller disables RESTORE_TRIGGERS first (the ledgers are append-only).
+export const WIPE_PHRASE = "DELETE ALL DATA";
+
+async function wipeCompanyData(tx: Prisma.TransactionClient, companyId: string) {
+  // V2 tables first: they reference the rest.
+  // V3.1 shifts first: their lines point at pieces and sets, their movements at them.
+  await tx.stockMovement.deleteMany({ where: { companyId, transferId: { not: null } } });
+  await tx.stockTransferVoid.deleteMany({ where: { companyId } });
+  await tx.stockTransferLine.deleteMany({ where: { transfer: { companyId } } });
+  await tx.stockTransfer.deleteMany({ where: { companyId } });
+  // V3.1 sets next: they reference pieces, documents, orders and products.
+  await tx.groupSetPartChange.deleteMany({ where: { companyId } });
+  await tx.groupSetPart.deleteMany({ where: { companyId } });
+  await tx.measurementPiece.updateMany({ where: { companyId, setId: { not: null } }, data: { setId: null } });
+  await tx.groupSet.deleteMany({ where: { companyId } });
+  await tx.groupSetType.deleteMany({ where: { companyId } });
+  await tx.groupByproduct.deleteMany({ where: { companyId } });
+  await tx.productGroup.updateMany({ where: { companyId, ownerGroupId: { not: null } }, data: { ownerGroupId: null } });
+  await tx.documentVoid.deleteMany({ where: { companyId } });
+  await tx.draftOrder.deleteMany({ where: { companyId } });
+  // Document lines reference order lines (0027, RESTRICT): delete them before the orders.
+  await tx.saleLine.deleteMany({ where: { sale: { companyId } } });
+  await tx.purchaseLine.deleteMany({ where: { purchase: { companyId } } });
+  // Order lines and events go with their order (ON DELETE CASCADE).
+  await tx.order.deleteMany({ where: { companyId } });
+  await tx.vendorPriceHistory.deleteMany({ where: { companyId } });
+  await tx.vendorPrice.deleteMany({ where: { companyId } });
+  await tx.measurementPieceLedger.deleteMany({ where: { companyId } });
+  // Children first: clear lineage, then delete (pieces reference each other).
+  await tx.measurementPiece.updateMany({ where: { companyId, parentId: { not: null } }, data: { parentId: null, kind: "OPEN" } });
+  await tx.measurementPiece.updateMany({ where: { companyId, setOrigin: true }, data: { setOrigin: false, kind: "OPEN" } });
+  await tx.measurementPiece.deleteMany({ where: { companyId } });
+  await tx.stockMovement.deleteMany({ where: { companyId } });
+  await tx.sale.updateMany({ where: { companyId, replacesId: { not: null } }, data: { replacesId: null } });
+  await tx.purchase.updateMany({ where: { companyId, replacesId: { not: null } }, data: { replacesId: null } });
+  await tx.sale.deleteMany({ where: { companyId } });
+  await tx.purchase.deleteMany({ where: { companyId } });
+  await tx.productCategory.deleteMany({ where: { companyId } });
+  await tx.variationCategory.deleteMany({ where: { companyId } });
+  await tx.productVariation.deleteMany({ where: { companyId } });
+  await tx.productGroup.deleteMany({ where: { companyId } });
+  await tx.category.deleteMany({ where: { companyId } });
+  await tx.categoryHead.deleteMany({ where: { companyId } });
+  await tx.party.deleteMany({ where: { companyId } });
+  await tx.documentCounter.deleteMany({ where: { companyId } });
+  await tx.pieceCounter.deleteMany({ where: { companyId } });
+  await tx.image.deleteMany({ where: { companyId } });
+  // V3.1 warehouses last (everything above may point at them); their balances are empty
+  // now that every movement is gone.
+  await tx.warehouseStockBalance.deleteMany({ where: { companyId } });
+  await tx.warehouse.deleteMany({ where: { companyId } });
+}
+
 export function backupRoutes(env: Env) {
   const r = Router();
   r.use(requirePermission("backup.manage"));
@@ -286,6 +344,7 @@ export function backupRoutes(env: Env) {
           groupSets,
           groupSetParts,
           groupSetPartChanges,
+          groupSetTypes,
           categoryHeads,
           productCategories,
           variationCategories,
@@ -322,6 +381,7 @@ export function backupRoutes(env: Env) {
           db.groupSet.findMany({ where: { companyId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
           db.groupSetPart.findMany({ where: { companyId }, orderBy: [{ allocatedAt: "asc" }, { id: "asc" }] }),
           db.groupSetPartChange.findMany({ where: { companyId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] }),
+          db.groupSetType.findMany({ where: { companyId }, orderBy: [{ groupId: "asc" }, { sortOrder: "asc" }] }),
           db.categoryHead.findMany({ where: { companyId }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
           db.productCategory.findMany({ where: { companyId }, orderBy: [{ createdAt: "asc" }, { productId: "asc" }] }),
           db.variationCategory.findMany({ where: { companyId }, orderBy: [{ createdAt: "asc" }, { variationId: "asc" }] }),
@@ -332,11 +392,11 @@ export function backupRoutes(env: Env) {
             SELECT l.id, l.sets FROM order_lines l JOIN orders o ON o.id = l.order_id WHERE o.company_id = ${companyId} AND l.sets IS NOT NULL`).map((r) => [r.id, r.sets]),
         );
         for (const o of orders) for (const l of o.lines) if (lineSets.has(l.id)) Object.assign(l, { sets: lineSets.get(l.id) });
-        return { company, warehouses, stockTransfers, stockTransferVoids, categories, parties, productGroups, productVariations, documentCounters, sales, saleLines, purchases, purchaseLines, stockMovements, images, users, documentVoids, draftOrders, vendorPrices, vendorPriceHistory, orders, measurementPieces, measurementPieceLedger, groupByproducts, groupSets, groupSetParts, groupSetPartChanges, categoryHeads, productCategories, variationCategories };
+        return { company, warehouses, stockTransfers, stockTransferVoids, categories, parties, productGroups, productVariations, documentCounters, sales, saleLines, purchases, purchaseLines, stockMovements, images, users, documentVoids, draftOrders, vendorPrices, vendorPriceHistory, orders, measurementPieces, measurementPieceLedger, groupByproducts, groupSets, groupSetParts, groupSetPartChanges, groupSetTypes, categoryHeads, productCategories, variationCategories };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 120_000, maxWait: 10_000 },
     );
-    const { company, warehouses, stockTransfers, stockTransferVoids, categories, parties, productGroups, productVariations, documentCounters, sales, saleLines, purchases, purchaseLines, stockMovements, images, users, documentVoids, draftOrders, vendorPrices, vendorPriceHistory, orders, measurementPieces, measurementPieceLedger, groupByproducts, groupSets, groupSetParts, groupSetPartChanges, categoryHeads, productCategories, variationCategories } = snapshot;
+    const { company, warehouses, stockTransfers, stockTransferVoids, categories, parties, productGroups, productVariations, documentCounters, sales, saleLines, purchases, purchaseLines, stockMovements, images, users, documentVoids, draftOrders, vendorPrices, vendorPriceHistory, orders, measurementPieces, measurementPieceLedger, groupByproducts, groupSets, groupSetParts, groupSetPartChanges, groupSetTypes, categoryHeads, productCategories, variationCategories } = snapshot;
 
     const inventoryData: RSInventoryData = {
       categories,
@@ -362,6 +422,7 @@ export function backupRoutes(env: Env) {
       groupSets,
       groupSetParts,
       groupSetPartChanges,
+      groupSetTypes,
       categoryHeads,
       productCategories,
       variationCategories,
@@ -640,52 +701,7 @@ export function backupRoutes(env: Env) {
           }
 
           try {
-            // Delete existing records in dependency order (V2 tables first: they reference the rest)
-            // V3.1 shifts first: their lines point at pieces and sets, their movements at them.
-            await tx.stockMovement.deleteMany({ where: { companyId: targetCompanyId, transferId: { not: null } } });
-            await tx.stockTransferVoid.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.stockTransferLine.deleteMany({ where: { transfer: { companyId: targetCompanyId } } });
-            await tx.stockTransfer.deleteMany({ where: { companyId: targetCompanyId } });
-            // V3.1 sets next: they reference pieces, documents, orders and products.
-            await tx.groupSetPartChange.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.groupSetPart.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.measurementPiece.updateMany({ where: { companyId: targetCompanyId, setId: { not: null } }, data: { setId: null } });
-            await tx.groupSet.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.groupByproduct.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.productGroup.updateMany({ where: { companyId: targetCompanyId, ownerGroupId: { not: null } }, data: { ownerGroupId: null } });
-            await tx.documentVoid.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.draftOrder.deleteMany({ where: { companyId: targetCompanyId } });
-            // Document lines reference order lines (0027, RESTRICT): delete them before the orders.
-            await tx.saleLine.deleteMany({ where: { sale: { companyId: targetCompanyId } } });
-            await tx.purchaseLine.deleteMany({ where: { purchase: { companyId: targetCompanyId } } });
-            // Order lines and events go with their order (ON DELETE CASCADE).
-            await tx.order.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.vendorPriceHistory.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.vendorPrice.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.measurementPieceLedger.deleteMany({ where: { companyId: targetCompanyId } });
-            // Children first: clear lineage, then delete (pieces reference each other).
-            await tx.measurementPiece.updateMany({ where: { companyId: targetCompanyId, parentId: { not: null } }, data: { parentId: null, kind: "OPEN" } });
-            await tx.measurementPiece.updateMany({ where: { companyId: targetCompanyId, setOrigin: true }, data: { setOrigin: false, kind: "OPEN" } });
-            await tx.measurementPiece.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.stockMovement.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.sale.updateMany({ where: { companyId: targetCompanyId, replacesId: { not: null } }, data: { replacesId: null } });
-            await tx.purchase.updateMany({ where: { companyId: targetCompanyId, replacesId: { not: null } }, data: { replacesId: null } });
-            await tx.sale.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.purchase.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.productCategory.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.variationCategory.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.productVariation.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.productGroup.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.category.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.categoryHead.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.party.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.documentCounter.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.pieceCounter.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.image.deleteMany({ where: { companyId: targetCompanyId } });
-            // V3.1 warehouses last (everything above may point at them); their balances are empty
-            // now that every movement is gone.
-            await tx.warehouseStockBalance.deleteMany({ where: { companyId: targetCompanyId } });
-            await tx.warehouse.deleteMany({ where: { companyId: targetCompanyId } });
+            await wipeCompanyData(tx, targetCompanyId);
 
             // Generate collision-safe IDs
             const genId = () => "c" + randomUUID().replace(/-/g, "").slice(0, 24);
@@ -827,6 +843,8 @@ export function backupRoutes(env: Env) {
                   contactPerson: p.contactPerson ?? null,
                   altPhone: p.altPhone ?? null,
                   shippingAddress: p.shippingAddress ?? null,
+                  category: p.category ?? null,
+                  notes: p.notes ?? null,
                   active: p.active ?? true,
                   createdAt: p.createdAt ? new Date(p.createdAt) : undefined,
                   updatedAt: p.updatedAt ? new Date(p.updatedAt) : undefined,
@@ -940,6 +958,7 @@ export function backupRoutes(env: Env) {
                   companyId: targetCompanyId,
                   groupId,
                   productId,
+                  label: b.label ?? null,
                   required: b.required ?? true,
                   sortOrder: b.sortOrder ?? 0,
                   active: b.active ?? true,
@@ -1408,6 +1427,32 @@ export function backupRoutes(env: Env) {
                 },
               });
             }
+            // 0041 set types: the key is made of by-product and variation ids, so it is rebuilt.
+            for (const t of inventoryData.groupSetTypes || []) {
+              const groupId = groupIdMap.get(t.groupId);
+              if (!groupId) continue;
+              const parts = (Array.isArray(t.parts) ? t.parts : []).map((p: { byproductId: string; variationId: string; length?: number | null }) => ({
+                byproductId: byproductIdMap.get(p.byproductId) ?? "",
+                variationId: varIdMap.get(p.variationId) ?? "",
+                length: p.length ?? null,
+              }));
+              if (parts.some((p: { byproductId: string; variationId: string }) => !p.byproductId || !p.variationId)) continue;
+              await tx.groupSetType.create({
+                data: {
+                  companyId: targetCompanyId,
+                  groupId,
+                  typeKey: setTypeKey(parts),
+                  standard: t.standard ?? false,
+                  name: t.name ?? null,
+                  parts,
+                  salePrice: t.salePrice ?? 0,
+                  minSalePrice: t.minSalePrice ?? 0,
+                  lowStockThreshold: t.lowStockThreshold ?? 0,
+                  sortOrder: t.sortOrder ?? 0,
+                  updatedById: auth.userId,
+                },
+              });
+            }
 
             // V3.1 shift lines (pieces and sets exist now) and cancels.
             for (const t of inventoryData.stockTransfers || []) {
@@ -1556,6 +1601,41 @@ export function backupRoutes(env: Env) {
       });
     }
   );
+
+  // Delete all data: empties the company (catalog, stock, documents, contacts, images) while the
+  // users, company profile and audit log stay. The caller must type the phrase back.
+  r.post("/wipe", async (req, res) => {
+    const auth = req.auth!;
+    if (req.body?.confirm !== WIPE_PHRASE) {
+      throw new AppError(400, "CONFIRMATION_REQUIRED", `Type "${WIPE_PHRASE}" to confirm`);
+    }
+    const companyId = auth.companyId;
+    await prisma.$transaction(
+      async (tx) => {
+        for (const [table, trigger] of RESTORE_TRIGGERS) {
+          await tx.$executeRawUnsafe(`ALTER TABLE "${table}" DISABLE TRIGGER "${trigger}"`);
+        }
+        await wipeCompanyData(tx, companyId);
+        await tx.company.update({ where: { id: companyId }, data: { warehousingEnabled: false } });
+        await audit(tx, {
+          companyId,
+          actorId: auth.userId,
+          action: "DATA_WIPE",
+          entityType: "Company",
+          entityId: companyId,
+          requestId: req.requestId,
+        });
+        await tx.$executeRawUnsafe("SET CONSTRAINTS ALL IMMEDIATE");
+        for (const [table, trigger] of RESTORE_TRIGGERS) {
+          await tx.$executeRawUnsafe(`ALTER TABLE "${table}" ENABLE TRIGGER "${trigger}"`);
+        }
+      },
+      { timeout: 120_000, maxWait: 15_000 }
+    );
+    // Image files live under STORAGE_ROOT/<companyId>/; their rows are gone, so remove them too.
+    await rm(path.resolve(root, companyId), { recursive: true, force: true });
+    res.json({ success: true });
+  });
 
   return r;
 }

@@ -2,9 +2,11 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { Alert, Field, Modal, Switch } from "@/components/ui";
+import { scrollToAndHighlightField } from "@/lib/formFeedback";
+import { Combobox } from "@/components/Combobox";
 import { CreditScoreBadge } from "@/components/CreditScoreBadge";
 import { api } from "@/lib/api";
-import { errorText } from "@/lib/useApi";
+import { errorText, useApi } from "@/lib/useApi";
 
 export interface Party {
   id: string;
@@ -19,6 +21,8 @@ export interface Party {
   altPhone?: string | null;
   shippingAddress?: string | null;
   creditScore?: number;
+  category?: string | null;
+  notes?: string | null;
   active: boolean;
   version?: number;
 }
@@ -49,11 +53,16 @@ export function PartyModal({
   const [phone, setPhone] = useState("");
   const [city, setCity] = useState("");
   const [creditScore, setCreditScore] = useState<string>("0");
+  const [category, setCategory] = useState("");
+  const [notes, setNotes] = useState("");
   const [active, setActive] = useState(true);
   const [extra, setExtra] = useState<Record<Extra, string>>({ contactPerson: "", altPhone: "", address: "", shippingAddress: "" });
   const [more, setMore] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  // Existing customer categories for the "select or create" box.
+  const { data: catData } = useApi<{ categories: string[] }>(open && !isSupplier ? "/parties/categories" : null);
+  const categoryOptions = (catData?.categories ?? []).map((c) => ({ id: c, label: c }));
 
   useEffect(() => {
     if (!open) return;
@@ -62,6 +71,8 @@ export function PartyModal({
       setPhone(party.phone ?? "");
       setCity(party.city ?? "");
       setCreditScore(party.creditScore != null ? String(party.creditScore) : "0");
+      setCategory(party.category ?? "");
+      setNotes(party.notes ?? "");
       setActive(party.active);
       const e = { contactPerson: party.contactPerson ?? "", altPhone: party.altPhone ?? "", address: party.address ?? "", shippingAddress: party.shippingAddress ?? "" };
       setExtra(e);
@@ -71,6 +82,8 @@ export function PartyModal({
       setPhone("");
       setCity("");
       setCreditScore("0");
+      setCategory("");
+      setNotes("");
       setActive(true);
       setExtra({ contactPerson: "", altPhone: "", address: "", shippingAddress: "" });
       setMore(false);
@@ -83,6 +96,7 @@ export function PartyModal({
     e.preventDefault();
     const trimmedName = name.trim();
     if (!trimmedName) {
+      scrollToAndHighlightField("party-name-input");
       return setError(isSupplier ? "Supplier name is required" : "Customer name is required");
     }
     setError("");
@@ -96,6 +110,8 @@ export function PartyModal({
           phone: phone.trim() || null,
           city: city.trim() || null,
           creditScore: !isSupplier ? Math.max(0, parseInt(creditScore, 10) || 0) : 0,
+          category: !isSupplier ? category.trim() || null : null,
+          notes: notes.trim() || null,
           ...Object.fromEntries(EXTRA.map((k) => [k, extra[k].trim() || null])),
         };
         const res = await api<{ party: Party }>("/parties", { method: "POST", body });
@@ -111,6 +127,8 @@ export function PartyModal({
         if (!isSupplier && (parseInt(creditScore, 10) || 0) !== (party.creditScore ?? 0)) {
           body.creditScore = Math.max(0, parseInt(creditScore, 10) || 0);
         }
+        if (!isSupplier && (category.trim() || null) !== (party.category ?? null)) body.category = category.trim() || null;
+        if ((notes.trim() || null) !== (party.notes ?? null)) body.notes = notes.trim() || null;
         for (const k of EXTRA) if ((extra[k].trim() || null) !== (party[k] ?? null)) body[k] = extra[k].trim() || null;
         if (active !== party.active) body.active = active;
 
@@ -131,8 +149,17 @@ export function PartyModal({
         );
       }
     } catch (err) {
-      setError(errorText(err));
+      const msg = errorText(err);
+      setError(msg);
       setSaving(false);
+      const lower = msg.toLowerCase();
+      if (lower.includes("phone")) {
+        scrollToAndHighlightField("party-phone-input");
+      } else if (lower.includes("email")) {
+        scrollToAndHighlightField("party-email-input");
+      } else {
+        scrollToAndHighlightField("party-name-input");
+      }
     }
   }
 
@@ -157,14 +184,22 @@ export function PartyModal({
   return (
     <Modal open={open} title={title} onClose={onClose}>
       <form onSubmit={submit} className="grid gap-4">
-        <Field label={isSupplier ? "Supplier / Company Name *" : "Customer / Company Name *"}>
+        <Field
+          label={isSupplier ? "Supplier / Company Name *" : "Customer / Company Name *"}
+          error={!name.trim() && error ? error : undefined}
+          id="party-name-field"
+        >
           <input
+            id="party-name-input"
             className="input"
             required
             maxLength={150}
             placeholder={isSupplier ? "Company Name" : "Name"}
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (error) setError("");
+            }}
             autoFocus
           />
         </Field>
@@ -191,6 +226,22 @@ export function PartyModal({
           </Field>
         </div>
 
+        {!isSupplier && (
+          <Field label="Customer Category">
+            <Combobox
+              value={category || null}
+              selectedLabel={category}
+              options={categoryOptions}
+              onSelect={(id) => setCategory(id ?? "")}
+              onCreate={(q) => setCategory(q.slice(0, 60))}
+              createLabel={(q) => `Create category “${q}”`}
+              placeholder="Select a category or type a new one"
+              emptyText="No categories yet — type a name to create one"
+              minMenuWidth={240}
+            />
+          </Field>
+        )}
+
         {!more ? (
           <button type="button" className="justify-self-start text-xs font-medium text-brand-600 hover:underline" onClick={() => setMore(true)}>
             + More details (contact person, address)
@@ -211,6 +262,16 @@ export function PartyModal({
             </Field>
           </div>
         )}
+
+        <Field label="Notes">
+          <textarea
+            className="input min-h-[4rem]"
+            maxLength={2000}
+            placeholder={isSupplier ? "Anything to remember about this supplier" : "Anything to remember about this customer"}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+        </Field>
 
         {!isSupplier && (
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">

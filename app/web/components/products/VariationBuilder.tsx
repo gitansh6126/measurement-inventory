@@ -10,7 +10,7 @@ import {
   type AttributeDraft,
   type Attributes,
 } from "@rs-v31/shared";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type DragEvent } from "react";
 import { Combobox } from "@/components/Combobox";
 import { Alert } from "@/components/ui";
 import { ImageEditorModal, type EditorImageItem } from "@/components/products/ImageEditorModal";
@@ -95,6 +95,57 @@ export function refreshCombos(combos: Combo[], base: string, defs: AttributeDraf
   }));
 }
 
+/** Keys in the user's chosen order: known keys first as ordered, then any others as given. */
+export function orderedKeys(order: readonly string[], keys: readonly string[]): string[] {
+  const known = order.filter((k) => keys.includes(k));
+  return [...known, ...keys.filter((k) => !known.includes(k))];
+}
+
+const move = <T,>(xs: readonly T[], from: number, to: number): T[] => {
+  if (from === to || to < 0 || to >= xs.length) return [...xs];
+  const next = [...xs];
+  const [x] = next.splice(from, 1);
+  next.splice(to, 0, x!);
+  return next;
+};
+
+/** Drag handle plus ↑ / ↓ buttons (the buttons work on touch screens and keyboards). */
+function OrderHandle({
+  label,
+  index,
+  count,
+  onMove,
+  onDragStart,
+  onDragEnd,
+}: {
+  label: string;
+  index: number;
+  count: number;
+  onMove: (from: number, to: number) => void;
+  onDragStart: (e: DragEvent<HTMLElement>) => void;
+  onDragEnd: () => void;
+}) {
+  const arrow = "px-1 text-slate-600 hover:text-slate-950 disabled:text-slate-300";
+  return (
+    <span className="inline-flex shrink-0 items-center">
+      <span
+        role="button"
+        tabIndex={-1}
+        draggable={count > 1}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        className="cursor-grab select-none px-1 text-slate-500 hover:text-slate-950 active:cursor-grabbing"
+        aria-label={`Drag to reorder ${label}`}
+        title="Drag to reorder"
+      >
+        ⋮⋮
+      </span>
+      <button type="button" className={arrow} aria-label={`Move ${label} up`} title="Move up" disabled={index === 0} onClick={() => onMove(index, index - 1)}>↑</button>
+      <button type="button" className={arrow} aria-label={`Move ${label} down`} title="Move down" disabled={index === count - 1} onClick={() => onMove(index, index + 1)}>↓</button>
+    </span>
+  );
+}
+
 const STEPS = ["Define Attributes", "Create Variation", "Variation Details"];
 
 export function VariationBuilder({
@@ -106,6 +157,8 @@ export function VariationBuilder({
   saved = [],
   onUpdateSavedImage,
   rollLengthLabel,
+  order,
+  setOrder,
 }: {
   base: string;
   defs: AttributeDraft[];
@@ -116,6 +169,9 @@ export function VariationBuilder({
   onUpdateSavedImage?: (variationId: string, imageUrl: string) => void;
   /** Measured products (W4): shows a "Default roll" column with this header, e.g. "Default roll (m)". */
   rollLengthLabel?: string;
+  /** Variation keys (saved and new together) in the order the user arranged them. */
+  order: string[];
+  setOrder: (keys: string[]) => void;
 }) {
   const [step, setStep] = useState(1);
   const [activeTab, setActiveTab] = useState(0);
@@ -128,9 +184,11 @@ export function VariationBuilder({
   const [varEditorImages, setVarEditorImages] = useState<EditorImageItem[]>([]);
   const [isVarDragging, setIsVarDragging] = useState(false);
   const varFileInputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState<{ list: "attr" | "var"; index: number } | null>(null);
+  const [dropAt, setDropAt] = useState<{ list: "attr" | "var"; index: number } | null>(null);
 
-  const allConfigurable = useMemo(
-    () => [
+  const allConfigurable = useMemo(() => {
+    const rows = [
       ...saved.map((s) => ({
         type: "saved" as const,
         id: s.id ?? s.key,
@@ -149,8 +207,52 @@ export function VariationBuilder({
         sku: c.sku,
         image: c.image ?? "",
       })),
-    ],
-    [saved, combos]
+    ];
+    const keys = orderedKeys(order, rows.map((r) => r.key));
+    return keys.map((k) => rows.find((r) => r.key === k)!);
+  }, [saved, combos, order]);
+
+  const moveAttr = (from: number, to: number) => setDefs((prev) => move(prev, from, to));
+  const moveVar = (from: number, to: number) => setOrder(move(allConfigurable.map((r) => r.key), from, to));
+
+  /** Drag-and-drop props for a row of the attribute or variation list. */
+  const dragRow = (list: "attr" | "var", index: number) => ({
+    onDragOver: (e: DragEvent<HTMLElement>) => {
+      if (dragging?.list !== list) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      if (dropAt?.list !== list || dropAt.index !== index) setDropAt({ list, index });
+    },
+    onDrop: (e: DragEvent<HTMLElement>) => {
+      if (dragging?.list !== list) return;
+      e.preventDefault();
+      (list === "attr" ? moveAttr : moveVar)(dragging.index, index);
+      setDragging(null);
+      setDropAt(null);
+    },
+  });
+  const rowState = (list: "attr" | "var", index: number) =>
+    dragging?.list === list && dragging.index === index
+      ? " opacity-50"
+      : dragging?.list === list && dropAt?.list === list && dropAt.index === index
+        ? " ring-2 ring-brand-400"
+        : "";
+  const handle = (list: "attr" | "var", index: number, count: number, labelText: string) => (
+    <OrderHandle
+      label={labelText}
+      index={index}
+      count={count}
+      onMove={list === "attr" ? moveAttr : moveVar}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", labelText);
+        setDragging({ list, index });
+      }}
+      onDragEnd={() => {
+        setDragging(null);
+        setDropAt(null);
+      }}
+    />
   );
 
   const currentVar = allConfigurable[activeTab] || allConfigurable[0];
@@ -320,6 +422,11 @@ export function VariationBuilder({
   };
   const stars = (n: number | string) => "★".repeat(Math.min(5, Number(n) || 0));
   const showVal = (attr: string, v: string) => (named.find((d) => d.name.trim() === attr)?.isQuality ? stars(v) : v);
+  /** A variation's values in the current attribute order (stored values carry no order). */
+  const entries = (attrs: Attributes) => {
+    const names = named.map((d) => d.name.trim()).filter((k) => k in attrs);
+    return [...names, ...Object.keys(attrs).filter((k) => !names.includes(k))].map((k) => [k, attrs[k]!] as const);
+  };
   const chip = "inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs";
   const toolBtn = (on: boolean, tone: "violet" | "amber") =>
     `btn border text-xs ${on ? (tone === "violet" ? "border-violet-300 bg-violet-50 text-violet-700" : "border-amber-300 bg-amber-50 text-amber-700") : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"}`;
@@ -351,10 +458,12 @@ export function VariationBuilder({
             <p className="text-sm text-slate-500">
               Define the attributes that make up your variations, e.g. Size, Material, Rope Construction. Use <b>Sub Var</b> for a secondary option (e.g. Core: Fibre/Steel) and the <b>star</b> for a Quality grade attribute.
             </p>
-            {locked && <p className="text-xs text-amber-700">This product has saved variations: attribute names are fixed. You can add new data values.</p>}
+            {locked && <p className="text-xs text-amber-700">This product has saved variations: attribute names are fixed. You can reorder them and add new data values.</p>}
+            {defs.length > 1 && <p className="text-xs text-slate-500">Drag <b>⋮⋮</b> or use ↑ ↓ to set the attribute order: it is the order shown on variations, Short Names and SKUs.</p>}
             {defs.map((d, i) => (
-              <div key={i} className="card p-3">
+              <div key={i} className={`card p-3 transition${rowState("attr", i)}`} {...dragRow("attr", i)}>
                 <div className="flex flex-wrap items-center gap-2">
+                  {defs.length > 1 && handle("attr", i, defs.length, d.name.trim() || `attribute ${i + 1}`)}
                   <input className="input min-w-[10rem] flex-1" placeholder={`Attribute ${i + 1} (e.g. Size)`} value={d.name} disabled={locked} aria-label={`Attribute ${i + 1} name`} onChange={(e) => setAttr(i, { name: e.target.value })} />
                   {!d.isQuality && <input className="input w-28" placeholder="Unit (mm)" value={d.unit ?? ""} aria-label={`Attribute ${i + 1} unit`} onChange={(e) => setAttr(i, { unit: e.target.value })} />}
                   {!d.isQuality && (
@@ -478,21 +587,29 @@ export function VariationBuilder({
               <div className="card overflow-hidden">
                 <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Created variations ({saved.length + combos.length})
+                  {allConfigurable.length > 1 && <span className="ml-2 font-normal normal-case tracking-normal">· drag ⋮⋮ or use ↑ ↓ to set their order</span>}
                 </div>
-                {saved.map((s) => (
-                  <div key={s.key} className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2 text-sm text-slate-500">
+                {allConfigurable.map((row, i) => {
+                  const s = row.type === "saved" ? saved.find((x) => x.key === row.key) : undefined;
+                  const c = row.type === "new" ? combos.find((x) => x.key === row.key) : undefined;
+                  const reorder = allConfigurable.length > 1 && handle("var", i, allConfigurable.length, entries(row.attrs).map(([, v]) => v).join(" / ") || row.shortName);
+                  if (s) return (
+                  <div key={s.key} className={`flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2 text-sm text-slate-500 last:border-b-0${rowState("var", i)}`} {...dragRow("var", i)}>
+                    {reorder}
                     <span className="flex flex-1 flex-wrap gap-1">
-                      {Object.entries(s.attrs).map(([k, v]) => <span key={k} className={chip}>{k}: <b>{showVal(k, v)}</b></span>)}
+                      {entries(s.attrs).map(([k, v]) => <span key={k} className={chip}>{k}: <b>{showVal(k, v)}</b></span>)}
                     </span>
                     <span className="font-mono text-xs">{s.shortName}</span>
                     <span className="font-mono text-xs text-slate-400">{s.officialSku ?? "—"}</span>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px]">{s.active ? "saved" : "archived"}</span>
                   </div>
-                ))}
-                {combos.map((c) => (
-                  <div key={c.key} className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0">
+                  );
+                  if (!c) return null;
+                  return (
+                  <div key={c.key} className={`flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0${rowState("var", i)}`} {...dragRow("var", i)}>
+                    {reorder}
                     <span className="flex flex-1 flex-wrap gap-1">
-                      {Object.entries(c.attrs).map(([k, v]) => {
+                      {entries(c.attrs).map(([k, v]) => {
                         const attrDef = named.find((d) => d.name.trim() === k);
                         const unit = !attrDef?.isQuality ? attrDef?.unit : null;
                         return (
@@ -523,7 +640,8 @@ export function VariationBuilder({
                     )}
                     <button type="button" className="btn-danger px-2" onClick={() => removeVariation(c)} aria-label="Remove this variation">×</button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             <div className="flex justify-between">
@@ -557,7 +675,7 @@ export function VariationBuilder({
                           : "bg-white text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
                       }`}
                     >
-                      <span className="truncate">{Object.entries(c.attrs).map(([k, v]) => showVal(k, v)).join(" / ") || c.shortName}</span>
+                      <span className="truncate">{entries(c.attrs).map(([k, v]) => showVal(k, v)).join(" / ") || c.shortName}</span>
                       {c.type === "saved" && (
                         <span className={`shrink-0 rounded px-1 text-[10px] ${i === activeTab ? "bg-brand-700 text-white" : "bg-slate-100 text-slate-500"}`}>
                           Saved
@@ -570,7 +688,7 @@ export function VariationBuilder({
                   <div className="card min-w-0 flex-1 p-3">
                     <div className="mb-3 flex items-center justify-between border-b border-slate-200 pb-2">
                       <div className="flex items-center gap-2">
-                        <b className="text-sm text-slate-800">{Object.entries(currentVar.attrs).map(([k, v]) => `${k}: ${showVal(k, v)}`).join(" / ")}</b>
+                        <b className="text-sm text-slate-800">{entries(currentVar.attrs).map(([k, v]) => `${k}: ${showVal(k, v)}`).join(" / ")}</b>
                         {currentVar.type === "saved" && (
                           <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">Saved Variation</span>
                         )}

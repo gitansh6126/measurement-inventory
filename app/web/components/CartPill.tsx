@@ -7,7 +7,7 @@ import { SidebarIcon, TrashIcon } from "@/components/icons";
 import { ProductThumb } from "@/components/ProductThumb";
 import { money } from "@/lib/format";
 
-/** Floating "N Items in Sale Cart ₹total" pill (GAS updateCartCounts). */
+/** Floating "N Items in Sale Cart ₹total" pill (GAS updateCartCounts). Desktop only: phones use the Cart tab in BottomNav. */
 export function CartPill() {
   const cart = useCart();
   const hasItems = Boolean(cart.count && cart.mode);
@@ -19,7 +19,7 @@ export function CartPill() {
     <>
       <CartSidebar />
       {hasItems && (
-        <div className="fixed bottom-5 right-5 z-40 group flex flex-col items-end">
+        <div className="fixed bottom-5 right-5 z-40 group hidden flex-col items-end lg:flex">
           {/* Layered inline buttons visible on desktop hover */}
           <div className="hidden md:flex items-center gap-1.5 pb-2 opacity-0 translate-y-1.5 pointer-events-none group-hover:opacity-100 group-hover:translate-y-0 group-hover:pointer-events-auto transition-all duration-200 ease-out">
             <div className="flex items-center gap-1 rounded-full bg-slate-900/95 p-1 shadow-2xl border border-slate-700/80 backdrop-blur-md">

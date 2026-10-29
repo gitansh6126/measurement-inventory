@@ -115,7 +115,8 @@ const statusWhere = (s: z.infer<typeof piecesQuery>["status"]) => (s === "all" ?
 async function measuredGroup(companyId: string, groupId: string) {
   const g = await prisma.productGroup.findFirst({
     where: { id: groupId, companyId },
-    include: { variations: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
+    // The saved variation order (sort_order), same as Products and Stock In (V3.2 A2).
+    include: { variations: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }] } },
   });
   if (!g) throw new AppError(404, "NOT_FOUND", "Product not found");
   if (g.productType !== "measured") throw new AppError(400, "NOT_MEASURED", `${g.name} is not a Measured product`);
@@ -161,6 +162,7 @@ export function measureRoutes() {
         attributes: orderAttributes(v.attributes as Attributes, defs),
         active: v.active,
         salePrice: v.salePrice.toFixed(2),
+        minSalePrice: v.minSalePrice.toFixed(2),
         lowStockThreshold: v.lowStockThreshold,
         defaultRollLength: v.defaultRollLength === null ? null : Number(v.defaultRollLength),
         stock: stock.get(v.id) ?? 0,

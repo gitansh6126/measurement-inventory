@@ -92,7 +92,7 @@ export function productRoutes() {
       prisma.productGroup.findMany({
         where,
         include: groupInclude,
-        orderBy: [{ name: "asc" }, { id: "asc" }],
+        orderBy: [{ lastSaleAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }, { name: "asc" }, { id: "asc" }],
         skip: (q.page - 1) * q.pageSize,
         take: q.pageSize,
       }),

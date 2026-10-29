@@ -23,6 +23,8 @@ export function RateField({
   placeholder,
   preferredUnit,
   onUnitChange,
+  hasError,
+  title,
 }: {
   unit: LengthUnit;
   /** Whole rupees per the rate unit, as a string ("" while empty). */
@@ -37,6 +39,8 @@ export function RateField({
   /** Rate unit to start in (ignored when the product does not offer it). */
   preferredUnit?: string;
   onUnitChange?: (unit: string) => void;
+  hasError?: boolean;
+  title?: string;
 }) {
   const base = rateLabel(unit)!;
   const start = preferredUnit && RATE_ENTRY_UNITS[unit].includes(preferredUnit) ? preferredUnit : base;
@@ -84,7 +88,10 @@ export function RateField({
         <span className="text-sm text-slate-500">₹</span>
         <input
           id={id}
-          className={`input ${box} ${compact ? "w-24" : "w-full min-w-0 flex-1"} text-right font-semibold`}
+          className={`input ${box} ${compact ? "w-24" : "w-full min-w-0 flex-1"} text-right font-semibold ${
+            hasError ? "border-rose-500 bg-rose-50 text-rose-900 focus:border-rose-600 focus:ring-rose-500" : ""
+          }`}
+          title={title}
           inputMode={entry === base ? "numeric" : "decimal"}
           aria-label={label ?? `Rate per ${entry}`}
           placeholder={placeholder ?? "0"}

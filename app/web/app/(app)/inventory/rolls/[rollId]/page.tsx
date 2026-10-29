@@ -7,10 +7,11 @@ import { UsedBar, target } from "@/components/measure/MeasuredStock";
 import { CorrectModal, CutModal, EditPieceModal, WriteOffModal } from "@/components/measure/RollActions";
 import { useCan } from "@/components/MeContext";
 import { Alert, PageHeader, TableSkeleton } from "@/components/ui";
-import { dateTime, money, variationLabel } from "@/lib/format";
-import { ACTION_LABEL, KIND_CLASS, KIND_LABEL, fmtLen, kindPhrase, metaOf, perRate, rollWord, type PieceRecord } from "@/lib/measure";
+import { dateTime, variationLabel } from "@/lib/format";
+import { ACTION_LABEL, KIND_CLASS, KIND_LABEL, fmtLen, fmtRate, kindPhrase, metaOf, rollWord, type PieceRecord } from "@/lib/measure";
 import { useApi } from "@/lib/useApi";
 import { useWarehouses } from "@/lib/useWarehouses";
+import { useLengthView } from "@/lib/lengthView";
 
 // Roll record (wireframe W8, V2 plan §2.5) with its full history (W19): identity, lengths,
 // where it came from, what it cost, and what happened to it. Notes are edited
@@ -21,6 +22,7 @@ type Action = "open" | "cut" | "writeoff" | "correct" | "edit";
 const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
 
 export default function RollPage() {
+  useLengthView();
   const { rollId } = useParams<{ rollId: string }>();
   const { data, error, reload } = useApi<PieceRecord>(`/measure/pieces/${rollId}`);
   const wh = useWarehouses();
@@ -111,7 +113,7 @@ export default function RollPage() {
           {row("Purchase", p.purchase ? <Link className="text-brand-700 hover:underline" href={`/purchases/${p.purchase.id}`}>{p.purchase.number ?? "Purchase"} ↗</Link> : "—")}
           {row("Supplier", p.supplier?.name ?? "—")}
           {wh.enabled && row("Warehouse", p.warehouseId ? `${wh.codeOf(p.warehouseId)} · ${wh.byId.get(p.warehouseId)?.name ?? ""}${p.setId ? " (in a set)" : ""}` : "—")}
-          {p.unitCost !== null && row("Cost", `${money(p.unitCost)}${perRate(meta.lengthUnit)}`)}
+          {p.unitCost !== null && row("Cost", fmtRate(meta.lengthUnit, p.unitCost))}
           {row("Opened", p.openedAt ? `${day(p.openedAt)}${p.openedBy ? ` · ${p.openedBy}` : ""}` : "Not opened")}
           {row("Notes", p.notes ?? "—", true)}
         </section>
@@ -134,7 +136,7 @@ export default function RollPage() {
       <section className="card">
         <h2 className="border-b border-slate-100 px-4 py-3 font-semibold text-slate-900">History</h2>
         <div className="overflow-x-auto">
-          <table className="table">
+          <table className="table table-stack">
             <thead>
               <tr>
                 <th>When</th>

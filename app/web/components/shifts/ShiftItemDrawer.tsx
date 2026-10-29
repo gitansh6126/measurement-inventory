@@ -9,6 +9,7 @@ import { fmtLen, metaOf, rollWord } from "@/lib/measure";
 import type { GroupSet, StockProduct, StockVariation } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
 import { freeByWarehouse, warehouseChips } from "@/lib/useWarehouses";
+import { useLengthView } from "@/lib/lengthView";
 
 // V3.1 shift item drawer: the sale/purchase ProductDrawer flow (attribute pills, Check Stock
 // table, quantity stepper, bottom sheet) applied to New shift. Only stock free in the From
@@ -63,6 +64,7 @@ export function ShiftItemDrawer({
   focusVariationId?: string | null;
   onClose: () => void;
 }) {
+  useLengthView();
   const kind = product.productType === "measured" ? "measured" : product.productType === "grouped" ? "grouped" : "counted";
   const active = useMemo(() => product.variations.filter((v) => v.active), [product]);
   const free = useCallback((v: StockVariation) => freeIn(v, from), [from]);
@@ -188,7 +190,7 @@ export function ShiftItemDrawer({
               </div>
             )}
             <div className="max-h-[50vh] min-h-0 w-full flex-1 overflow-auto rounded-lg border border-slate-200">
-              <table className="table min-w-full">
+              <table className="table table-stack table-stack-all min-w-full">
                 <thead className="sticky top-0 z-10 bg-slate-50">
                   <tr>
                     {product.attributes.map((a) => (
@@ -414,6 +416,7 @@ export function ShiftItemDrawer({
 }
 
 function RollPicker({ product, from, lines, setLines, variations }: { product: StockProduct; from: string; lines: Line[]; setLines: (l: Line[]) => void; variations: StockVariation[] }) {
+  useLengthView();
   const { data } = useApi<PiecesResponse>(`/measure/products/${product.id}/pieces`);
   const meta = useMemo(() => (data ? metaOf({ lengthUnit: data.product.lengthUnit, decimals: data.product.decimals, rollName: data.product.rollName }) : null), [data]);
   if (!data || !meta) return <p className="text-sm text-slate-500">Loading rolls…</p>;

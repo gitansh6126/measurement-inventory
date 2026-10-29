@@ -452,8 +452,9 @@ export async function writeDocument(
   }
   if (cfg.kind === "purchase" && party?.id) {
     for (const l of lines) {
-      // D24: no supplier rates for grouped products in V3.
-      if (Number(l.price) > 0 && !isGrouped(l.variationId)) {
+      // V3.2 A3: a grouped line updates the supplier's set rate (kept on the grouped product's own
+      // variation) like any other line; sets at another rate are another line, the last one wins.
+      if (Number(l.price) > 0) {
         await upsertRate(
           tx,
           {
@@ -696,8 +697,9 @@ export async function editDocument(cfg: KindConfig, ctx: DocContext, id: string,
       const origLines = isSale
         ? await tx.saleLine.findMany({ where: { saleId: id }, include: { variation: { include: { group: { select: { productType: true } } } } } })
         : await tx.purchaseLine.findMany({ where: { purchaseId: id }, include: { variation: { include: { group: { select: { productType: true } } } } } });
-      // V3.1: documents with sets are cancelled and entered again, not edited (plan §3, §5.4).
-      if (origLines.some((l) => l.variation.group.productType === "grouped")) {
+      // V3.1: a purchase with sets is cancelled and entered again (plan §3). V3.2: a sale with sets
+      // is edited — its sets come back in stock as sold and the revision sells them again.
+      if (!isSale && origLines.some((l) => l.variation.group.productType === "grouped")) {
         throw new AppError(409, "SETS_NOT_EDITABLE", "Contains sets — cancel and re-enter this document");
       }
       const hasMeasuredOrig = origLines.some((l) => l.variation.group.productType === "measured");
@@ -709,12 +711,14 @@ export async function editDocument(cfg: KindConfig, ctx: DocContext, id: string,
         where: { companyId, id: { in: newVariationIds } },
         include: { group: { select: { productType: true } } },
       });
-      if (newVariations.some((v) => v.group.productType === "grouped")) {
+      if (!isSale && newVariations.some((v) => v.group.productType === "grouped")) {
         throw new AppError(409, "SETS_NOT_EDITABLE", "Contains sets — cancel and re-enter this document");
       }
       if (newVariations.some((v) => v.group.productType === "measured")) {
         throw new AppError(409, "MEASURED_NOT_EDITABLE", "Contains measured items — cancel and re-enter this document");
       }
+      const origSets = isSale ? await tx.groupSet.findMany({ where: { companyId, saleId: id }, select: { id: true, code: true } }) : [];
+      if (order) assertSameOrderSets(origSets, body.lines, order.number);
 
       // The revision stays a delivery of the same order: each kept item keeps its order line
       // (0027). V2 allows only price / discount / note / party / payment changes here; changing
@@ -747,6 +751,15 @@ export async function editDocument(cfg: KindConfig, ctx: DocContext, id: string,
 
       if (isSale) {
         // Sale edit:
+        // V3.2: sets sold on the original come back in stock with the parts they were sold with
+        // (measured parts get their length back first), exactly as a cancel does; the revision
+        // below sells the sets it lists again, with any new part changes. Sets left out stay in stock.
+        const label = `${original.number} edited (${newNumber})`;
+        if (origSets.length) {
+          const mctx = { companyId, actorId, requestId };
+          await restoreSaleCuts(tx, mctx, { id, number: original.number }, label);
+          await restoreSaleSets(tx, mctx, { id, number: original.number }, [], label);
+        }
         // Reverse original movements (+) first
         await recordMovements(
           tx,
@@ -761,11 +774,18 @@ export async function editDocument(cfg: KindConfig, ctx: DocContext, id: string,
             occurredAt: now,
             saleId: id,
           })),
-          { requestId },
+          { requestId, sets: origSets.length > 0 },
         );
 
-        // Then write new sale with SALE movements (-)
-        newDocId = await writeDocument(tx, cfg, ctx, body, {
+        // Then write new sale with SALE movements (-). A set of the original was picked at the
+        // version it had when sold; coming back in stock moved it on, so it is not version-checked
+        // (the original sale's lock already serialises edits of it).
+        const origSetIds = new Set(origSets.map((s) => s.id));
+        const revisionBody: EditDocumentBody = {
+          ...body,
+          lines: body.lines.map((l) => (l.saleSets ? { ...l, saleSets: l.saleSets.map((p) => (origSetIds.has(p.setId) ? { ...p, version: undefined } : p)) } : l)),
+        };
+        newDocId = await writeDocument(tx, cfg, ctx, revisionBody, {
           number: newNumber,
           replacesId: id,
           revision,
@@ -856,6 +876,7 @@ export async function editDocument(cfg: KindConfig, ctx: DocContext, id: string,
             price: (isSale ? (l as any).unitPrice : (l as any).unitCost).toFixed(2),
             discount: l.discount.toFixed(2),
           })),
+          ...(origSets.length ? { sets: origSets.map((s) => s.code).sort() } : {}),
         },
         after: {
           number: newNumber,
@@ -865,6 +886,7 @@ export async function editDocument(cfg: KindConfig, ctx: DocContext, id: string,
             quantity: l.quantity,
             price: l.price,
             discount: l.discount ?? "0.00",
+            ...(l.saleSets ? { sets: l.saleSets.map((p) => ({ setId: p.setId, changes: p.changes.length })) } : {}),
           })),
         },
         reason: body.reason,
@@ -888,7 +910,7 @@ export async function editDocument(cfg: KindConfig, ctx: DocContext, id: string,
  */
 function assertSameOrderQuantities(
   before: { variationId: string; quantity: Prisma.Decimal }[],
-  after: { variationId: string; quantity?: string | number | null }[],
+  after: { variationId: string; quantity?: string | number | null; saleSets?: readonly unknown[] }[],
   orderNumber: string,
 ) {
   const sum = (rows: { variationId: string; milli: number }[]) => {
@@ -897,13 +919,31 @@ function assertSameOrderQuantities(
     return m;
   };
   const a = sum(before.map((l) => ({ variationId: l.variationId, milli: toMilli(Number(l.quantity)) })));
-  const b = sum(after.map((l) => ({ variationId: l.variationId, milli: l.quantity === undefined || l.quantity === null ? 0 : toMilli(Number(l.quantity)) })));
+  // A set line counts the sets picked (it sends no quantity).
+  const qty = (l: (typeof after)[number]) => (l.saleSets ? l.saleSets.length : l.quantity === undefined || l.quantity === null ? 0 : Number(l.quantity));
+  const b = sum(after.map((l) => ({ variationId: l.variationId, milli: toMilli(qty(l)) })));
   const same = a.size === b.size && [...a].every(([v, q]) => b.get(v) === q);
   if (!same) {
     throw new AppError(
       409,
       "ORDER_QTY_LOCKED",
       `This was delivered for order ${orderNumber}: items and quantities cannot be changed here. Cancel this document and deliver again from the order (prices, discounts, notes and payment can still be edited).`,
+    );
+  }
+}
+
+/**
+ * V3.2: a delivery of a sale order sells the sets the order held. Its revision keeps exactly those
+ * sets (their parts may still be changed); other sets → cancel the delivery and deliver again.
+ */
+function assertSameOrderSets(origSets: readonly { id: string }[], lines: DocumentBody["lines"], orderNumber: string) {
+  const before = origSets.map((s) => s.id).sort();
+  const after = lines.flatMap((l) => (l.saleSets ?? []).map((p) => p.setId)).sort();
+  if (before.length !== after.length || before.some((x, i) => x !== after[i])) {
+    throw new AppError(
+      409,
+      "ORDER_SETS_LOCKED",
+      `This was delivered for order ${orderNumber}: the sets delivered cannot be swapped here. Cancel this document and deliver again from the order (parts, prices, discounts, notes and payment can still be edited).`,
     );
   }
 }
@@ -953,15 +993,17 @@ export async function previewEditDocument(cfg: KindConfig, ctx: DocContext, id: 
     throw new AppError(409, "ALREADY_CANCELLED", `${original.number} is cancelled and cannot be edited`);
   }
 
-  if (original.lines.some((l) => l.variation.group.productType === "grouped")) {
+  if (!isSale && original.lines.some((l) => l.variation.group.productType === "grouped")) {
     throw new AppError(409, "SETS_NOT_EDITABLE", "Contains sets — cancel and re-enter this document");
   }
   if (original.lines.some((l) => l.variation.group.productType === "measured")) {
     throw new AppError(409, "MEASURED_NOT_EDITABLE", "Contains measured items — cancel and re-enter this document");
   }
+  const origSets = isSale ? await prisma.groupSet.findMany({ where: { companyId, saleId: id }, select: { id: true, code: true } }) : [];
   if (original.orderId) {
     const order = await prisma.order.findFirst({ where: { id: original.orderId, companyId }, select: { number: true } });
     assertSameOrderQuantities(original.lines, body.lines, order?.number ?? "its order");
+    assertSameOrderSets(origSets, body.lines, order?.number ?? "its order");
   }
 
   const origDate = isSale ? (original as any).saleDate : (original as any).purchaseDate;
@@ -975,18 +1017,36 @@ export async function previewEditDocument(cfg: KindConfig, ctx: DocContext, id: 
     where: { companyId, id: { in: newIds } },
     include: { group: { select: { name: true, unit: true, productType: true } } },
   });
-  if (variations.some((v) => v.group.productType === "grouped")) {
+  if (!isSale && variations.some((v) => v.group.productType === "grouped")) {
     throw new AppError(409, "SETS_NOT_EDITABLE", "Contains sets — cancel and re-enter this document");
   }
   if (variations.some((v) => v.group.productType === "measured")) {
     throw new AppError(409, "MEASURED_NOT_EDITABLE", "Contains measured items — cancel and re-enter this document");
   }
   const byId = new Map(variations.map((v) => [v.id, v]));
+  // V3.2: a grouped product may be on several lines (one per set price): compared as one row,
+  // price = average per set.
+  const groupedIds = new Set([
+    ...variations.filter((v) => v.group.productType === "grouped").map((v) => v.id),
+    ...original.lines.filter((l) => l.variation.group.productType === "grouped").map((l) => l.variationId),
+  ]);
+  const addRow = (
+    map: Map<string, { qty: number; price: string; discount: string; total: string; name: string; shortName: string; unit: string }>,
+    variationId: string,
+    row: { qty: number; price: string; discount: string; total: string; name: string; shortName: string; unit: string },
+  ) => {
+    const prev = map.get(variationId);
+    if (!prev || !groupedIds.has(variationId)) return void map.set(variationId, row);
+    const qty = prev.qty + row.qty;
+    const total = toPaise(prev.total) + toPaise(row.total);
+    const discount = toPaise(prev.discount) + toPaise(row.discount);
+    map.set(variationId, { ...prev, qty, total: fromPaise(total), discount: fromPaise(discount), price: fromPaise(qty > 0 ? (total + discount) / BigInt(Math.round(qty)) : 0n) });
+  };
 
   const oldMap = new Map<string, { qty: number; price: string; discount: string; total: string; name: string; shortName: string; unit: string }>();
   for (const l of original.lines) {
     const priceStr = (isSale ? (l as any).unitPrice : (l as any).unitCost).toFixed(2);
-    oldMap.set(l.variationId, {
+    addRow(oldMap, l.variationId, {
       qty: Number(l.quantity),
       price: priceStr,
       discount: l.discount.toFixed(2),
@@ -1002,13 +1062,14 @@ export async function previewEditDocument(cfg: KindConfig, ctx: DocContext, id: 
   for (const l of body.lines) {
     const v = byId.get(l.variationId);
     if (!v) continue;
-    const qty = l.quantity ?? 0;
+    // A set line's quantity is the number of sets picked.
+    const qty = l.saleSets?.length ?? l.quantity ?? 0;
     const pricePaise = toPaise(l.price);
     const gross = (BigInt(Math.round(qty * 1000)) * pricePaise) / 1000n;
     const disc = l.discount ? toPaise(l.discount) : 0n;
     const lineTot = gross - disc;
     newSubtotal += lineTot;
-    newMap.set(l.variationId, {
+    addRow(newMap, l.variationId, {
       qty,
       price: fromPaise(pricePaise),
       discount: fromPaise(disc),
@@ -1052,6 +1113,8 @@ export async function previewEditDocument(cfg: KindConfig, ctx: DocContext, id: 
   const stock: any[] = [];
   let hasStockWarning = false;
   for (const varId of allVarIds) {
+    // A grouped product has no stock of its own: its sets are listed below instead.
+    if (groupedIds.has(varId)) continue;
     const oldQty = oldMap.get(varId)?.qty ?? 0;
     const newQty = newMap.get(varId)?.qty ?? 0;
     const currentBalance = balanceMap.get(varId) ?? 0;
@@ -1087,6 +1150,21 @@ export async function previewEditDocument(cfg: KindConfig, ctx: DocContext, id: 
     },
     stock,
     hasStockWarning,
+    // V3.2: sets of the original not on the revision come back in stock; sets new on it are sold.
+    ...(groupedIds.size ? { sets: await previewSets(companyId, origSets, body.lines) } : {}),
+  };
+}
+
+async function previewSets(companyId: string, origSets: readonly { id: string; code: string }[], lines: DocumentBody["lines"]) {
+  const picks = lines.flatMap((l) => l.saleSets ?? []);
+  const was = new Set(origSets.map((s) => s.id));
+  const now = new Set(picks.map((p) => p.setId));
+  const added = await prisma.groupSet.findMany({ where: { companyId, id: { in: [...now].filter((x) => !was.has(x)) } }, select: { code: true } });
+  return {
+    kept: origSets.filter((s) => now.has(s.id)).length,
+    backInStock: origSets.filter((s) => !now.has(s.id)).map((s) => s.code).sort(),
+    newlySold: added.map((s) => s.code).sort(),
+    partChanges: picks.reduce((n, p) => n + (p.changes?.length ?? 0), 0),
   };
 }
 

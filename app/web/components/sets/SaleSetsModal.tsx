@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ratePerOf, toMilli } from "@rs-v31/shared/measure";
-import { alternatives, countedKey, diffSet, planSets, wantComplete, type PlanChange, type PlanLink, type PlanProblem, type PlanSet, type PlanStock, type SetStatus, type SetWant } from "@rs-v31/shared/sets";
+import { alternatives, countedKey, diffSet, planSets, setTypeKey, wantComplete, type PlanChange, type PlanLink, type PlanProblem, type PlanSet, type PlanStock, type SetStatus, type SetWant } from "@rs-v31/shared/sets";
 import { useCart, type CartLine, type SaleSetPick } from "@/components/CartContext";
 import { LengthField } from "@/components/measure/LengthField";
 import { Alert, Modal } from "@/components/ui";
@@ -14,6 +14,7 @@ import { useEntryUnits } from "@/lib/useEntryUnits";
 import { useWarehouses } from "@/lib/useWarehouses";
 import { partValue, variationText } from "./SetSheet";
 import { fmtLen } from "@/lib/measure";
+import { useLengthView } from "@/lib/lengthView";
 
 // V3.1 sale cart (docs\GROUPED-PRODUCTS-V3-PLAN.md §5, docs\SET-BUILD-IN-SALE-PLAN.md), two steps:
 // 1. Choose the combination the customer wants — each by-product's option and, for a chain, its
@@ -99,13 +100,17 @@ export function SaleSetsModal({
   onClose: () => void;
   onConfirm: (lines: CartLine[]) => void;
 }) {
+  useLengthView();
   const { data, error: loadError } = useApi<{ product: Product }>(`/products/${productId}`);
-  const setsRes = useApi<{ sets: GroupSet[] }>(`/sets?groupId=${productId}&status=IN_STOCK`);
+  const setsRes = useApi<{ sets: GroupSet[]; typePrices?: Record<string, { salePrice: string }> }>(`/sets?groupId=${productId}&status=IN_STOCK`);
   const heldRes = useApi<{ sets: GroupSet[] }>(orderId ? `/sets?groupId=${productId}&status=HELD` : null);
   const product = data?.product ?? null;
   const info = product?.grouped ?? null;
   const wh = useWarehouses();
   const cart = useCart();
+  // V3.2 editing a sale: its own sets can be picked again, at the price each was sold at.
+  const soldSets = cart.mode === "sale" ? cart.editing?.soldSets : undefined;
+  const soldRes = useApi<{ sets: GroupSet[] }>(soldSets ? `/sets?groupId=${productId}&status=SOLD&saleId=${cart.editing!.documentId}` : null);
   const units = useEntryUnits("sale");
   const [step, setStep] = useState<1 | 2>(1);
   const [want, setWant] = useState<WantForm>({});
@@ -149,8 +154,9 @@ export function SaleSetsModal({
 
   const setPrice = product?.variations[0] ? paiseOf(product.variations[0].salePrice) : 0;
   const all = useMemo(
-    () => [...(heldRes.data?.sets ?? []).filter((s) => s.orderId === orderId), ...(setsRes.data?.sets ?? [])].filter((s) => !excludeSetIds.includes(s.id)),
-    [setsRes.data, heldRes.data, orderId, excludeSetIds],
+    () =>
+      [...(heldRes.data?.sets ?? []).filter((s) => s.orderId === orderId), ...(soldRes.data?.sets ?? []), ...(setsRes.data?.sets ?? [])].filter((s) => !excludeSetIds.includes(s.id)),
+    [setsRes.data, heldRes.data, soldRes.data, orderId, excludeSetIds],
   );
   const byproducts = useMemo(() => info?.byproducts ?? [], [info]);
   const setById = useMemo(() => new Map(all.map((s) => [s.id, s])), [all]);
@@ -158,7 +164,7 @@ export function SaleSetsModal({
   // Start: optional parts "none", a required part with one variation chosen; editing a cart line
   // fills in the combination its first set will have after its changes.
   useEffect(() => {
-    if (!info || !setsRes.data || (orderId && !heldRes.data)) return;
+    if (!info || !setsRes.data || (orderId && !heldRes.data) || (soldSets && !soldRes.data)) return;
     setWant((w) => {
       if (Object.keys(w).length) return w;
       const first = initial?.[0];
@@ -175,17 +181,19 @@ export function SaleSetsModal({
         }),
       );
     });
-  }, [info, setsRes.data, heldRes.data, orderId, initial, setById]);
+  }, [info, setsRes.data, heldRes.data, soldRes.data, soldSets, orderId, initial, setById]);
 
   // ---- Planner inputs ----
   const links: PlanLink[] = useMemo(() => byproducts.map((b) => ({ id: b.id, required: b.required, measured: b.productType === "measured" })), [byproducts]);
   const whOf = (s: GroupSet) => (wh.enabled ? s.warehouseId : null);
-  const planSetsIn: PlanSet[] = useMemo(
-    () =>
-      // Oldest first (FIFO): the API lists sets in code order, not by age.
-      [...all].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((s) => ({ id: s.id, warehouseId: wh.enabled ? s.warehouseId : null, parts: planPartsOf(s) })),
-    [all, wh.enabled],
-  );
+  const planSetsIn: PlanSet[] = useMemo(() => {
+    // The line's own sets first (an edit keeps them unless the combination changes), then the
+    // sets sold on the sale being edited, then oldest first (FIFO): the API lists sets in code order.
+    const rank = (s: GroupSet) => (initial?.some((p) => p.setId === s.id) ? 0 : soldSets?.[s.id] ? 1 : 2);
+    return [...all]
+      .sort((a, b) => rank(a) - rank(b) || a.createdAt.localeCompare(b.createdAt))
+      .map((s) => ({ id: s.id, warehouseId: wh.enabled ? s.warehouseId : null, parts: planPartsOf(s) }));
+  }, [all, wh.enabled, initial, soldSets]);
 
   /** Free stock now, less what other cart lines will take (the server re-checks on save). */
   const stock: PlanStock = useMemo(() => {
@@ -284,7 +292,10 @@ export function SaleSetsModal({
 
   /** D12 repricing of one set with its edits, in paise. */
   function priceOf(s: GroupSet, edits: Edits) {
-    let p = setPrice;
+    // A set of the sale being edited starts from the price it was sold at.
+    // 0041: a set's price is its set type's, else the product's old price.
+    const typePrice = setsRes.data?.typePrices?.[s.typeKey]?.salePrice;
+    let p = soldSets?.[s.id] !== undefined ? paiseOf(soldSets[s.id]!) : typePrice !== undefined ? paiseOf(typePrice) : setPrice;
     for (const b of byproducts) {
       const e = edits[s.id]?.[b.id];
       if (!e) continue;
@@ -356,15 +367,62 @@ export function SaleSetsModal({
     })
     .join(" · ");
 
+  const wantedTypeKey = useMemo(
+    () =>
+      setTypeKey(
+        byproducts.map((b) => {
+          const w = wanted[b.id];
+          return {
+            byproductId: b.id,
+            variationId: w?.variationId ?? "",
+            length: b.productType === "measured" ? (w?.lengthMilli ?? null) : null,
+          };
+        }),
+      ),
+    [byproducts, wanted],
+  );
+  const combinationPrice = useMemo(() => {
+    const tp = setsRes.data?.typePrices?.[wantedTypeKey]?.salePrice;
+    if (tp !== undefined) return paiseOf(tp);
+    let p = setPrice;
+    for (const b of byproducts) {
+      const w = wanted[b.id];
+      if (!w || !w.variationId) continue;
+      const v = b.variations.find((x) => x.id === w.variationId);
+      const len = b.productType === "measured" ? (w.lengthMilli ?? 0) / 1000 : 0;
+      if (v && (b.productType !== "measured" || len > 0)) {
+        p += partPaise(v.salePrice, len, b.lengthUnit, b.productType === "measured");
+      }
+    }
+    return Math.max(0, p);
+  }, [setsRes.data?.typePrices, wantedTypeKey, setPrice, byproducts, wanted]);
+
+  const wantedRows = useMemo<SetContentRow[]>(
+    () =>
+      byproducts.flatMap((b) => {
+        const w = wanted[b.id];
+        if (!w || !w.variationId) return [];
+        const v = b.variations.find((x) => x.id === w.variationId);
+        const len = b.productType === "measured" && w.lengthMilli ? String(w.lengthMilli / 1000) : "";
+        return [{ name: b.name, value: partValue(b, v, len) }];
+      }),
+    [byproducts, wanted],
+  );
+
   const picks = plan?.picks ?? [];
-  const edits: Edits = useMemo(() => Object.fromEntries(picks.map((p) => [p.setId, Object.fromEntries(p.changes.map((c) => [c.byproductId, toEdit(c)]))])), [picks]);
+  const edits: Edits = useMemo(() => Object.fromEntries(picks.filter((p) => !p.isWholeBackorder).map((p) => [p.setId, Object.fromEntries(p.changes.map((c) => [c.byproductId, toEdit(c)]))])), [picks]);
   const readyPicks = picks.filter((p) => p.ready);
-  const madePicks = picks.map((p, slot) => ({ p, slot })).filter((x) => !x.p.ready);
-  const backorderPicks = picks.filter((p) => p.changes.some((c) => c.backorder)).length;
+  const madePicks = picks.map((p, slot) => ({ p, slot })).filter((x) => !x.p.ready && !x.p.isWholeBackorder);
+  const wholeBackorderPicks = picks.map((p, slot) => ({ p, slot })).filter((x) => x.p.isWholeBackorder);
+  const backorderPicks = picks.filter((p) => p.isWholeBackorder || p.changes.some((c) => c.backorder)).length;
   const problem = plan?.problems[0] ?? null;
   const shortPart = problem ? problemPart(problem) : null;
   const pickedSets = picks.map((p) => setById.get(p.setId)!).filter(Boolean);
-  const total = pickedSets.reduce((t, s) => t + priceOf(s, edits), 0);
+  const total = picks.reduce((t, p) => {
+    if (p.isWholeBackorder) return t + combinationPrice;
+    const s = setById.get(p.setId);
+    return s ? t + priceOf(s, edits) : t;
+  }, 0);
 
   function next() {
     setError("");
@@ -376,9 +434,34 @@ export function SaleSetsModal({
   function confirm() {
     if (!product || !info) return;
     setError("");
-    if (!pickedSets.length) return setError("No set can be used or made with this combination");
-    const out: { set: GroupSet; pick: SaleSetPick; price: number }[] = [];
-    for (const s of pickedSets) {
+    if (!picks.length) return setError("No set can be used or made with this combination");
+    const out: { pick: SaleSetPick; price: number; summary: string; detail: SetDetail }[] = [];
+    for (const p of picks) {
+      if (p.isWholeBackorder) {
+        const combination = p.combination?.map((c) => {
+          const b = info.byproducts.find((x) => x.id === c.byproductId)!;
+          return {
+            byproductId: c.byproductId,
+            variationId: c.variationId,
+            ...(b?.productType === "measured" ? { length: (c.lengthMilli ?? 0) / 1000 } : {}),
+          };
+        }) ?? [];
+        out.push({
+          pick: {
+            setId: "",
+            isWholeBackorder: true,
+            combination,
+            changes: [],
+            code: "BACKORDER",
+          },
+          price: combinationPrice,
+          summary: `${product.name} · ${wantText} (Backorder)`,
+          detail: { rows: wantedRows, note: "Whole Backorder" },
+        });
+        continue;
+      }
+      const s = setById.get(p.setId);
+      if (!s) continue;
       const changes: NonNullable<SaleSetPick["changes"]> = Object.entries(edits[s.id] ?? {}).map(([bp, e]) => {
         const b = info.byproducts.find((x) => x.id === bp)!;
         return {
@@ -389,7 +472,12 @@ export function SaleSetsModal({
           ...(e.backorder ? { backorder: true } : {}),
         };
       });
-      out.push({ set: s, pick: { setId: s.id, version: s.version, ...(changes.length ? { changes } : {}), code: s.code }, price: priceOf(s, edits) });
+      out.push({
+        pick: { setId: s.id, version: s.version, ...(changes.length ? { changes } : {}), code: s.code },
+        price: priceOf(s, edits),
+        summary: summaryOf(s, edits),
+        detail: detailOf(s, edits),
+      });
     }
     const byPrice = new Map<number, typeof out>();
     for (const p of out) byPrice.set(p.price, [...(byPrice.get(p.price) ?? []), p]);
@@ -407,8 +495,8 @@ export function SaleSetsModal({
         quantity: group.length,
         available: all.length,
         saleSets: group.map((g) => g.pick),
-        setSummaries: group.map((g) => summaryOf(g.set, edits)),
-        setDetails: group.map((g) => detailOf(g.set, edits)),
+        setSummaries: group.map((g) => g.summary),
+        setDetails: group.map((g) => g.detail),
       })),
     );
   }
@@ -429,7 +517,7 @@ export function SaleSetsModal({
               <span className={stepClass(step === 2)}>2 Confirm</span>
             </div>
             <span className="text-xs text-slate-500">
-              {all.length} in stock · set price {money(setPrice / 100)}
+              {all.length} in stock · price per set type
             </span>
           </div>
 
@@ -494,7 +582,7 @@ export function SaleSetsModal({
                       −
                     </button>
                     <span className="min-w-8 text-center font-semibold">{quantity}</span>
-                    <button type="button" className="px-3 py-1 text-lg" aria-label="More sets" onClick={() => setQuantity((q) => Math.min(Math.max(1, all.length), q + 1))}>
+                    <button type="button" className="px-3 py-1 text-lg" aria-label="More sets" onClick={() => setQuantity((q) => q + 1)}>
                       +
                     </button>
                   </div>
@@ -504,7 +592,7 @@ export function SaleSetsModal({
               {/* Set combinations in stock */}
               <div>
                 <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Set combinations in stock</div>
-                {!all.length && <p className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-sm text-slate-500">No {product?.name} sets in stock. Sets come from purchases or opening sets.</p>}
+                {!all.length && <p className="rounded-lg border border-dashed border-slate-300 p-4 text-center text-sm text-slate-500">No {product?.name} sets in stock. You can still choose a combination and backorder it as a Customer Order.</p>}
                 <ul className="grid max-h-[50vh] gap-1.5 overflow-auto pr-1">
                   {types.map((t) => {
                     const match = complete && !diffSet(links, t.plan, wanted).length;
@@ -625,13 +713,25 @@ export function SaleSetsModal({
                   </div>
                 );
               })}
+              {wholeBackorderPicks.map(({ p, slot }) => (
+                <div key={p.setId || slot} className="rounded-xl border border-rose-300 bg-rose-50/60 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded bg-rose-100 px-1.5 py-0.5 text-xs font-semibold text-rose-800">Backorder — Whole Combination</span>
+                    <span className="min-w-0 flex-1 text-sm font-semibold text-slate-900">Set #{slot + 1}: {wantText}</span>
+                    <span className="text-sm font-bold text-slate-900">{money(combinationPrice / 100)}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-rose-700">
+                    Main component and by-products not in stock — will be held on a Customer Order and procured.
+                  </p>
+                </div>
+              ))}
               {problem && !backorderPicks && (
                 <div className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800" role="alert">
                   <div className="font-bold">
                     {picks.length ? `Only ${picks.length} of ${quantity} sets possible from stock: ` : "Shortage: "}
-                    {problemText(problem)}.
+                    {problemText(problem!)}.
                   </div>
-                  {shortPart && (
+                  {shortPart ? (
                     <>
                       <p className="mt-0.5 text-xs text-rose-700">
                         {shortPart.measured
@@ -649,22 +749,38 @@ export function SaleSetsModal({
                         Backorder {shortPart.name}
                       </button>
                     </>
+                  ) : (
+                    <>
+                      <p className="mt-0.5 text-xs text-rose-700">
+                        No sets or main component in stock. You can backorder the whole combination as a Customer Order and procure it.
+                      </p>
+                      <button
+                        type="button"
+                        className="btn mt-2 bg-amber-600 !py-1 !text-xs text-white hover:bg-amber-700"
+                        onClick={() => {
+                          setBackorder(true);
+                          setError("");
+                        }}
+                      >
+                        Backorder whole combination ({quantity - picks.length} set{quantity - picks.length === 1 ? "" : "s"})
+                      </button>
+                    </>
                   )}
                 </div>
               )}
-              {backorderPicks > 0 && shortPart && (
+              {backorderPicks > 0 && (
                 <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-semibold">
-                      ⚠️ Backorder: {backorderPicks} set{backorderPicks === 1 ? "" : "s"} wait{backorderPicks === 1 ? "s" : ""} for {shortPart.name}
-                      {shortPart.measured ? " — a new bundle must be ordered" : " — it must be ordered"}.
+                      ⚠️ Backorder: {backorderPicks} set{backorderPicks === 1 ? "" : "s"} on backorder{shortPart ? ` waiting for ${shortPart.name}` : ` (whole combination to be procured)`}.
+                      {shortPart ? (shortPart.measured ? " — a new bundle must be ordered" : " — it must be ordered") : ""}.
                     </span>
                     <button type="button" className="text-xs font-semibold text-amber-800 underline" onClick={() => setBackorder(false)}>
                       Undo backorder
                     </button>
                   </div>
                   <p className="mt-0.5 text-xs text-amber-800">
-                    The set is held on a <b>Customer Order</b>; the part is fitted when the {shortPart.measured ? "bundle" : "stock"} arrives. Use <b>Arrange purchase</b> on the order to buy it through the purchase cart.
+                    Saved as a <b>Customer Order</b>. Use <b>Arrange purchase</b> or create a Purchase Order to buy it from a supplier.
                   </p>
                   {picks.length < quantity && <p className="mt-1 text-xs font-semibold text-rose-700">Only {picks.length} of {quantity} sets possible: no more sets in stock to use.</p>}
                 </div>
@@ -688,7 +804,7 @@ export function SaleSetsModal({
             )
           ) : (
             <>
-              {pickedSets.length} of {quantity} set{quantity === 1 ? "" : "s"} · <b>{money(total / 100)}</b>
+              {picks.length} of {quantity} set{quantity === 1 ? "" : "s"} · <b>{money(total / 100)}</b>
             </>
           )}
         </span>
@@ -703,13 +819,13 @@ export function SaleSetsModal({
             </button>
           )}
           {step === 1 ? (
-            <button type="button" className="btn-primary" onClick={next} disabled={!info || !all.length}>
+            <button type="button" className="btn-primary" onClick={next} disabled={!info || !complete}>
               Next
             </button>
           ) : (
-            <button type="button" className={backorderPicks ? "btn bg-amber-600 text-white hover:bg-amber-700" : "btn-primary"} onClick={confirm} disabled={!pickedSets.length}>
+            <button type="button" className={backorderPicks ? "btn bg-amber-600 text-white hover:bg-amber-700" : "btn-primary"} onClick={confirm} disabled={!picks.length}>
               {backorderPicks
-                ? `Confirm backorder · ${initial?.length ? "update" : "add"} ${pickedSets.length} set${pickedSets.length === 1 ? "" : "s"}`
+                ? `Confirm backorder · ${initial?.length ? "update" : "add"} ${picks.length} set${picks.length === 1 ? "" : "s"}`
                 : `${madePicks.length ? `Create ${madePicks.length} and ` : ""}${initial?.length ? (madePicks.length ? "update" : "Update sets") : madePicks.length ? "add to sale" : "Add to sale"}`}
             </button>
           )}
@@ -748,7 +864,9 @@ function ChangeList({
         const v = b.variations.find((x) => x.id === c.variationId);
         const now = v ? (b.productType === "measured" ? `${variationText(b, v)} ${lenText(b, c.lengthMilli ?? 0)}` : b.productType === "simple" ? "" : variationText(b, v)) : "";
         const text =
-          c.action === "REMOVE"
+          c.shortenInPlace
+            ? `Shorten fitted ${b.name} ${old?.value ?? ""} → ${now} (cut in place, leaves ${lenText(b, (c.from?.lengthMilli ?? 0) - (c.lengthMilli ?? 0))} cut piece in stock)`
+            : c.action === "REMOVE"
             ? `Remove ${b.name} ${old?.value ?? ""} — back to free stock`
             : c.action === "ADD"
               ? `Add ${b.name}${now ? ` ${now}` : ""}`
@@ -760,7 +878,7 @@ function ChangeList({
               <p className="mt-1 rounded border border-rose-300 bg-rose-100/70 px-2 py-1 text-xs font-semibold text-rose-800">
                 Backorder: no free {b.productType === "measured" ? `bundle has ${lenText(b, c.lengthMilli ?? 0)}` : "stock"} — fitted at delivery after the {b.productType === "measured" ? "new bundle" : "stock"} is bought.
               </p>
-            ) : b.productType === "measured" && c.action !== "REMOVE" && c.variationId && (
+            ) : b.productType === "measured" && c.action !== "REMOVE" && c.variationId && !c.shortenInPlace && (
               <BundleCards
                 b={b}
                 list={stock.pieces.filter((p) => p.variationId === c.variationId && (!warehouseId || p.warehouseId === warehouseId))}
@@ -820,3 +938,5 @@ function BundleCards({
     </div>
   );
 }
+
+

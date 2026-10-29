@@ -5,7 +5,7 @@ import { LengthField } from "@/components/measure/LengthField";
 import { Restricted } from "@/components/Restricted";
 import { Alert, PageHeader, TableSkeleton } from "@/components/ui";
 import { api } from "@/lib/api";
-import { fmtLen, type LengthUnit } from "@/lib/measure";
+import { fmtLenNative, type LengthUnit } from "@/lib/measure";
 import { errorText, useApi } from "@/lib/useApi";
 
 interface UnitSetting {
@@ -71,7 +71,7 @@ function LengthSettingsCard({ initial, onSaved }: { initial: LengthSettings; onS
               >
                 {[0, 1, 2, 3].map((d) => (
                   <option key={d} value={d}>
-                    {d} {d ? `(${fmtLen(12.345, { lengthUnit: unit, decimals: d })})` : ""}
+                    {d} {d ? `(${fmtLenNative(12.345, { lengthUnit: unit, decimals: d })})` : ""}
                   </option>
                 ))}
               </select>

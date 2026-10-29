@@ -288,11 +288,31 @@ export function TableSkeleton({ rows = 5 }: { rows?: number }) {
   );
 }
 
-export function Field({ label, children, className = '' }: { label: string; children: React.ReactNode; className?: string }) {
+export function Field({
+  label,
+  children,
+  className = '',
+  error,
+  id,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+  error?: string;
+  id?: string;
+}) {
   return (
-    <label className={`block ${className}`}>
+    <label className={`block ${className}`} id={id}>
       <span className="label">{label}</span>
       {children}
+      {error && (
+        <span className="mt-1 flex items-center gap-1.5 text-xs font-semibold text-rose-600 animate-fade-in" role="alert">
+          <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+          </svg>
+          {error}
+        </span>
+      )}
     </label>
   );
 }
@@ -399,8 +419,8 @@ export function Switch({ checked, onChange, label, title, disabled }: { checked:
 
 export type MenuItem = { label: string; onClick: () => void; danger?: boolean; icon?: React.ReactNode };
 
-// Small "⋯" dropdown; closes on outside click or Escape.
-export function Menu({ items, label = 'More actions', compact = false, align = 'right' }: { items: MenuItem[]; label?: string; compact?: boolean; align?: 'left' | 'right' }) {
+// Small "⋯" dropdown; closes on outside click or Escape. `trigger` swaps the "⋯" for a labelled primary button.
+export function Menu({ items, label = 'More actions', compact = false, align = 'right', trigger }: { items: MenuItem[]; label?: string; compact?: boolean; align?: 'left' | 'right'; trigger?: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -413,6 +433,11 @@ export function Menu({ items, label = 'More actions', compact = false, align = '
   }, [open]);
   return (
     <div className="relative" ref={ref} onClick={(e) => e.stopPropagation()}>
+      {trigger ? (
+        <button type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="btn-primary">
+          {trigger}
+        </button>
+      ) : (
       <button
         type="button"
         aria-label={label}
@@ -423,6 +448,7 @@ export function Menu({ items, label = 'More actions', compact = false, align = '
       >
         <svg className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} viewBox="0 0 24 24" fill="currentColor" aria-hidden><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
       </button>
+      )}
       {open && (
         <div className={`absolute ${align === 'left' ? 'left-0' : 'right-0'} z-30 mt-1 w-52 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg`} role="menu">
           {items.map((it) => (

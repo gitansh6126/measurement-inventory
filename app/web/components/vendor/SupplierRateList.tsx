@@ -64,8 +64,8 @@ export function SupplierRateList({
         <ul className="divide-y divide-slate-100">
           {shown.map((r) => {
             const mine = r.supplierId === supplierId;
-            const isBest = best !== null && Number(r.rate) === best;
-            const over = best !== null && !isBest ? Number(r.rate) - best : 0;
+            const isBest = rates.length > 1 && best !== null && Number(r.rate) === best;
+            const over = rates.length > 1 && best !== null && !isBest ? Number(r.rate) - best : 0;
             const picked = price === asPrice(r.rate);
             return (
               <li key={r.supplierId}>

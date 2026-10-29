@@ -84,7 +84,10 @@ export interface GroupedInfo {
   byproducts: {
     id: string;
     productId: string;
+    /** Shown name: the product name, plus " · label" when the link has one (two chains). */
     name: string;
+    productName: string;
+    label: string | null;
     productType: ProductType;
     unit: string;
     lengthUnit: "m" | "ft_in" | null;
@@ -136,6 +139,8 @@ export interface GroupSet {
   groupName: string;
   /** Named by its current contents (D18): "Chain Hoist Set · 8 mm 3 m · Safety Hook 1 Ton". */
   name: string;
+  /** Its set type (sets with the same parts, 0041). */
+  typeKey: string;
   /** By-products part by part, for display. */
   contents: SetContentRow[];
   status: SetStatus;
@@ -150,6 +155,30 @@ export interface GroupSet {
   version: number;
   createdAt: string;
   parts: SetPart[];
+}
+
+/**
+ * 0041: one set type of a grouped product (GET /api/sets/types/:groupId): a standard set from
+ * the product form, or sets in stock with the same parts. Prices and minimum stock are per type.
+ */
+export interface SetTypeRow {
+  typeKey: string;
+  name: string | null;
+  standard: boolean;
+  /** Parts as the set sheet takes them; `length` in base units (m, or inches on ft + in). */
+  parts: { byproductId: string; variationId: string; length: number | null }[];
+  contents: SetContentRow[];
+  /** Sets in stock (in the asked warehouse); `openingCount` of them can be undone in Stock In. */
+  count: number;
+  openingCount: number;
+  byWarehouse: Record<string, number>;
+  salePrice: string;
+  minSalePrice: string;
+  lowStockThreshold: number;
+  /** False: no own prices yet (the grouped product's old price is shown). */
+  priced: boolean;
+  sortOrder: number;
+  rate: string;
 }
 
 export interface Product {
@@ -381,9 +410,10 @@ export interface ProductCard {
   stockValue?: string;
   /** Vendor pricing roles: active supplier rates over the active variations (null = none). */
   vendor?: { min: string; max: string; suppliers: number } | null;
+  saleCount30d?: number;
 }
 
-export type CatalogSort = "name" | "price_asc" | "price_desc" | "stock" | "stock_low" | "newest";
+export type CatalogSort = "high_moving" | "name" | "price_asc" | "price_desc" | "stock" | "stock_low" | "newest";
 export type CatalogStock = "all" | "in_stock" | "low" | "out" | "negative";
 
 export interface CatalogPage {

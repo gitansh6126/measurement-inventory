@@ -23,9 +23,12 @@ export function ShopLayout({
   children: ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[4.25rem_minmax(0,1fr)] gap-3 sm:grid-cols-[6rem_minmax(0,1fr)] sm:gap-4">
-      <div className="sticky top-16 max-h-[calc(100vh-5rem)] self-start overflow-y-auto">{rail}</div>
-      <div className="grid min-w-0 content-start gap-3">
+    // minmax(0,1fr) everywhere: a plain grid column grows to its widest child's minimum width,
+    // which pushed the product grid past the right edge on phones.
+    // Phones: the rail becomes a sticky horizontal strip above the products (full-width cards).
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-[6rem_minmax(0,1fr)] sm:gap-4">
+      <div className="sticky top-16 z-20 -mx-4 min-w-0 self-start bg-slate-50/95 px-4 backdrop-blur sm:mx-0 sm:max-h-[calc(100vh-5rem)] sm:overflow-y-auto sm:bg-transparent sm:px-0 sm:backdrop-blur-none">{rail}</div>
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-3">
         {crumbs && <div className="text-xs text-slate-500">{crumbs}</div>}
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="text-lg font-bold text-slate-900 sm:text-xl">{title}</h2>

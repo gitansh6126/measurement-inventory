@@ -4,6 +4,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { useCan } from "@/components/MeContext";
 import { ProductForm } from "@/components/products/ProductForm";
+import { StandardSetsEditor } from "@/components/sets/StandardSetsEditor";
 import { Alert, PageHeader, TableSkeleton } from "@/components/ui";
 import type { Product } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
@@ -14,13 +15,13 @@ function EditProductContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const returnToStockIn = searchParams.get("returnTo") === "inventory";
-  const returnToProducts = searchParams.get("returnTo") === "products";
+  const returnToDetail = searchParams.get("returnTo") === "detail";
   const returnHref = returnToStockIn
     ? `/inventory?focus=${encodeURIComponent(id)}`
-    : returnToProducts
-      ? `/products?expand=${encodeURIComponent(id)}`
-      : "/products";
-  const returnLabel = returnToStockIn ? "Stock In" : "Products";
+    : returnToDetail
+      ? `/products/${encodeURIComponent(id)}`
+      : `/products?focus=${encodeURIComponent(id)}`;
+  const returnLabel = returnToStockIn ? "Stock In" : returnToDetail ? "Product Details" : "Products";
   const canEdit = useCan("product.write");
   const { data, error, reload } = useApi<{ product: Product }>(id ? `/products/${id}` : null);
 
@@ -56,7 +57,7 @@ function EditProductContent() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6 pb-20">
       <PageHeader
         back={{ href: returnHref, label: returnLabel }}
         title={`Edit ${data.product.name}`}
@@ -69,6 +70,11 @@ function EditProductContent() {
         onCancel={() => router.push(returnHref)}
         isPage
       />
+
+      {/* 0041: a grouped product's standard sets (saved on their own). */}
+      {data.product.productType === "grouped" && data.product.grouped && (
+        <StandardSetsEditor productId={data.product.id} info={data.product.grouped} />
+      )}
     </div>
   );
 }
