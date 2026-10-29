@@ -50,6 +50,9 @@ npm run dev
 Open **http://localhost:3000**. API runs on port 4000 (the web app forwards `/api` to it).
 Code changes reload by themselves. `Ctrl+C` stops both.
 
+The first open of each page compiles it (dev mode), so the login and first screens can take
+30-90 seconds the first time; after that they are fast.
+
 ### Demo sign-in
 
 The login page has quick buttons for the demo users. Or type them (password for all:
