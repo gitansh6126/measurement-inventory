@@ -94,6 +94,34 @@ export function PurchaseSetsModal({
     return picked || info.main?.variationId ? { total, missing } : null;
   }
 
+  /** Supplier cost of a standard preset's parts. */
+  function presetPartsCost(t: { parts: { byproductId: string; variationId: string; length: number | null }[] }): { total: number; missing: number } | null {
+    if (!info) return null;
+    const rateOf = (variationId: string) => {
+      const s = vendor.suggestions.get(variationId);
+      const r = s?.supplierRate ?? s?.cheapest?.rate;
+      return r ? Number(r) : null;
+    };
+    let total = 0;
+    let missing = 0;
+    if (info.main?.variationId) {
+      const r = rateOf(info.main.variationId);
+      if (r === null) missing++;
+      else total += r;
+    }
+    for (const p of t.parts) {
+      const b = info.byproducts.find((x) => x.id === p.byproductId);
+      if (!b) continue;
+      const r = rateOf(p.variationId);
+      if (r === null) {
+        missing++;
+        continue;
+      }
+      total += b.productType === "measured" ? ((Number(p.length) || 0) / ratePerOf(b.lengthUnit)) * r : r;
+    }
+    return { total, missing };
+  }
+
   useEffect(() => {
     if (info && !rows) setRows(initial?.length ? rowsFromSets(info, initial) : [emptyRow(info, 1, defaultRate)]);
   }, [info, rows, initial, defaultRate]);
@@ -192,6 +220,21 @@ export function PurchaseSetsModal({
                         From parts {money(Math.round(c.total))}
                         {c.missing > 0 && <span className="text-amber-700"> · {c.missing} part{c.missing === 1 ? "" : "s"} without a rate</span>}
                       </div>
+                    );
+                  }
+                : undefined
+            }
+            standardRateHint={
+              showVendor && vendor.list.length > 0
+                ? (t) => {
+                    const c = presetPartsCost(t);
+                    if (!c) return null;
+                    if (c.total === 0 && c.missing > 0) return <span className="text-[10px] text-slate-400">Parts: no rates yet</span>;
+                    return (
+                      <span className="text-[11px] font-medium text-slate-600" title="Supplier rates of parts in this preset">
+                        Parts: <strong className="font-semibold text-emerald-700">{money(Math.round(c.total))}</strong>
+                        {c.missing > 0 && <span className="text-amber-700"> · {c.missing} unpriced</span>}
+                      </span>
                     );
                   }
                 : undefined

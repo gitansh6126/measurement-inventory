@@ -9,6 +9,7 @@ import { ProductThumb } from "@/components/ProductThumb";
 import { RateField } from "@/components/measure/RateField";
 import { LengthViewToggle } from "@/components/measure/LengthViewToggle";
 import { PriceHistoryModal } from "@/components/vendor/PriceHistoryModal";
+import { GroupedSetPricing } from "@/components/vendor/GroupedSetPricing";
 import type { RailProduct } from "@/components/vendor/ProductRail";
 import { api } from "@/lib/api";
 import { dateTime, variationLabel } from "@/lib/format";
@@ -69,7 +70,17 @@ const cellKey = (variationId: string, supplierId: string) => `${variationId}:${s
  * Full batch saving ("Save All Records"), instant status toggles, LengthUnit conversion support,
  * and scope switching ("Quoted only" vs "All suppliers") match the By Supplier experience.
  */
-export function ProductRateSheet({
+export function ProductRateSheet(props: {
+  product: NonNullable<RailProduct>;
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
+  if (props.product.productType === "grouped") {
+    return <GroupedSetPricing product={props.product} onDirtyChange={props.onDirtyChange} />;
+  }
+  return <StandardProductRateSheet {...props} />;
+}
+
+function StandardProductRateSheet({
   product,
   onDirtyChange,
 }: {

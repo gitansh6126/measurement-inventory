@@ -85,7 +85,6 @@ const INTRO =
 
 /** The standard sets as cards or a table (shared by Add Product and the edit page). */
 export function StandardSetsFields({ title, intro, links, rows, setRows }: { title: string; intro: string; links: StdLink[]; rows: StdDraft[]; setRows: (fn: (rs: StdDraft[]) => StdDraft[]) => void }) {
-  const [viewMode, setViewMode] = useState<"fields" | "table">("fields");
   const list = rows;
   const patch = (key: number, p: Partial<StdDraft>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...p } : r)));
   const setPart = (key: number, bp: string, p: Partial<StdDraft["parts"][string]>) =>
@@ -99,28 +98,7 @@ export function StandardSetsFields({ title, intro, links, rows, setRows }: { tit
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold text-slate-900">{title}</h2>
         <div className="flex items-center gap-2">
-          {list.length > 0 && (
-            <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5" role="group" aria-label="View mode">
-              <button
-                type="button"
-                className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                  viewMode === "fields" ? "bg-white text-brand-700 shadow-2xs font-semibold" : "text-slate-600 hover:text-slate-900"
-                }`}
-                onClick={() => setViewMode("fields")}
-              >
-                Cards
-              </button>
-              <button
-                type="button"
-                className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition ${
-                  viewMode === "table" ? "bg-white text-brand-700 shadow-2xs font-semibold" : "text-slate-600 hover:text-slate-900"
-                }`}
-                onClick={() => setViewMode("table")}
-              >
-                Table
-              </button>
-            </div>
-          )}
+
           <button type="button" className="btn-secondary py-1 text-xs" onClick={() => setRows((rs) => [...rs, blank()])} disabled={list.length >= 50}>
             + Add standard set
           </button>
@@ -129,7 +107,7 @@ export function StandardSetsFields({ title, intro, links, rows, setRows }: { tit
       <p className="mb-3 text-xs text-slate-500">{intro}</p>
             {list.length === 0 ? (
         <p className="rounded-lg border border-dashed border-slate-200 p-4 text-center text-sm text-slate-400">{links.length ? "No standard sets yet (optional)." : "Choose the by-products in step 3 first."}</p>
-      ) : viewMode === "fields" ? (
+      ) : (
         <div className="space-y-4">
           {list.map((r, i) => (
             <div key={r.key} className="rounded-xl border border-slate-200/90 bg-white shadow-2xs hover:border-slate-300 transition-all overflow-hidden">
@@ -300,77 +278,12 @@ export function StandardSetsFields({ title, intro, links, rows, setRows }: { tit
 
           <button
             type="button"
-            className="w-full btn-secondary py-2 text-xs font-semibold flex items-center justify-center gap-1.5 border-dashed border-slate-300 hover:border-brand-500 hover:text-brand-600 transition"
+            className="w-full btn-secondary py-2 text-xs font-semibold flex items-center justify-center gap-1.5 border-dashed border-slate-300 hover:border-brand-500 hover:text-brand-600 transition cursor-pointer"
             onClick={() => setRows((rs) => [...rs, blank()])}
             disabled={list.length >= 50}
           >
             + Add another standard set
           </button>
-        </div>
-      ) : (
-        <div className="table-scroll overflow-auto rounded-lg border border-slate-200">
-          <table className="table table-stack text-xs" onKeyDown={(e) => e.key === "Enter" && e.preventDefault()}>
-            <thead>
-              <tr>
-                <th>Name</th>
-                {links.map((b) => (
-                  <th key={b.id}>
-                    {b.name} {b.required ? "*" : <span className="font-normal text-slate-400">(optional)</span>}
-                  </th>
-                ))}
-                <th>Selling Price ₹</th>
-                <th>Min Selling ₹</th>
-                <th>Min Stock</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((r, i) => (
-                <tr key={r.key}>
-                  <td className="stack-full">
-                    <input className="input w-36 py-1 text-xs" maxLength={80} placeholder={`Standard ${i + 1}`} value={r.name} onChange={(e) => patch(r.key, { name: e.target.value })} aria-label={`Standard set ${i + 1} name`} />
-                  </td>
-                  {links.map((b) => {
-                    const p = r.parts[b.id] ?? { variationId: "", length: "" };
-                    return (
-                      <td key={b.id} className="stack-full min-w-[12rem]">
-                        <div className="flex gap-1">
-                          <select className="input py-1 text-xs" value={chosen(b, r)} onChange={(e) => setPart(r.key, b.id, { variationId: e.target.value })} aria-label={`Standard set ${i + 1} ${b.name}`}>
-                            <option value="">{b.required ? "Choose…" : "— not fitted —"}</option>
-                            {b.variations.map((v) => (
-                              <option key={v.id} value={v.id}>
-                                {v.label}
-                              </option>
-                            ))}
-                          </select>
-                          {b.productType === "measured" && (
-                            <div className="flex items-center gap-1">
-                              <input className="input w-20 py-1 text-xs" inputMode="decimal" placeholder="Length" value={p.length} onChange={(e) => setPart(r.key, b.id, { length: e.target.value })} aria-label={`Standard set ${i + 1} ${b.name} length`} />
-                              <span className="text-slate-400">{unitOf(b.lengthUnit)}</span>
-                            </div>
-                          )}
-                        </div>
-                      </td>
-                    );
-                  })}
-                  <td className="stack-full">
-                    <input className="input w-24 py-1 text-xs" inputMode="numeric" value={r.salePrice} onChange={(e) => patch(r.key, { salePrice: e.target.value.replace(/\D/g, "") })} aria-label={`Standard set ${i + 1} selling price`} />
-                  </td>
-                  <td className="stack-full">
-                    <input className="input w-24 py-1 text-xs" inputMode="numeric" value={r.minSalePrice} onChange={(e) => patch(r.key, { minSalePrice: e.target.value.replace(/\D/g, "") })} aria-label={`Standard set ${i + 1} minimum selling price`} />
-                  </td>
-                  <td className="stack-full">
-                    <input className="input w-20 py-1 text-xs" inputMode="numeric" value={r.lowStockThreshold} onChange={(e) => patch(r.key, { lowStockThreshold: e.target.value.replace(/\D/g, "") })} aria-label={`Standard set ${i + 1} minimum stock`} />
-                  </td>
-                  <td>
-                    <button type="button" className="text-rose-600 hover:underline" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       )}
     </>
