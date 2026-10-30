@@ -7,7 +7,7 @@ import { BottomNav } from "@/components/BottomNav";
 import { CartProvider } from "@/components/CartContext";
 import { CartPill } from "@/components/CartPill";
 import { DisplayPanel } from "@/components/DisplayPanel";
-import { ArrowInIcon, BookIcon, BoxesIcon, BuildingIcon, CartIcon, CloseIcon, CogIcon, DatabaseIcon, InvoiceIcon, LayersIcon, LogOutIcon, OrderIcon, PackageIcon, QuoteIcon, ShiftIcon, SlidersIcon, TagIcon, TruckIcon, UsersIcon, WarehouseIcon } from "@/components/icons";
+import { ArrowInIcon, BookIcon, BoxesIcon, BuildingIcon, CartIcon, CloseIcon, CogIcon, DatabaseIcon, HomeIcon, InvoiceIcon, LayersIcon, LogOutIcon, OrderIcon, PackageIcon, QuoteIcon, ShiftIcon, SlidersIcon, TagIcon, TruckIcon, UsersIcon, WarehouseIcon } from "@/components/icons";
 import { MeContext } from "@/components/MeContext";
 import { TableStackLabels } from "@/components/TableStackLabels";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -21,6 +21,12 @@ import { LengthScopeProvider } from "@/lib/lengthView";
 type NavItem = { href: string; label: string; icon: ReactNode; permission?: string; exact?: boolean; warehousing?: boolean };
 const ic = "h-[18px] w-[18px]";
 const NAV: { section: string; items: NavItem[] }[] = [
+  {
+    section: "Main",
+    items: [
+      { href: "/", label: "Home", icon: <HomeIcon className={ic} />, exact: true },
+    ],
+  },
   {
     section: "Inventory",
     items: [

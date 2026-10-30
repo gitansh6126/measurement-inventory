@@ -82,7 +82,7 @@ to `product_variations.display_order` (0017), so those two pages already share o
 
 ### Phase 2 status (2026-10-29)
 
-- 2.1 Done: `components\VariationOrderCell.tsx` has a **position dropdown** (1…N, shown from 3 rows) next to ⋮⋮ ↑ ↓; every child table uses it. New `lib\useRowOrder.ts` (drag-to-reorder hook + `moved`).
+- 2.1 Done: `components\VariationOrderCell.tsx` has a clean **6-dots drag handle** only (`SixDotsIcon`, owner decision: arrows and dropdown removed); every child table uses it. `lib\useRowOrder.ts` handles drag-to-reorder + `moved`.
 - 2.2 Done: measured variation rows (Stock In and Products, `MeasuredStockPanel` rows layout) have the Order column, saved with `PUT /api/products/:id/variations/order`. **Bug fixed:** `GET /api/measure/products/:id/pieces` listed variations by creation date, so measured rows ignored the saved order (`app\api\src\routes\measure.ts`).
 - 2.3 Done: set-type rows have the Order column (`SetTypesTable`, used by Stock In, the Stock In drawer and Products); `PUT /api/sets/types/:groupId/order` saves `group_set_types.sort_order` (a type never placed gets a row that keeps its shown prices). Under a warehouse or category filter only the shown rows move.
 - 2.4 Done: "Change by-products" dialog (product page → Sets) has ↑ ↓ and a position dropdown; the order is saved with the list (existing API). Standard sets list their parts in the by-product order.
@@ -106,7 +106,7 @@ to `product_variations.display_order` (0017), so those two pages already share o
 
 1. Purchase: is "fill N rows from a standard set" enough, or do you want a pure quantity table (1.3)?
 2. Grouped Low stock: per set type (1.6) — confirm.
-3. Order control: drag handle **and** a position dropdown, or the dropdown only?
+3. Order control: resolved — 6-dots drag handle only (arrows and dropdown removed).
 4. Phase 3: which items, and in what order?
 
 ## Handoff
@@ -114,3 +114,12 @@ to `product_variations.display_order` (0017), so those two pages already share o
 - `git status`: many earlier uncommitted changes in `measurement-inventory\` from other sessions, plus the
   files in Phase 0. Nothing committed.
 - Next step: Phase 1.1 browser check, then 1.2 with the owner's yes.
+
+## 2026-10-30 — purchased custom sets become standard sets
+
+Owner: "after purchase any custom set, that set should become a standard set in grouped product type".
+`app\api\src\lib\set-types.ts` `promotePurchasedSetTypes`, called from `lib\documents.ts` after a grouped
+purchase line creates its sets. Each part combination bought becomes a standard set (existing prices and
+order kept; a new one gets the product's old price, listed after the standard sets, no name). Voiding the
+purchase does not undo it. Demo: Purchase 3 (8 mm × 6 m + hook) adds a 4th standard set. Test assertion in
+`tests\integration\grouped.test.ts` (not run yet: needs the owner's yes for the test-DB reset).

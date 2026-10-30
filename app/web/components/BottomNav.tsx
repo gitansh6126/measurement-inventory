@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useCart } from "@/components/CartContext";
-import { CartIcon, OrderIcon, PackageIcon } from "@/components/icons";
+import { CartIcon, HomeIcon, OrderIcon, PackageIcon } from "@/components/icons";
 import { useMe } from "@/components/MeContext";
 
 // Phone/tablet tab bar (RMS Tech reference, 2026-10-27): the most used places one tap away
@@ -19,7 +19,14 @@ export function BottomNav({ pathname, onMenu, menuOpen }: { pathname: string; on
   // Same "short" rule as the cart pill: sale lines asking for more than is in stock.
   const short = cart.mode === "sale" ? cart.lines.filter((l) => l.quantity > l.available).length : 0;
 
+  const item = (on: boolean) =>
+    `flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[11px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
+      on ? "bg-brand-50 text-brand-700" : "text-slate-500 active:bg-slate-100"
+    }`;
+
+
   const tabs: Tab[] = [
+    { href: "/", label: "Home", icon: <HomeIcon className={ic} />, active: (p) => p === "/" },
     { href: "/products", label: "Products", icon: <PackageIcon className={ic} />, permission: "catalog.view", active: (p) => p.startsWith("/products") },
     {
       href: "/sales/new",
@@ -52,11 +59,6 @@ export function BottomNav({ pathname, onMenu, menuOpen }: { pathname: string; on
     { href: "/sales/orders", label: "Orders", icon: <OrderIcon className={ic} />, permission: "sale.view", active: (p) => p.startsWith("/sales/orders") },
   ];
   const visible = tabs.filter((t) => !t.permission || me?.permissions.includes(t.permission));
-
-  const item = (on: boolean) =>
-    `flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-[11px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
-      on ? "bg-brand-50 text-brand-700" : "text-slate-500 active:bg-slate-100"
-    }`;
 
   return (
     <nav

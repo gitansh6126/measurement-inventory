@@ -41,6 +41,42 @@ function Get-Git {
   return $null
 }
 
+function Get-GitMetadata {
+  $g = Get-Git
+  if (-not $g -or -not (Test-Path (Join-Path $V3Root ".git"))) { return $null }
+  try {
+    $commit = (& $g -C $V3Root rev-parse --short HEAD 2>$null)
+    if ($commit) { $commit = $commit.Trim() }
+    $fullCommit = (& $g -C $V3Root rev-parse HEAD 2>$null)
+    if ($fullCommit) { $fullCommit = $fullCommit.Trim() }
+    $branch = (& $g -C $V3Root rev-parse --abbrev-ref HEAD 2>$null)
+    if ($branch) { $branch = $branch.Trim() }
+    $tag = (& $g -C $V3Root describe --tags --exact-match HEAD 2>$null)
+    if ($tag) { $tag = $tag.Trim() }
+    $status = (& $g -C $V3Root status --porcelain 2>$null)
+    $dirty = [bool]$status
+    $remote = (& $g -C $V3Root remote get-url origin 2>$null)
+    if ($remote) {
+      $remote = $remote.Trim()
+      if ($remote -like "git@github.com:*") {
+        $remote = "https://github.com/" + ($remote -replace '^git@github\.com:', '' -replace '\.git$', '')
+      } elseif ($remote -like "https://github.com/*") {
+        $remote = $remote -replace '\.git$', ''
+      }
+    }
+    return @{
+      Commit = $commit
+      FullCommit = $fullCommit
+      Branch = $branch
+      Tag = $tag
+      IsDirty = $dirty
+      Url = $remote
+    }
+  } catch {
+    return $null
+  }
+}
+
 # Reads KEY=VALUE lines literally, skipping comments.
 function Read-EnvFile([string]$Path) {
   if (-not (Test-Path $Path)) { throw "Missing $Path." }

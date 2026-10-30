@@ -79,6 +79,10 @@ export const AlertIcon = ({ className }: P) => (
 );
 
 // ---- Navigation & page icons (stroke style) ----
+export const HomeIcon = ({ className }: P) => (
+  <svg {...stroke(className)}><path d="M3 10.5 12 3l9 7.5V20a1.5 1.5 0 0 1-1.5 1.5H15v-6a3 3 0 0 0-6 0v6H4.5A1.5 1.5 0 0 1 3 20z" /></svg>
+);
+
 export const DashboardIcon = ({ className }: P) => (
   <svg {...stroke(className)}><rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" /></svg>
 );

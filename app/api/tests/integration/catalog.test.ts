@@ -248,7 +248,7 @@ describe("catalog browse: product movements", () => {
       ["OPENING", s5, 4, 4],
       ["OPENING", s2, 10, 10],
     ]);
-    expect(rows[0]!.document).toMatchObject({ kind: "sale", number: expect.stringMatching(/^SAL\//) });
+    expect(rows[0]!.document).toMatchObject({ kind: "sale", number: expect.stringMatching(/^SAL[-/]/) });
     expect(rows[1]!.document).toBeNull();
 
     const one = await manager.get(`/api/inventory/products/${shackle.id}/movements?variationId=${s2}&pageSize=1`);

@@ -34,7 +34,13 @@ foreach ($n in $names) {
       $cfg = Read-EnvFile $envFile
       foreach ($port in @([int]$cfg.WEB_PORT, [int]$cfg.PORT)) {
         Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
-          ForEach-Object { Stop-V3Process $_.OwningProcess }
+          ForEach-Object {
+            $listenPid = $_.OwningProcess
+            if ($listenPid -and $listenPid -ne 0 -and $listenPid -ne 4) {
+              Write-Host "    stopping process PID $listenPid on port $port"
+              taskkill /T /F /PID $listenPid 2>$null | Out-Null
+            }
+          }
       }
     } catch { }
   }

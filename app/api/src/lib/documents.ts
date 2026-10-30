@@ -8,6 +8,7 @@ import { cutForSale, dec, receiveRolls, restoreSaleCuts, reversePurchaseRolls, r
 import { fiscalYearOf, nextDocNumber } from "./numbering.js";
 import { lockOrderOfDocument, syncNote, syncOrderFromDocuments, type OrderSyncResult } from "./order-sync.js";
 import { recalculateProductActivityForSale, recordProductSale } from "./product-activity.js";
+import { promotePurchasedSetTypes } from "./set-types.js";
 import { cancelPurchaseSets, createSets, prepareSaleSets, restoreSaleSets, saleSetInput, sellSets, setInput, type SaleSetLine } from "./sets.js";
 import { money, recordMovements, type MovementInput } from "./stock.js";
 import { isWarehousingOn, requireWarehouse, requireWarehouses, resolveWarehouse, splitsInput, validateSplits } from "./warehouses.js";
@@ -422,6 +423,8 @@ export async function writeDocument(
       { source: "PURCHASE", date: docDate, purchase: { id: doc.id, number, lineNo: line.lineNo }, reason: options?.reason ?? number, warehouseId: header },
     );
     setCodes.push({ lineNo: line.lineNo, codes: created.map((c) => c.code) });
+    // Owner 2026-10-30: each custom set bought becomes a standard set of the grouped product.
+    await promotePurchasedSetTypes(tx, { companyId, actorId, requestId }, byId.get(l.variationId)!.groupId, l.sets!);
   }
 
   if (!options?.skipMovements) {

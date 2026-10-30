@@ -341,7 +341,7 @@ export function ShiftItemDrawer({
                         setError("");
                         setQtyVal(Math.max(1, Number(e.target.value.replace(/\D/g, "")) || 1));
                       }}
-                      onKeyDown={(e) => e.key === "Enter" && commit()}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }}
                     />
                     <button
                       type="button"

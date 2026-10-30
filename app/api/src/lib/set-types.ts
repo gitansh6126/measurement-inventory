@@ -6,7 +6,9 @@ import { z } from "zod";
 import type { Db, Tx } from "../db.js";
 import { audit } from "./audit.js";
 import { AppError } from "./errors.js";
+import { assertOwnImages } from "./images.js";
 import { lengthInput, type MeasureCtx } from "./measure.js";
+import { imageUrl, specsInput, specsOut } from "./products.js";
 import { cancelOpeningSet, createSets, listSets, loadSetDefinition, validateSets, type SetDefinition } from "./sets.js";
 import { money } from "./stock.js";
 import { resolveWarehouse } from "./warehouses.js";
@@ -58,6 +60,49 @@ export async function upsertSetTypePrices(tx: Tx, ctx: MeasureCtx, groupId: stri
   }
 }
 
+/**
+ * Owner 2026-10-30: a custom set bought on a purchase becomes a standard set of its grouped
+ * product, so the next Stock In / purchase can take it by count. A type already priced keeps its
+ * prices and place; a new one takes the grouped product's old price and goes after the standards.
+ */
+export async function promotePurchasedSetTypes(tx: Tx, ctx: MeasureCtx, groupId: string, sets: readonly { parts: readonly { byproductId: string; variationId: string; length?: number }[] }[]) {
+  const byKey = new Map<string, TypePart[]>();
+  for (const s of sets) {
+    const parts = s.parts.map((p) => ({ byproductId: p.byproductId, variationId: p.variationId, length: p.length ?? null }));
+    byKey.set(setTypeKey(parts), parts);
+  }
+  if (!byKey.size) return [];
+  const rows = await tx.groupSetType.findMany({ where: { companyId: ctx.companyId, groupId } });
+  const existing = new Map(rows.map((r) => [r.typeKey, r]));
+  const fresh = [...byKey.keys()].filter((k) => !existing.get(k)?.standard);
+  if (!fresh.length) return [];
+  const own = await tx.productVariation.findFirst({ where: { groupId }, select: { salePrice: true, minSalePrice: true, lowStockThreshold: true } });
+  let next = Math.max(-1, ...rows.filter((r) => r.standard).map((r) => r.sortOrder)) + 1;
+  for (const typeKey of fresh) {
+    const r = existing.get(typeKey);
+    if (r) {
+      await tx.groupSetType.update({ where: { id: r.id }, data: { standard: true, ...(r.sortOrder >= 10_000 ? { sortOrder: next++ } : {}), updatedById: ctx.actorId } });
+    } else {
+      await tx.groupSetType.create({
+        data: {
+          companyId: ctx.companyId,
+          groupId,
+          typeKey,
+          standard: true,
+          parts: byKey.get(typeKey) as unknown as Prisma.InputJsonValue,
+          salePrice: own?.salePrice ?? 0,
+          minSalePrice: own?.minSalePrice ?? 0,
+          lowStockThreshold: own?.lowStockThreshold ?? 0,
+          sortOrder: next++,
+          updatedById: ctx.actorId,
+        },
+      });
+    }
+  }
+  await audit(tx, { companyId: ctx.companyId, actorId: ctx.actorId, action: "SET_STANDARD_FROM_PURCHASE", entityType: "ProductGroup", entityId: groupId, after: { standardSets: fresh.length }, requestId: ctx.requestId ?? null });
+  return fresh;
+}
+
 /** Display value of one defined part, the same text as a set's contents ("8 mm · 3 m"). */
 function partValue(link: SetDefinition["byproducts"][number], variationId: string, length: number | null) {
   const v = link.product.variations.find((x) => x.id === variationId);
@@ -94,6 +139,9 @@ export async function listSetTypes(db: Db, companyId: string, groupId: string, q
     typeKey: string;
     name: string | null;
     standard: boolean;
+    // 0044: a standard set's own technical specifications and image.
+    specs: { name: string; value: string }[];
+    imageUrl: string | null;
     parts: { byproductId: string; variationId: string; length: number | null }[];
     contents: { name: string; value: string }[];
     count: number;
@@ -113,6 +161,8 @@ export async function listSetTypes(db: Db, companyId: string, groupId: string, q
       typeKey,
       name: r?.standard ? r.name : null,
       standard: !!r?.standard,
+      specs: r?.standard ? specsOut(r.specs) : [],
+      imageUrl: r?.standard ? r.imageUrl : null,
       parts: parts.map((p) => ({ ...p, length: p.length === null ? null : p.length / 1000 })),
       contents,
       count: 0,
@@ -165,6 +215,8 @@ export const standardSetsBody = z.object({
       z.object({
         name: z.string().trim().max(80).nullish().transform((v) => v || null),
         parts: partsInput,
+        specs: specsInput,
+        imageUrl,
         salePrice: money.default("0"),
         minSalePrice: money.default("0"),
         lowStockThreshold: z.coerce.number().int().min(0).max(1_000_000).default(0),
@@ -180,6 +232,7 @@ export async function saveStandardSets(tx: Tx, ctx: MeasureCtx, groupId: string,
   const keys = body.sets.map((s) => setTypeKey(s.parts.map((p) => ({ ...p, length: p.length ?? null }))));
   const dup = keys.findIndex((k, i) => keys.indexOf(k) !== i);
   if (dup >= 0) throw new AppError(400, "DUPLICATE_SET_TYPE", `Standard set ${dup + 1} has the same parts as an earlier one`);
+  await assertOwnImages(tx, ctx.companyId, body.sets.map((s) => s.imageUrl));
   // A standard set taken off the list keeps its prices as an ordinary set type.
   await tx.groupSetType.updateMany({ where: { companyId: ctx.companyId, groupId, standard: true, typeKey: { notIn: keys } }, data: { standard: false, updatedById: ctx.actorId } });
   for (const [i, s] of body.sets.entries()) {
@@ -191,6 +244,8 @@ export async function saveStandardSets(tx: Tx, ctx: MeasureCtx, groupId: string,
       standard: true,
       name: s.name,
       parts: parts as unknown as Prisma.InputJsonValue,
+      specs: (s.specs ?? []) as unknown as Prisma.InputJsonValue,
+      imageUrl: s.imageUrl,
       salePrice: s.salePrice,
       minSalePrice: s.minSalePrice,
       lowStockThreshold: s.lowStockThreshold,

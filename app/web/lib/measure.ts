@@ -19,7 +19,7 @@ import {
 } from "@rs-v31/shared/measure";
 import { money } from "./format";
 import { getLengthView } from "./lengthView";
-import type { Attributes } from "./types";
+import type { Attributes, MeasureSettings, ProductType } from "./types";
 
 export { BASE_UNIT_LABEL, ENTRY_UNITS, RATE_ENTRY_UNITS, rateFromDefault, ratePerOf, rateToDefault, type LengthUnit, type PieceKind, type PieceStatus };
 
@@ -37,6 +37,10 @@ export const metaOf = (m: { lengthUnit: LengthUnit; decimals?: number | null; le
   scrapBelow: m.scrapBelow ?? null,
   rollName: m.rollName ?? null,
 });
+
+/** A Measured product's stock is a length (shown in the user's m / ft view); other products have none. */
+export const stockLengthOf = (p: { productType: ProductType; measure?: Partial<MeasureSettings> | null }): MeasureMeta | undefined =>
+  p.productType === "measured" ? metaOf({ ...(p.measure ?? {}), lengthUnit: p.measure?.lengthUnit ?? "m" }) : undefined;
 
 /** 18.5 (base units) → "18.5 m" / "41 ft 8 in", always in the product's own unit (entry fields, settings). */
 export const fmtLenNative = (value: number, meta: Pick<MeasureMeta, "lengthUnit" | "decimals">) => formatLength(toMilli(value), meta.lengthUnit, meta.decimals);

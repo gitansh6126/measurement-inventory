@@ -296,6 +296,8 @@ model ProductGroup {
   // Ordered AttributeDef[] (see @rs-v31/shared). Declared values are kept even when no
   // variation uses them; they are not rebuilt from child rows.
   attributeDefinitions Json        @default("[]") @map("attribute_definitions")
+  // 0044: technical specifications, ordered [{ name, value }].
+  specs                Json        @default("[]")
   // Measured products only (V2 plan §2; null otherwise, checked in 0020).
   lengthUnit           LengthUnit? @map("length_unit")
   // Label of a physical piece: "Roll", "Reel", "Drum".
@@ -357,6 +359,8 @@ model ProductVariation {
   attributeKey      String       @map("attribute_key")
   description       String?
   imageUrl          String?      @map("image_url")
+  // 0044: this variation's own technical specifications, ordered [{ name, value }].
+  specs             Json         @default("[]")
   // Commercial configuration is owned by Inventory/Purchases, not the product form (BR-08a).
   salePrice         Decimal      @default(0) @map("sale_price") @db.Decimal(14, 2)
   minSalePrice      Decimal      @default(0) @map("min_sale_price") @db.Decimal(14, 2)
@@ -1247,6 +1251,9 @@ model GroupSetType {
   standard          Boolean      @default(false)
   name              String?
   parts             Json         @default("[]")
+  // 0044: a standard set's technical specifications [{ name, value }] and its own image.
+  specs             Json         @default("[]")
+  imageUrl          String?      @map("image_url")
   salePrice         Decimal      @default(0) @map("sale_price") @db.Decimal(14, 2)
   minSalePrice      Decimal      @default(0) @map("min_sale_price") @db.Decimal(14, 2)
   lowStockThreshold Int          @default(0) @map("low_stock_threshold")

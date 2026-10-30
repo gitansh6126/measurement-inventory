@@ -1,14 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ArrowLeftIcon, InvoiceIcon, PlusIcon, SlidersIcon } from "@/components/icons";
 import { useCan } from "@/components/MeContext";
 import { PageMobileSidebar, SidebarField, SidebarSection } from "@/components/PageMobileSidebar";
 import { EmptyState, PageHeader, Pagination, PeriodFilter, SearchInput, Segmented, TableSkeleton, Toolbar, type Period } from "@/components/ui";
 import { money } from "@/lib/format";
 import { useApi } from "@/lib/useApi";
+import { useDebouncedSearch } from "@/lib/useDebounced";
+import { useUrlPage } from "@/lib/useUrlPage";
 
 interface Row {
   id: string;
@@ -37,51 +38,18 @@ const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { timeZon
 export function DocumentHistory({ mode, partyId, embedded }: { mode: "sale" | "purchase"; partyId?: string; embedded?: boolean }) {
   const isSale = mode === "sale";
   const canCreate = useCan(isSale ? "sale.create" : "purchase.create");
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const urlPage = parseInt(searchParams.get("page") || "1", 10);
 
   const [search, setSearch] = useState("");
-  const [q, setQ] = useState("");
   const [period, setPeriod] = useState<Period>({ from: "", to: "" });
   const [status, setStatus] = useState<StatusFilter>("all");
-  const [page, setPage] = useState(Number.isFinite(urlPage) && urlPage > 0 ? urlPage : 1);
+  const [page, updatePage] = useUrlPage({ syncUrl: !embedded });
   const [pageSize, setPageSize] = useState(embedded ? 10 : 25);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const activeFiltersCount = (status !== "all" ? 1 : 0) + (period.from || period.to ? 1 : 0);
 
-  // Sync state if URL query param changes (browser Back / Forward)
-  useEffect(() => {
-    const p = parseInt(searchParams.get("page") || "1", 10);
-    const valid = Number.isFinite(p) && p > 0 ? p : 1;
-    if (valid !== page) {
-      setPage(valid);
-    }
-  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const updatePage = (nextPage: number) => {
-    const target = Math.max(1, nextPage);
-    setPage(target);
-    if (!embedded) {
-      const nextParams = new URLSearchParams(searchParams.toString());
-      if (target <= 1) {
-        nextParams.delete("page");
-      } else {
-        nextParams.set("page", String(target));
-      }
-      const qs = nextParams.toString();
-      router.push(qs ? `?${qs}` : window.location.pathname);
-    }
-  };
-
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setQ(search.trim());
-      updatePage(1);
-    }, 250);
-    return () => clearTimeout(t);
-  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A new search goes back to page 1 (a ?page= from the URL is kept on first load).
+  const q = useDebouncedSearch(search, () => updatePage(1));
 
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), status });
   if (q) params.set("q", q);
@@ -102,6 +70,14 @@ export function DocumentHistory({ mode, partyId, embedded }: { mode: "sale" | "p
           <div className="no-print mb-3 lg:hidden space-y-2.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
+                <Link
+                  href="/"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-600 shadow-xs hover:bg-slate-50"
+                  aria-label="Back to Home"
+                  title="Back to Home"
+                >
+                  ←
+                </Link>
                 <h1 className="text-xl font-bold tracking-tight text-slate-900">
                   {isSale ? "Sale History" : "Purchase History"}
                 </h1>
@@ -259,7 +235,7 @@ export function DocumentHistory({ mode, partyId, embedded }: { mode: "sale" | "p
           <PageHeader
             title={isSale ? "Sale History" : "Purchase History"}
             subtitle={data ? `${total} ${isSale ? "sale" : "purchase"}${total === 1 ? "" : "s"}` : undefined}
-            back={page > 1 ? { label: `Page ${page - 1}`, onClick: () => updatePage(page - 1) } : undefined}
+            back={{ href: "/", label: "Home" }}
             actions={canCreate && <Link href={newHref} className="btn-primary"><PlusIcon className="h-4 w-4" /> {isSale ? "New Sale" : "New Purchase"}</Link>}
           />
         )}

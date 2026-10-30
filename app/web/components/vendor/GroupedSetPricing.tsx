@@ -429,18 +429,38 @@ export function GroupedSetPricing({
                             )}
                           </div>
 
-                          <select
-                            className="input py-1.5 text-xs bg-white"
-                            value={p.variationId}
-                            onChange={(e) => setCustomParts((prev) => ({ ...prev, [b.id]: { ...p, variationId: e.target.value } }))}
-                          >
-                            <option value="">{b.required ? "Choose variation…" : "— not fitted —"}</option>
-                            {b.variations.map((v) => (
-                              <option key={v.id} value={v.id}>
-                                {variationText(b, v)}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="flex flex-wrap gap-1.5 py-0.5">
+                            {!b.required && (
+                              <button
+                                type="button"
+                                onClick={() => setCustomParts((prev) => ({ ...prev, [b.id]: { ...p, variationId: "" } }))}
+                                className={`rounded-full px-2.5 py-1 text-xs font-medium transition cursor-pointer select-none ${
+                                  !p.variationId
+                                    ? "bg-slate-700 text-white shadow-2xs font-semibold"
+                                    : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                                }`}
+                              >
+                                None
+                              </button>
+                            )}
+                            {b.variations.map((v) => {
+                              const isSelected = p.variationId === v.id;
+                              return (
+                                <button
+                                  key={v.id}
+                                  type="button"
+                                  onClick={() => setCustomParts((prev) => ({ ...prev, [b.id]: { ...p, variationId: isSelected && !b.required ? "" : v.id } }))}
+                                  className={`rounded-full px-3 py-1 text-xs transition cursor-pointer select-none ${
+                                    isSelected
+                                      ? "bg-brand-600 text-white font-bold shadow-xs ring-1 ring-brand-600"
+                                      : "border border-slate-200 bg-white text-slate-700 font-medium hover:border-brand-500 hover:text-brand-600"
+                                  }`}
+                                >
+                                  {variationText(b, v)}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
 
                         {isMeasured && (

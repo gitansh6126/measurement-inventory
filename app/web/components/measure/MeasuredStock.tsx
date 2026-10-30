@@ -69,7 +69,7 @@ export function MeasuredStockPanel({
   extraCount?: number;
   readOnly?: boolean;
   renderActions?: (v: MeasuredVariation, p: StockProduct) => ReactNode;
-  /** When true (default for readOnly / product page), merges Cut, Open, Closed, Total into one Stock cell. */
+  /** When true (default for readOnly / product page; also Stock In), merges Cut, Open, Closed, Total into one Stock cell. */
   singleStockCell?: boolean;
   /** Opens only this variation at first (product page). */
   focusVariationId?: string;

@@ -248,6 +248,23 @@ describe("purchase auto-update and rate card rules (F5)", () => {
     const afterNewer = (await manager.get(`/api/vendor-prices?variationId=${p.v}&supplierId=${s}`)).body.prices[0];
     expect(afterNewer.rate).toBe("110.00");
     expect(afterNewer.active).toBe(false);
+
+    // Variation default purchaseCost is also updated to the latest purchase rate
+    const varRow = await prisma.productVariation.findUniqueOrThrow({ where: { id: p.v } });
+    expect(varRow.purchaseCost.toFixed(2)).toBe("110.00");
+
+    // Creating a Purchase Order also records the agreed vendor price & updates purchaseCost
+    const s2 = await mkSupplier("Order Supplier");
+    await post(manager, "/api/orders", {
+      kind: "PURCHASE",
+      status: "PLACED",
+      partyId: s2,
+      lines: [{ variationId: p.v, quantity: 4, price: 105 }],
+    });
+    const s2Price = (await manager.get(`/api/vendor-prices?variationId=${p.v}&supplierId=${s2}`)).body.prices[0];
+    expect(s2Price.rate).toBe("105.00");
+    const varRowAfterOrder = await prisma.productVariation.findUniqueOrThrow({ where: { id: p.v } });
+    expect(varRowAfterOrder.purchaseCost.toFixed(2)).toBe("105.00");
   });
 });
 

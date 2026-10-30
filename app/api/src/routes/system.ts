@@ -37,11 +37,30 @@ export function systemRoutes(env: Env) {
     } catch {
       migrationVersion = null;
     }
+    const gitCommit = process.env.GIT_COMMIT ?? null;
+    const gitBranch = process.env.GIT_BRANCH ?? null;
+    const gitTag = process.env.GIT_TAG ?? null;
+    const gitDirty = process.env.GIT_DIRTY === "true";
+    const gitUrl = process.env.GIT_URL ?? "https://github.com/gitansh6126/measurement-inventory";
+    const commitUrl = gitCommit && gitUrl ? `${gitUrl}/commit/${gitCommit}` : null;
+    const branchUrl = gitBranch && gitUrl ? `${gitUrl}/tree/${gitBranch}` : null;
+
     res.json({
       environment: env.APP_ENV,
       releaseVersion: env.RELEASE_VERSION,
       deploymentTimestamp: env.DEPLOYED_AT,
       migrationVersion,
+      git: gitCommit
+        ? {
+            commit: gitCommit,
+            branch: gitBranch,
+            tag: gitTag,
+            dirty: gitDirty,
+            url: gitUrl,
+            commitUrl,
+            branchUrl,
+          }
+        : null,
       // Address of the paired environment (Client Ready ↔ Demo), or null.
       switchUrl: env.SWITCH_APP_URL ?? null,
     });

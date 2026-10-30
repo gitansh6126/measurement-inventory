@@ -10,6 +10,7 @@ import { LengthScopeProvider, useLengthView } from "@/lib/lengthView";
 import { LengthViewToggle } from "@/components/measure/LengthViewToggle";
 import type { StockProduct } from "@/lib/types";
 import { errorText, useApi } from "@/lib/useApi";
+import { GroupedSetPricing } from "@/components/vendor/GroupedSetPricing";
 
 interface RateRecord {
   id: string;
@@ -110,6 +111,26 @@ function VendorPricing({ productId, variationId, onClose }: Props) {
 
   const manageHref = product ? `/supplier-prices?view=product&productId=${product.id}&focus=${product.id}` : "/supplier-prices?view=product";
   const showPicker = !variationId && variations.length > 1;
+
+  if (product?.productType === "grouped") {
+    return (
+      <Modal open title={`Vendor prices — ${product.name}`} onClose={onClose} xl>
+        <GroupedSetPricing product={product as any} />
+        <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-3">
+          <Link
+            href={manageHref}
+            target="_blank"
+            className="text-xs font-semibold text-brand-600 hover:text-brand-700 hover:underline"
+          >
+            Open in full Supplier Prices page →
+          </Link>
+          <button type="button" className="btn-secondary text-xs" onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal

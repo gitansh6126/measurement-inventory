@@ -8,7 +8,6 @@ import { useCan } from "@/components/MeContext";
 import { VariationOrderCell } from "@/components/VariationOrderCell";
 import { api } from "@/lib/api";
 import { money } from "@/lib/format";
-import { fmtSellRate } from "@/lib/measure";
 import type { GroupSet, SetStatus, SetTypeRow } from "@/lib/types";
 import { errorText, useApi } from "@/lib/useApi";
 import { moved, useRowOrder } from "@/lib/useRowOrder";
@@ -155,8 +154,6 @@ export function SetTypesTable({
             <>
               <th>Stock on Hand</th>
               <th className="text-right">Selling Price</th>
-              <th className="text-right">Min Selling</th>
-              <th>Min Stock</th>
             </>
           )}
           {showWh && <th>In warehouses</th>}
@@ -234,9 +231,7 @@ export function SetTypesTable({
                       {t.count} <span className="text-xs font-normal text-slate-400">set{t.count === 1 ? "" : "s"}</span>
                     </span>
                   </td>
-                  <td className="whitespace-nowrap text-right font-medium text-slate-800">{fmtSellRate(null, t.minSalePrice, t.salePrice, "Sell: ")}</td>
-                  <td className="whitespace-nowrap text-right text-slate-600">{Number(t.minSalePrice) > 0 ? money(t.minSalePrice) : "—"}</td>
-                  <td className="text-slate-600">{t.lowStockThreshold}</td>
+                  <td className="whitespace-nowrap text-right font-medium text-slate-800">{Number(t.salePrice) > 0 ? money(t.salePrice) : "—"}</td>
                 </>
               )}
               {showWh && (

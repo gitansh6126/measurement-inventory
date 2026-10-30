@@ -171,6 +171,27 @@ describe("grouped products (sets)", () => {
     expect(next.body.sets[0].code).toBe(`CH${s.tag}-3MM-3M-21-10-26-03`);
   });
 
+  it("standard sets keep their own technical specifications and image (0044)", async () => {
+    const s = await setup();
+    const g = await makeHoist(s);
+    const [linkChain] = g.grouped.byproducts;
+    const c3 = linkChain.variations[0].id;
+    const save = (sets: object[]) => s.admin.put(`/api/sets/types/${g.id}/standard`).set("Origin", ORIGIN).send({ sets });
+    const r = await save([
+      {
+        name: "Plain 3 m",
+        parts: [{ byproductId: linkChain.id, variationId: c3, length: 3 }],
+        specs: [{ name: "Lifting height", value: "3 m" }, { name: "", value: "" }],
+        imageUrl: "https://example.com/plain-3m.png",
+      },
+    ]);
+    expect(r.status).toBe(200);
+    expect(r.body.types[0]).toMatchObject({ name: "Plain 3 m", specs: [{ name: "Lifting height", value: "3 m" }], imageUrl: "https://example.com/plain-3m.png" });
+    // Saving again without them clears them; an image that is neither uploaded nor http(s) is refused.
+    expect((await save([{ name: "Plain 3 m", parts: [{ byproductId: linkChain.id, variationId: c3, length: 3 }] }])).body.types[0]).toMatchObject({ specs: [], imageUrl: null });
+    expect((await save([{ parts: [{ byproductId: linkChain.id, variationId: c3, length: 3 }], imageUrl: "ftp://x/y.png" }])).status).toBe(400);
+  });
+
   it("standard sets: prices per set type, Stock In builds and undoes sets, sale price from the type (0041)", async () => {
     const s = await setup();
     const g = await makeHoist(s);
@@ -363,6 +384,9 @@ describe("grouped products (sets)", () => {
     expect(best).toMatchObject({ supplierRate: "7400.00", suggested: "7400.00" });
     const piece = await prisma.measurementPiece.findFirstOrThrow({ where: { variationId: c4 } });
     expect(piece).toMatchObject({ purchaseId: doc.id, kind: "CUT", setOrigin: true });
+    // Owner 2026-10-30: every custom set bought became a standard set (3 kinds, in purchase order).
+    const types = (await s.manager.get(`/api/sets/types/${g.id}`)).body.types as { standard: boolean; count: number }[];
+    expect(types.map((t) => [t.standard, t.count])).toEqual([[true, 1], [true, 1], [true, 1]]);
 
     // Sets are not edited on a purchase: cancel and enter again.
     const edit = await post(s.manager, `/api/purchases/${doc.id}/edit`, { partyId: supplier, reason: "Fix quantity", lines: [{ variationId: hookV, quantity: 2, price: 300 }] });

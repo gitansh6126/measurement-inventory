@@ -9,16 +9,18 @@ import {
   normAttrVals,
   type AttributeDraft,
   type Attributes,
+  type TechSpec,
 } from "@rs-v31/shared";
 import { useMemo, useRef, useState, type DragEvent } from "react";
 import { Combobox } from "@/components/Combobox";
 import { Alert } from "@/components/ui";
 import { ImageEditorModal, type EditorImageItem } from "@/components/products/ImageEditorModal";
+import { SpecsEditor } from "@/components/products/SpecsEditor";
 
 // Port of main v2 index.html VariationBuilder (D-21 version), restyled with marble UI (D23):
 // 1 Define Attributes (name, unit, Sub Var, Quality) → 2 Create Variation (pick or type each value;
 // a new value becomes data for the next variation; V3.2 merged main v2's separate Data step)
-// → 3 Variation Details (image).
+// → 3 Variation Details (image, technical specifications 0044).
 // V1 differences: attribute names are fixed once saved variations exist (D14), and variation
 // images are URLs (no file upload yet).
 
@@ -31,6 +33,8 @@ export interface Combo {
   image: string;
   /** Measured products: default roll length as typed (W4; purchase pre-fill only). */
   rollLength?: string;
+  /** 0044: this variation's own technical specifications. */
+  specs?: TechSpec[];
 }
 
 /** A variation already saved on the product (read-only in the builder). */
@@ -42,6 +46,7 @@ export interface SavedCombo {
   officialSku: string | null;
   active: boolean;
   image?: string | null;
+  specs?: TechSpec[];
 }
 
 export const newAttr = (quality = false): AttributeDraft =>
@@ -156,6 +161,7 @@ export function VariationBuilder({
   setCombos,
   saved = [],
   onUpdateSavedImage,
+  onUpdateSavedSpecs,
   rollLengthLabel,
   order,
   setOrder,
@@ -167,6 +173,7 @@ export function VariationBuilder({
   setCombos: (fn: (c: Combo[]) => Combo[]) => void;
   saved?: SavedCombo[];
   onUpdateSavedImage?: (variationId: string, imageUrl: string) => void;
+  onUpdateSavedSpecs?: (variationId: string, specs: TechSpec[]) => void;
   /** Measured products (W4): shows a "Default roll" column with this header, e.g. "Default roll (m)". */
   rollLengthLabel?: string;
   /** Variation keys (saved and new together) in the order the user arranged them. */
@@ -184,6 +191,7 @@ export function VariationBuilder({
   const [varEditorImages, setVarEditorImages] = useState<EditorImageItem[]>([]);
   const [isVarDragging, setIsVarDragging] = useState(false);
   const varFileInputRef = useRef<HTMLInputElement>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<{ list: "attr" | "var"; index: number } | null>(null);
   const [dropAt, setDropAt] = useState<{ list: "attr" | "var"; index: number } | null>(null);
 
@@ -197,6 +205,7 @@ export function VariationBuilder({
         shortName: s.shortName,
         sku: s.officialSku,
         image: s.image ?? "",
+        specs: s.specs ?? [],
       })),
       ...combos.map((c) => ({
         type: "new" as const,
@@ -206,6 +215,7 @@ export function VariationBuilder({
         shortName: c.shortName,
         sku: c.sku,
         image: c.image ?? "",
+        specs: c.specs ?? [],
       })),
     ];
     const keys = orderedKeys(order, rows.map((r) => r.key));
@@ -333,8 +343,9 @@ export function VariationBuilder({
     if (!a) return "";
     return d.sub ? composeSubValue(a, sp[k] ?? "", d.subUnit) : a;
   };
-  // The Abbr box shows the abbreviation saved for the picked value; editing it applies on create.
-  const pick = (d: AttributeDraft, main?: string | null, sub?: string | null) => {
+  // The Abbr box shows the abbreviation saved for the picked value (or the one typed with a new
+  // value in the "Add" row); editing it applies on create.
+  const pick = (d: AttributeDraft, main?: string | null, sub?: string | null, abbr?: string) => {
     const k = d.name.trim();
     const p = { ...picks };
     const sp = { ...subPicks };
@@ -343,7 +354,7 @@ export function VariationBuilder({
     setPicks(p);
     setSubPicks(sp);
     const v = pickedValue(d, p, sp);
-    setAbbrs((prev) => ({ ...prev, [k]: v ? String(d.abbrMap?.[v] ?? "") : "" }));
+    setAbbrs((prev) => ({ ...prev, [k]: v ? (abbr || String(d.abbrMap?.[v] ?? "")).toUpperCase() : "" }));
   };
 
   /** Definitions with the picked values (and abbreviations) added where they are new. */
@@ -392,6 +403,8 @@ export function VariationBuilder({
     setCombos((prev) => [...prev, combo]);
     // Picks stay so the next variation only needs the attribute that differs.
     setMessage({ kind: "success", text: "Variation created" });
+    // Keyboard entry loop: back to the first value box for the next variation.
+    requestAnimationFrame(() => pickerRef.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus());
   };
   const removeVariation = (c: Combo) => {
     if (!window.confirm(`Remove this variation?\n${Object.values(c.attrs).join(" / ") || c.shortName}`)) return;
@@ -453,8 +466,9 @@ export function VariationBuilder({
       <div className="mt-3">
         <Alert message={message?.text} kind={message?.kind} />
 
+        {/* Enter navigation (lib/enterNav.ts): each step is a scope, so Enter on its last field focuses its Continue button. */}
         {step === 1 && (
-          <div className="grid gap-3">
+          <div className="grid gap-3" data-enter-scope>
             <p className="text-sm text-slate-500">
               Define the attributes that make up your variations, e.g. Size, Material, Rope Construction. Use <b>Sub Var</b> for a secondary option (e.g. Core: Fibre/Steel) and the <b>star</b> for a Quality grade attribute.
             </p>
@@ -522,13 +536,13 @@ export function VariationBuilder({
         )}
 
         {step === 2 && (
-          <div className="grid gap-3">
+          <div className="grid gap-3" data-enter-scope>
             <p className="text-sm text-slate-500">
               Pick a value for each attribute from its list, or type a new one and choose <b>Add</b>, then press <b>Create Variation</b>.
               A new value is saved as data for the next variation{combos.length ? <> — <b>{combos.length}</b> created so far</> : null}. <b>Abbr</b> is the
               optional short form used in the Short Name and Official SKU. New variations start at <b>price 0 and min stock 0</b>: set those from <b>Stock In</b> after saving.
             </p>
-            <div className="card grid gap-3 p-3">
+            <div ref={pickerRef} className="card grid gap-3 p-3" data-enter-scope>
               {named.map((d, i) => {
                 const k = d.name.trim();
                 const main = picks[k] ?? null;
@@ -547,8 +561,9 @@ export function VariationBuilder({
                             : mains.map((v) => ({ id: v, label: v }))
                         }
                         onSelect={(v) => pick(d, v)}
-                        onCreate={d.isQuality ? undefined : (q) => pick(d, canonical(mains, q))}
+                        onCreate={d.isQuality ? undefined : (q, ab) => pick(d, canonical(mains, q), undefined, ab)}
                         createLabel={(q) => `Add “${q}” to ${d.name}`}
+                        createAbbr={!d.sub}
                         placeholder={d.isQuality ? "Select stars…" : `Select or type ${d.name || "value"}…`}
                       />
                     </div>
@@ -560,8 +575,9 @@ export function VariationBuilder({
                           selectedLabel={subPicks[k]}
                           options={subs.map((v) => ({ id: v, label: v }))}
                           onSelect={(v) => pick(d, undefined, v)}
-                          onCreate={(q) => pick(d, undefined, canonical(subs, q))}
+                          onCreate={(q, ab) => pick(d, undefined, canonical(subs, q), ab)}
                           createLabel={(q) => `Add “${q}” to ${d.subName || "Sub"}`}
+                          createAbbr
                           placeholder={`Select or type ${d.subName || "sub value"}…`}
                         />
                       </div>
@@ -654,7 +670,7 @@ export function VariationBuilder({
         {step === 3 && (
           <div className="grid gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm text-slate-500">Fine-tune each variation — give it a dedicated image.</p>
+              <p className="text-sm text-slate-500">Fine-tune each variation — give it a dedicated image and its own technical specifications.</p>
               <button type="button" className="btn-secondary" onClick={() => setStep(2)}>← Back to Create Variation</button>
             </div>
             {allConfigurable.length === 0 ? (
@@ -794,6 +810,20 @@ export function VariationBuilder({
                           Direct upload or drag & drop. Cropped to square in popup editor.
                         </p>
                       </div>
+                    </div>
+
+                    <div className="mt-4 border-t border-slate-200 pt-3">
+                      <SpecsEditor
+                        compact
+                        label="Technical specifications of this variation"
+                        hint="Shown after the product's own rows; a row with the same name replaces the product's value for this variation."
+                        value={currentVar.specs}
+                        disabled={currentVar.type === "saved" && !onUpdateSavedSpecs}
+                        onChange={(rows) => {
+                          if (currentVar.type === "new") setCombos((pr) => pr.map((x) => (x.key === currentVar.key ? { ...x, specs: rows } : x)));
+                          else if (onUpdateSavedSpecs && currentVar.id) onUpdateSavedSpecs(currentVar.id, rows);
+                        }}
+                      />
                     </div>
                   </div>
                 )}

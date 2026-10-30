@@ -11,7 +11,8 @@ import { ProductThumb } from "@/components/ProductThumb";
 import { BoxesIcon, CogIcon, ShiftIcon, SlidersIcon } from "@/components/icons";
 import { PageMobileSidebar, SidebarField, SidebarSection } from "@/components/PageMobileSidebar";
 import { useCan } from "@/components/MeContext";
-import { StockBadge } from "@/components/StockBadge";
+import { StockBadge, stockState } from "@/components/StockBadge";
+import { ProductKind, ProductTile } from "@/components/products/ProductTile";
 import { StockEditDrawer } from "@/components/products/StockEditDrawer";
 import { MeasuredStock, MeasuredStockPanel } from "@/components/measure/MeasuredStock";
 import { AddRollsModal } from "@/components/measure/RollActions";
@@ -26,14 +27,15 @@ import type { ColumnDef } from "@/lib/inventoryColumns";
 import type { Category, CategoryStatsList, InventoryList, SetTypeRow, StockFilter, StockProduct, StockVariation } from "@/lib/types";
 import { errorText, useApi } from "@/lib/useApi";
 import { money, variationLabel } from "@/lib/format";
-import { fmtLen, fmtSellRate, metaOf } from "@/lib/measure";
+import { fmtLen, fmtSellRate, stockLengthOf } from "@/lib/measure";
+import { useDebounced } from "@/lib/useDebounced";
+import { scrollToFocus } from "@/lib/scrollToFocus";
 import { usePreference } from "@/lib/usePreference";
 import { useTableColumns } from "@/lib/useTableColumns";
 import { useEntryUnits } from "@/lib/useEntryUnits";
 import { useViewMode } from "@/lib/useViewMode";
 import { variationAttributeColumns } from "@/lib/variationColumns";
 import { useWarehouses } from "@/lib/useWarehouses";
-import type { StockState } from "@/lib/types";
 import { useLengthView } from "@/lib/lengthView";
 
 // main v2 StockInPanel (index.html) rebuilt with marble UI (D23). Inventory owns the new stock
@@ -62,8 +64,6 @@ const freeIn = (v: StockVariation, warehouseId: string) => {
   const r = v.byWarehouse?.find((w) => w.warehouseId === warehouseId);
   return r ? Math.round((r.quantity - (r.inSets ?? 0)) * 1000) / 1000 : 0;
 };
-/** Same rule as the API (lib\stock.ts stockState), for one warehouse's stock (WH-15). */
-const stateOf = (quantity: number, threshold: number): StockState => (quantity < 0 ? "negative" : quantity <= 0 ? "out" : quantity <= threshold ? "low" : "ok");
 
 // On-screen columns (identity columns are always shown). Order is per user and can be changed
 // by dragging a header or in the Columns menu (useTableColumns); the image sits in the product
@@ -84,15 +84,6 @@ const SCREEN_COLUMNS: ColumnDef[] = [
 /** Stock and price columns, shared by product rows, variation sub-tables and the stock drawer. */
 const EDIT_IDS = ["stock", "newStock", "change", "minSalePrice", "salePrice", "minStock"];
 const PREF_KEY = "stockin.columns";
-
-function useDebounced<T>(value: T, ms: number) {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setV(value), ms);
-    return () => clearTimeout(t);
-  }, [value, ms]);
-  return v;
-}
 
 function StockIn() {
   useLengthView();
@@ -128,7 +119,14 @@ function StockIn() {
   const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
   const [category, setCategory] = useState(() => searchParams.get("category") ?? searchParams.get("categoryId") ?? "");
   const [groupMode, setGroupMode] = useState<"all" | "category">("category");
-  const [stage, setStage] = useState<StockFilter>("all");
+  const [stage, setStage] = useState<StockFilter>(() => {
+    const s = searchParams.get("stage");
+    return s === "low" || s === "out" || s === "negative" ? s : "all";
+  });
+  useEffect(() => {
+    const s = searchParams.get("stage");
+    if (s === "low" || s === "out" || s === "negative" || s === "all") setStage(s);
+  }, [searchParams]);
   const q = useDebounced(search.trim(), 300);
   const params = new URLSearchParams({ state: stage, ...(q ? { q } : {}), ...(category ? { categoryId: category } : {}) }).toString();
   const { data, error, reload, loading } = useApi<InventoryList>(`/inventory?${params}`);
@@ -215,16 +213,7 @@ function StockIn() {
     if (!data) return;
     if (focus) {
       setOpenGroup((prev) => ({ ...prev, [focus]: true }));
-      const scroll = () => {
-        const el = document.getElementById(`stock-in-${focus}`) ?? document.getElementById(`stock-in-grid-${focus}`);
-        el?.scrollIntoView({ behavior: "smooth", block: "center" });
-      };
-      const t1 = setTimeout(scroll, 100);
-      const t2 = setTimeout(scroll, 300);
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-      };
+      return scrollToFocus(`stock-in-${focus}`, `stock-in-grid-${focus}`);
     }
   }, [data, focus]);
 
@@ -608,37 +597,36 @@ function StockIn() {
           <td className={priceErr ? "bg-rose-50/50" : c.minPrice ? "bg-brand-50" : ""}>
             <RateField
               compact
+              followLengthView
               unit={lu}
               label={`Minimum selling price of ${v.shortName}`}
               value={e?.minPrice ?? String(Number(v.minSalePrice))}
               onChange={(x) => setItemEdit(p, v, { minPrice: x })}
               hasError={!!priceErr}
+              error={priceErr ? `Must be ≤ ₹${priceErr.salePrice}` : undefined}
               title={priceErr ? `Minimum selling price (₹${priceErr.minSalePrice}) cannot be higher than selling price (₹${priceErr.salePrice})` : undefined}
               {...ratePref}
             />
-            {priceErr && (
-              <div className="mt-0.5 text-[10px] font-medium leading-tight text-rose-600" role="alert">
-                Must be ≤ ₹{priceErr.salePrice}
-              </div>
-            )}
           </td>
         ),
         salePrice: (
           <td className={priceErr ? "bg-rose-50/50" : c.price ? "bg-brand-50" : ""}>
             <RateField
               compact
+              followLengthView
               unit={lu}
               label={`Selling price of ${v.shortName}`}
               value={e?.price ?? String(Number(v.salePrice))}
               onChange={(x) => setItemEdit(p, v, { price: x })}
               hasError={!!priceErr}
+              error={priceErr ? `Must be ≥ ₹${priceErr.minSalePrice}` : undefined}
               title={priceErr ? `Selling price (₹${priceErr.salePrice}) cannot be lower than minimum selling price (₹${priceErr.minSalePrice})` : undefined}
               {...ratePref}
             />
           </td>
         ),
         minStock: (
-          <td><input className={`input w-20 ${c.min ? "border-brand-500 bg-brand-50" : ""}`} inputMode="numeric" aria-label={`Minimum stock of ${v.shortName}`} value={e?.min ?? String(v.lowStockThreshold)} onChange={(ev) => setItemEdit(p, v, { min: ev.target.value.replace(/[^\d]/g, "") })} /></td>
+          <td><input className={`input w-16 sm:w-20 h-8 text-xs sm:h-9 sm:text-sm ${c.min ? "border-brand-500 bg-brand-50" : ""}`} inputMode="numeric" aria-label={`Minimum stock of ${v.shortName}`} value={e?.min ?? String(v.lowStockThreshold)} onChange={(ev) => setItemEdit(p, v, { min: ev.target.value.replace(/[^\d]/g, "") })} /></td>
         ),
       } : {
         minSalePrice: (
@@ -690,24 +678,14 @@ function StockIn() {
             )}
           </td>
         ),
-        newStock: (
-            <td>
-              {canOpenSets ? (
-                <button type="button" className="btn border border-emerald-600 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100" onClick={() => setAddingSets(p.id)}>
-                  + Add sets
-                </button>
-              ) : (
-                <span className="text-xs text-slate-400" title="Sets come in by purchase; an admin adds sets already in the shop">By purchase</span>
-              )}
-            </td>
-        ),
+        newStock: <td className="text-slate-400">—</td>,
         change: <td className="text-slate-400">—</td>,
       };
     }
     // Measured stock changes only through its pieces (BR-18): the length is shown, with "+ Add
     // rolls" in place of the New Stock stepper.
     if (p.productType === "measured") {
-      const meta = metaOf({ ...(p.measure ?? {}), lengthUnit: p.measure?.lengthUnit ?? "m" });
+      const meta = stockLengthOf(p)!;
       const low = v.state === "low" || v.state === "out";
       return {
         stock: (
@@ -746,7 +724,7 @@ function StockIn() {
       return {
         stock: (
           <td className="whitespace-nowrap">
-            <StockBadge quantity={shown} state={whFilter ? stateOf(shown, v.lowStockThreshold) : v.state} unit={p.unit} />
+            <StockBadge quantity={shown} state={whFilter ? stockState(shown, v.lowStockThreshold) : v.state} unit={p.unit} />
             {whChips(v)}
           </td>
         ),
@@ -909,10 +887,13 @@ function StockIn() {
     };
   };
   /** Set-type child table heads / cells in the user's column order (`all`: the stock drawer). */
-  const setTableProps = (p: StockProduct, all = false) => ({
-    heads: headCells(editIds(all), { drag: false }),
-    cells: (t: SetTypeRow) => rowCells(editIds(all), setCellMap(p, t)),
-  });
+  const setTableProps = (p: StockProduct, all = false) => {
+    const ids = editIds(all).filter((id) => id !== "minSalePrice" && id !== "minStock");
+    return {
+      heads: headCells(ids, { drag: false }),
+      cells: (t: SetTypeRow) => rowCells(ids, setCellMap(p, t)),
+    };
+  };
   const headOf = (id: string, measuredRows = false): ReactNode => {
     switch (id) {
       case "product": return "Product";
@@ -965,7 +946,6 @@ function StockIn() {
   // Variation sub-table: one column per attribute, in the product's attribute-definition order.
   const attrColumns = (p: StockProduct, vs: StockVariation[]) => variationAttributeColumns(p, vs);
   // A Measured product's stock is a length, shown in the user's m / ft view.
-  const lenOf = (p: StockProduct) => (p.productType === "measured" ? metaOf({ ...(p.measure ?? {}), lengthUnit: p.measure?.lengthUnit ?? "m" }) : undefined);
   const drawerProduct = drawerId ? products.find((p) => p.id === drawerId) ?? null : null;
   const drawerVarIds = drawerProduct?.variations.map((v) => v.id) ?? [];
   const drawerDirty = dirtyIds.filter((id) => drawerVarIds.includes(id));
@@ -979,6 +959,14 @@ function StockIn() {
       <div className="no-print mb-3 lg:hidden space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
+            <Link
+              href="/"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-600 shadow-xs hover:bg-slate-50"
+              aria-label="Back to Home"
+              title="Back to Home"
+            >
+              ←
+            </Link>
             <h1 className="text-xl font-bold tracking-tight text-slate-900">Stock In</h1>
             {changeCount > 0 ? (
               <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
@@ -1449,39 +1437,22 @@ function StockIn() {
               const hi = prices.length ? Math.max(...prices) : 0;
               const pending = active.filter((v) => dirtyIds.includes(v.id)).length;
               return (
-                <button
+                <ProductTile
                   key={p.id}
-                  type="button"
-                  onClick={() => { setDrawerError(null); setDrawerId(p.id); }}
                   id={`stock-in-grid-${p.id}`}
-                  className={`group card flex flex-col overflow-hidden text-left transition hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${focus === p.id ? "card-highlight-blink" : ""}`}
-                >
-                  <div className="overflow-hidden bg-slate-100">
-                    <ProductThumb src={p.imageUrl ?? active[0]?.imageUrl ?? null} name={p.name} className="aspect-[4/3] w-full text-xl transition-transform duration-300 group-hover:scale-105" />
-                  </div>
-                  <div className="grid flex-1 content-start gap-1 p-3">
-                    <div className="line-clamp-2 font-semibold text-slate-900">{p.name}</div>
-                    <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
-                      <span className="truncate">
-                        {p.productType === "measured" ? (
-                          <span className="inline-flex items-center gap-1.5">
-                            <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800">Measured</span>
-                            <span>{active.length}{ofAll(p)} variations</span>
-                          </span>
-                        ) : p.productType === "variable" ? (
-                          `${active.length}${ofAll(p)} variations`
-                        ) : p.productType === "grouped" ? (
-                          <SetTypesBadge groupId={p.id} warehouseId={whFilter} categoryId={setCategory_} />
-                        ) : (
-                          p.category?.name ?? "Uncategorized"
-                        )}
-                      </span>
-                      <StockBadge quantity={p.quantity} state={p.state} unit={p.unit} length={lenOf(p)} />
-                    </div>
-                    {hi > 0 && p.productType !== "variable" && p.productType !== "measured" && p.productType !== "grouped" && <div className="text-sm font-semibold text-brand-700">{fmtSellRate(null, active[0]?.minSalePrice, active[0]?.salePrice, "Sell: ")}</div>}
-                    {pending > 0 && <div className="text-[11px] font-semibold text-emerald-700">{pending} unsaved change(s)</div>}
-                  </div>
-                </button>
+                  name={p.name}
+                  image={p.imageUrl ?? active[0]?.imageUrl ?? null}
+                  onClick={() => { setDrawerError(null); setDrawerId(p.id); }}
+                  highlight={focus === p.id}
+                  meta={p.productType === "grouped" ? (
+                    <SetTypesBadge groupId={p.id} warehouseId={whFilter} categoryId={setCategory_} />
+                  ) : (
+                    <ProductKind type={p.productType} count={`${active.length}${ofAll(p)}`} fallback={p.category?.name ?? "Uncategorized"} />
+                  )}
+                  badge={p.productType !== "measured" && <StockBadge quantity={p.quantity} state={p.state} unit={p.unit} length={stockLengthOf(p)} />}
+                  price={hi > 0 && p.productType !== "variable" && p.productType !== "measured" && p.productType !== "grouped" && fmtSellRate(null, active[0]?.minSalePrice, active[0]?.salePrice, "Sell: ")}
+                  note={pending > 0 && <div className="text-[11px] font-semibold text-emerald-700">{pending} unsaved change(s)</div>}
+                />
               );
             })}
           </div>
@@ -1556,7 +1527,7 @@ function StockIn() {
                               ),
                               category: categoryCell(p),
                               ...idCellMap(null),
-                              stock: <td className="whitespace-nowrap"><StockBadge quantity={p.quantity} state={p.state} unit={p.unit} length={lenOf(p)} /></td>,
+                              stock: <td className="text-slate-400">—</td>,
                             },
                             <span className="text-xs font-medium text-sky-700">Expand for pieces, prices and min stock by variation</span>,
                           )}
@@ -1568,6 +1539,7 @@ function StockIn() {
                             <MeasuredStock
                               product={p}
                               colSpan={colCount}
+                              singleStockCell
                               extraHeads={headCells(priceIds, { measuredRows: true, drag: false })}
                               extraCount={priceIds.length}
                               extraCells={(id) => {
@@ -1642,7 +1614,7 @@ function StockIn() {
                               ...idCellMap(null),
                               stock: <td className="whitespace-nowrap"><StockBadge quantity={p.quantity} state={p.state} unit="sets" /></td>,
                             },
-                            <span className="text-xs text-slate-500">Expand to edit stock, prices and min stock by set</span>,
+                            <span className="text-xs text-slate-500">Expand to edit stock and selling price by set</span>,
                           )}
                         </tr>
                         {isOpen && <SetTypeRows groupId={p.id} colSpan={colCount} warehouseId={whFilter} layout="chips" categoryId={setCategory_} {...setTableProps(p)} />}
@@ -1917,7 +1889,7 @@ function StockIn() {
           }}
           variationId={measured.variation.id}
           title={`${measured.product.name} ${variationLabel(measured.variation, measured.product.attributes)}`}
-          meta={metaOf({ ...(measured.product.measure ?? {}), lengthUnit: measured.product.measure?.lengthUnit ?? "m" })}
+          meta={stockLengthOf(measured.product)!}
           defaultLength={measured.variation.defaultRollLength ?? measured.product.measure?.defaultRollLength ?? null}
           warehouseId={whFilter || null}
         />

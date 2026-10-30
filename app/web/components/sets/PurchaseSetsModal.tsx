@@ -215,10 +215,22 @@ export function PurchaseSetsModal({
                     const c = partsCost(row);
                     if (!c) return null;
                     if (c.total === 0 && c.missing > 0) return <div className="mt-0.5 whitespace-nowrap text-[10px] text-slate-400">Parts: no supplier rates yet</div>;
+                    const partsRounded = Math.round(c.total);
+                    const canApply = partsRounded > 0 && row.rate !== String(partsRounded);
                     return (
-                      <div className="mt-0.5 whitespace-nowrap text-[10px] text-slate-500" title="Supplier rates of the parts chosen in this row">
-                        From parts {money(Math.round(c.total))}
-                        {c.missing > 0 && <span className="text-amber-700"> · {c.missing} part{c.missing === 1 ? "" : "s"} without a rate</span>}
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-slate-500" title="Supplier rates of the parts chosen in this row">
+                        <span>From parts <strong className="text-slate-800 font-semibold">{money(partsRounded)}</strong></span>
+                        {c.missing > 0 && <span className="text-amber-700">({c.missing} unpriced)</span>}
+                        {canApply && (
+                          <button
+                            type="button"
+                            onClick={() => setRows((rs) => rs?.map((x) => (x.key === row.key ? { ...x, rate: String(partsRounded) } : x)) ?? rs)}
+                            className="rounded bg-brand-50 border border-brand-200 px-1.5 py-0.2 font-semibold text-brand-700 hover:bg-brand-100 transition cursor-pointer select-none"
+                            title="Set rate to calculated parts total"
+                          >
+                            Use ₹{money(partsRounded)}
+                          </button>
+                        )}
                       </div>
                     );
                   }

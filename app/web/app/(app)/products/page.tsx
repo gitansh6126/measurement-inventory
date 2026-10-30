@@ -14,6 +14,8 @@ import { useCan } from "@/components/MeContext";
 import { SetTypeRows, SetTypesBadge } from "@/components/sets/SetTypes";
 import { MeasuredStock } from "@/components/measure/MeasuredStock";
 import { ProductThumb } from "@/components/ProductThumb";
+import { ProductKind, ProductTile } from "@/components/products/ProductTile";
+import { isLowStock } from "@/components/StockBadge";
 import { ProductDetailModal } from "@/components/products/ProductDetailModal";
 import { ProductModal } from "@/components/products/ProductModal";
 import { VendorPricingModal } from "@/components/vendor/VendorPricingModal";
@@ -29,9 +31,10 @@ import type { CategoryHead, CategoryStatsList, Product, ProductActivityStatus, S
 import { errorText, useApi } from "@/lib/useApi";
 import { useTableColumns } from "@/lib/useTableColumns";
 import { useViewMode } from "@/lib/useViewMode";
-import { fmtLen, fmtRate, fmtSellRate, metaOf, ratePerOf, type LengthUnit, type MeasureMeta } from "@/lib/measure";
+import { fmtLen, fmtRate, fmtSellRate, ratePerOf, stockLengthOf, type LengthUnit, type MeasureMeta } from "@/lib/measure";
 import { useLengthView } from "@/lib/lengthView";
 import { LengthViewToggle } from "@/components/measure/LengthViewToggle";
+import { scrollToFocus } from "@/lib/scrollToFocus";
 
 // main v2 ProductsView (index.html) rebuilt with marble UI (D23): KPI strip, All/Active/Inactive
 // stages, toolbar filters, grouped table whose variation products expand into their variations.
@@ -96,7 +99,14 @@ function ProductsPage() {
     setCategory("");
   };
   const [activityStage, setActivityStage] = useState<ProductActivityStatus | "">("");
-  const [quick, setQuick] = useState<Quick>("");
+  const [quick, setQuick] = useState<Quick>(() => {
+    const q = params.get("quick");
+    return q === "low" || q === "out" ? q : "";
+  });
+  useEffect(() => {
+    const q = params.get("quick");
+    if (q === "low" || q === "out") setQuick(q);
+  }, [params]);
   const [showInventoryValue, setShowInventoryValue] = useState(false);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [flash, setFlash] = useState<{ kind: "error" | "success"; text: string } | null>(null);
@@ -171,16 +181,7 @@ function ProductsPage() {
   useEffect(() => {
     if (!focus || !all.some((product) => product.id === focus)) return;
     setOpen((current) => current.has(focus) ? current : new Set(current).add(focus));
-    const scroll = () => {
-      const el = document.getElementById(`product-${focus}`) ?? document.getElementById(`product-card-${focus}`);
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
-    };
-    const t1 = setTimeout(scroll, 100);
-    const t2 = setTimeout(scroll, 300);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
+    return scrollToFocus(`product-${focus}`, `product-card-${focus}`);
   }, [all, focus]);
 
   const viewId = params.get("view");
@@ -194,7 +195,7 @@ function ProductsPage() {
   const showColumn = cols.visible;
   // KPIs count each product once (main v2 BR-06a); value uses raw variations (money is per SKU).
   const kpi = useMemo(() => {
-    const low = all.filter((p) => p.quantity <= p.lowStockThreshold).length;
+    const low = all.filter((p) => isLowStock(p.quantity, p.lowStockThreshold)).length;
     const out = all.filter((p) => p.quantity === 0).length;
     // A Measured rate is per its rate unit: a feet + inches product's stock is in inches, its cost per ft.
     const value = all.reduce(
@@ -318,12 +319,10 @@ function ProductsPage() {
   const visibleColumns = cols.shown();
   const expandAll = (expanded: boolean) =>
     setOpen(expanded ? new Set(variableRows.map((p) => p.id)) : new Set());
-  // A Measured product's stock is a length, shown in the user's m / ft view.
-  const lenOf = (p: StockProduct) => (p.productType === "measured" ? metaOf({ ...(p.measure ?? {}), lengthUnit: p.measure?.lengthUnit ?? "m" }) : undefined);
   const stockCell = (quantity: number, threshold: number, unit: string, bold = false, len?: MeasureMeta) => (
-    <span className={`inline-flex items-center gap-1 ${quantity <= threshold ? "text-rose-600" : "text-emerald-700"} ${bold ? "font-semibold" : ""}`}>
+    <span className={`inline-flex items-center gap-1 ${isLowStock(quantity, threshold) ? "text-rose-600" : "text-emerald-700"} ${bold ? "font-semibold" : ""}`}>
       {len ? fmtLen(quantity, len) : <>{qty(quantity)} <span className="text-xs text-slate-400">{unit}</span></>}
-      {quantity <= threshold && <WarnIcon className="h-3.5 w-3.5" />}
+      {isLowStock(quantity, threshold) && <WarnIcon className="h-3.5 w-3.5" />}
     </span>
   );
 
@@ -352,6 +351,14 @@ function ProductsPage() {
       <div className="no-print mb-3 lg:hidden space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
+            <Link
+              href="/"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-600 shadow-xs hover:bg-slate-50"
+              aria-label="Back to Home"
+              title="Back to Home"
+            >
+              ←
+            </Link>
             <h1 className="text-xl font-bold tracking-tight text-slate-900">Products</h1>
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
               {rows.length}
@@ -827,40 +834,28 @@ function ProductsPage() {
               const onlyVar = p.variations.find((v) => v.active) ?? p.variations[0];
               const sale = hasVariations ? null : fmtSellRate(p.measure?.lengthUnit, onlyVar?.minSalePrice, onlyVar?.salePrice, "Sell: ");
               return (
-                <div key={p.id} id={`product-card-${p.id}`} className={`group card relative flex flex-col overflow-hidden transition hover:-translate-y-0.5 hover:shadow-md ${p.active ? "" : "opacity-60"} ${focus === p.id ? "card-highlight-blink" : ""}`}>
-                  <Link href={`/products/${p.id}`} className="flex flex-1 flex-col focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500" aria-label={`Open ${p.name}`}>
-                    <div className="overflow-hidden bg-slate-100">
-                      <ProductThumb src={p.imageUrl ?? null} name={p.name} className="aspect-[4/3] w-full text-xl transition-transform duration-300 group-hover:scale-105" />
-                    </div>
-                    <div className="grid flex-1 content-start gap-1 p-3">
-                      <div className="line-clamp-2 font-semibold text-slate-900">{p.name}</div>
-                      <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
-                        <span className="truncate">
-                          {p.productType === "measured" ? (
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800">Measured</span>
-                              <span>{p.variations.length} variations</span>
-                            </span>
-                          ) : p.productType === "variable" ? (
-                            `${p.variations.length} variations`
-                          ) : (
-                            p.category?.name ?? "Uncategorized"
-                          )}
-                        </span>
-                        {stockCell(p.quantity, p.lowStockThreshold, p.unit, false, lenOf(p))}
-                      </div>
-                      {sale && <div className="text-sm font-semibold text-brand-700">{sale}</div>}
-                    </div>
-                  </Link>
-                  <div className="absolute right-2 top-2 z-10 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                    {stockLink(p)}
-                    {canEdit && (
-                      <Link href={`/products/${p.id}/edit?returnTo=products`} className="flex h-8 w-8 items-center justify-center rounded-md bg-white/90 text-slate-600 shadow-sm hover:text-slate-900" title="Edit" aria-label={`Edit ${p.name}`}>
-                        <EditIcon className="h-4 w-4" />
-                      </Link>
-                    )}
-                  </div>
-                </div>
+                <ProductTile
+                  key={p.id}
+                  id={`product-card-${p.id}`}
+                  name={p.name}
+                  image={p.imageUrl ?? null}
+                  href={`/products/${p.id}`}
+                  inactive={!p.active}
+                  highlight={focus === p.id}
+                  meta={<ProductKind type={p.productType} count={p.variations.length} fallback={p.category?.name ?? "Uncategorized"} />}
+                  badge={p.productType === "measured" ? null : stockCell(p.quantity, p.lowStockThreshold, p.unit, false, stockLengthOf(p))}
+                  price={sale}
+                  actions={
+                    <>
+                      {stockLink(p)}
+                      {canEdit && (
+                        <Link href={`/products/${p.id}/edit?returnTo=products`} className="flex h-8 w-8 items-center justify-center rounded-md bg-white/90 text-slate-600 shadow-sm hover:text-slate-900" title="Edit" aria-label={`Edit ${p.name}`}>
+                          <EditIcon className="h-4 w-4" />
+                        </Link>
+                      )}
+                    </>
+                  }
+                />
               );
             })}
           </div>
@@ -920,7 +915,7 @@ function ProductsPage() {
                           sku: <td className="whitespace-nowrap font-mono text-xs text-slate-600">{expandable ? "—" : only.officialSku || only.shortName || "—"}</td>,
                           category: <td className="text-slate-600">{p.category?.name ?? "—"}</td>,
                           type: <td><span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-700">{TYPE_LABEL[p.productType]}</span></td>,
-                          stock: <td>{stockCell(p.quantity, p.lowStockThreshold, sets ? "sets" : p.unit, expandable, lenOf(p))}</td>,
+                          stock: <td>{measured ? <span className="text-slate-400">—</span> : stockCell(p.quantity, p.lowStockThreshold, sets ? "sets" : p.unit, expandable, stockLengthOf(p))}</td>,
                           salePrice: <td className="whitespace-nowrap text-right font-medium text-slate-800">{expandable ? "" : priceRange(p, "salePrice")}</td>,
                           minSalePrice: <td className="whitespace-nowrap text-right text-slate-600">{expandable ? "" : priceRange(p, "minSalePrice")}</td>,
                           activity: <td><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${activityTone[p.activityStatus]}`}>{p.activityStatus}</span></td>,
@@ -1102,7 +1097,7 @@ function ProductsPage() {
                                       {childCols.map((id) => {
                                         const cells: Record<string, React.ReactNode> = {
                                           sku: <td className="whitespace-nowrap font-mono text-xs text-slate-600">{v.officialSku || v.shortName || "—"}</td>,
-                                          stock: <td>{stockCell(v.quantity, v.lowStockThreshold, p.unit, false, lenOf(p))}</td>,
+                                          stock: <td>{stockCell(v.quantity, v.lowStockThreshold, p.unit, false, stockLengthOf(p))}</td>,
                                           salePrice: <td className="whitespace-nowrap text-right font-medium text-slate-800">{priceRange(p, "salePrice", [v])}</td>,
                                           minSalePrice: <td className="whitespace-nowrap text-right text-slate-600">{priceRange(p, "minSalePrice", [v])}</td>,
                                           actions: (

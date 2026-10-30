@@ -132,6 +132,16 @@ export async function upsertRate(
         },
       });
 
+      if (ctx.fromPurchase) {
+        await tx.productVariation.update({
+          where: { id: input.variationId },
+          data: {
+            purchaseCost: newRate,
+            updatedById: actorId,
+          },
+        });
+      }
+
       await audit(tx, {
         companyId,
         actorId,
@@ -174,6 +184,16 @@ export async function upsertRate(
           recordedAt: effectiveAt,
         },
       });
+
+      if (ctx.fromPurchase) {
+        await tx.productVariation.update({
+          where: { id: input.variationId },
+          data: {
+            purchaseCost: newRate,
+            updatedById: actorId,
+          },
+        });
+      }
 
       await audit(tx, {
         companyId,

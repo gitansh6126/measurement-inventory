@@ -187,7 +187,7 @@ describe("warehouses", () => {
       lines: [{ variationId: s.bolt, quantity: 4 }, { pieceId: roll.id }],
     });
     expect(t.status).toBe(201);
-    expect(t.body.transfer).toMatchObject({ number: expect.stringMatching(/^TRF\/\d{4}-\d{2}\/0001$/), status: "DONE", from: { code: "W1" }, to: { code: "W2" } });
+    expect(t.body.transfer).toMatchObject({ number: expect.stringMatching(/^TRF-\d{8}-001$/), status: "DONE", from: { code: "W1" }, to: { code: "W2" } });
     expect(await wh(s.bolt)).toEqual({ [w1]: 6, [w2]: 4 });
     expect(await wh(s.chain)).toEqual({ [w1]: 30, [w2]: 50 });
     expect(await total(s.bolt)).toBe(10);

@@ -34,8 +34,8 @@ export function StockEditDrawer({
   extra,
 }: {
   product: StockProduct;
-  heads: ReactNode;
-  cells: (v: StockVariation) => ReactNode;
+  heads?: ReactNode;
+  cells?: (v: StockVariation) => ReactNode;
   dirty: number;
   saving: boolean;
   error?: string | null;
@@ -53,6 +53,7 @@ export function StockEditDrawer({
   useLengthView();
   const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState("");
+  const grouped = product.productType === "grouped";
   const variable = product.productType === "variable";
   // Measured rows: variation name + standard roll, totals as lengths (owner design 2026-10-16).
   const measured = product.productType === "measured";
@@ -124,54 +125,60 @@ export function StockEditDrawer({
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 py-3 sm:px-6">
-          {active.length > 5 && (
-            <div className="mb-2 shrink-0">
-              <SearchInput value={filter} onChange={setFilter} placeholder="Filter by attribute or SKU…" />
-            </div>
-          )}
-          <div className={`min-h-0 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-xs ${extra ? "shrink-0" : "flex-1"}`}>
-            <table className="table table-stack min-w-full">
-              <thead className="sticky top-0 z-10 bg-slate-50 shadow-xs">
-                <tr>
-                  {(variable || measured) && <th className="w-14 bg-slate-50" aria-label="Image" />}
-                  {variable ? attrCols.map((c) => <th key={c.name} className="bg-slate-50">{c.name}{c.unit ? ` (${c.unit})` : ""}</th>) : <th className="bg-slate-50">{measured ? "Variation" : "Product"}</th>}
-                  {heads}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {rows.map((v) => (
-                  <tr key={v.id}>
-                    {(variable || measured) && (
-                      <td className="w-14">
-                        <ProductThumb src={v.imageUrl ?? product.imageUrl ?? null} name={`${product.name} (${variationLabel(v, product.attributes)})`} className="h-10 w-10 rounded text-[6px]" />
-                      </td>
-                    )}
-                    {variable ? (
-                      attrCols.map((c) => <td key={c.name} className="whitespace-nowrap text-slate-800">{v.attributes[c.name] ?? "—"}</td>)
-                    ) : meta ? (
-                      <td>
-                        <div className="text-sm font-bold text-slate-900">{variationLabel(v, product.attributes)}</div>
-                        {(v.defaultRollLength ?? product.measure?.defaultRollLength) && (
-                          <div className="text-[11px] text-slate-400">Std {(meta.rollName || "roll").toLowerCase()}: {fmtLen((v.defaultRollLength ?? product.measure?.defaultRollLength)!, meta)}</div>
+          {grouped ? (
+            <div className="min-h-0 flex-1 overflow-auto">{extra}</div>
+          ) : (
+            <>
+              {active.length > 5 && (
+                <div className="mb-2 shrink-0">
+                  <SearchInput value={filter} onChange={setFilter} placeholder="Filter by attribute or SKU…" />
+                </div>
+              )}
+              <div className={`min-h-0 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-xs ${extra ? "shrink-0" : "flex-1"}`}>
+                <table className="table table-stack min-w-full">
+                  <thead className="sticky top-0 z-10 bg-slate-50 shadow-xs">
+                    <tr>
+                      {(variable || measured) && <th className="w-14 bg-slate-50" aria-label="Image" />}
+                      {variable ? attrCols.map((c) => <th key={c.name} className="bg-slate-50">{c.name}{c.unit ? ` (${c.unit})` : ""}</th>) : <th className="bg-slate-50">{measured ? "Variation" : "Product"}</th>}
+                      {heads}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {rows.map((v) => (
+                      <tr key={v.id}>
+                        {(variable || measured) && (
+                          <td className="w-14">
+                            <ProductThumb src={v.imageUrl ?? product.imageUrl ?? null} name={`${product.name} (${variationLabel(v, product.attributes)})`} className="h-10 w-10 rounded text-[6px]" />
+                          </td>
                         )}
-                      </td>
-                    ) : (
-                      <td className="font-medium text-slate-900">{product.name}</td>
+                        {variable ? (
+                          attrCols.map((c) => <td key={c.name} className="whitespace-nowrap text-slate-800">{v.attributes[c.name] ?? "—"}</td>)
+                        ) : meta ? (
+                          <td>
+                            <div className="text-sm font-bold text-slate-900">{variationLabel(v, product.attributes)}</div>
+                            {(v.defaultRollLength ?? product.measure?.defaultRollLength) && (
+                              <div className="text-[11px] text-slate-400">Std {(meta.rollName || "roll").toLowerCase()}: {fmtLen((v.defaultRollLength ?? product.measure?.defaultRollLength)!, meta)}</div>
+                            )}
+                          </td>
+                        ) : (
+                          <td className="font-medium text-slate-900">{product.name}</td>
+                        )}
+                        {cells?.(v)}
+                      </tr>
+                    ))}
+                    {rows.length === 0 && (
+                      <tr>
+                        <td colSpan={99} className="py-12 text-center text-sm text-slate-500">
+                          {active.length ? <>No variations match &ldquo;{filter}&rdquo;</> : "This product has no active variation"}
+                        </td>
+                      </tr>
                     )}
-                    {cells(v)}
-                  </tr>
-                ))}
-                {rows.length === 0 && (
-                  <tr>
-                    <td colSpan={99} className="py-12 text-center text-sm text-slate-500">
-                      {active.length ? <>No variations match &ldquo;{filter}&rdquo;</> : "This product has no active variation"}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          {extra && <div className="mt-3 min-h-0 flex-1 overflow-auto">{extra}</div>}
+                  </tbody>
+                </table>
+              </div>
+              {extra && <div className="mt-3 min-h-0 flex-1 overflow-auto">{extra}</div>}
+            </>
+          )}
           {error && <p className="mt-2 shrink-0 text-sm text-rose-600" role="alert">{error}</p>}
         </div>
 

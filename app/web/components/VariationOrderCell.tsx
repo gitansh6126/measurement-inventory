@@ -63,6 +63,22 @@ export function createDragPreview(event: DragEvent<HTMLElement>) {
   }, 0);
 }
 
+/**
+ * 6-dots drag handle icon (2 columns of 3 dots).
+ */
+export function SixDotsIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <circle cx="5" cy="3.5" r="1.25" />
+      <circle cx="11" cy="3.5" r="1.25" />
+      <circle cx="5" cy="8" r="1.25" />
+      <circle cx="11" cy="8" r="1.25" />
+      <circle cx="5" cy="12.5" r="1.25" />
+      <circle cx="11" cy="12.5" r="1.25" />
+    </svg>
+  );
+}
+
 export function VariationOrderCell({
   label,
   index,
@@ -75,10 +91,10 @@ export function VariationOrderCell({
   onDrop,
 }: {
   label: string;
-  index: number;
-  count: number;
+  index?: number;
+  count?: number;
   disabled: boolean;
-  onMove: (from: number, to: number) => void;
+  onMove?: (from: number, to: number) => void;
   onDragStart: (event: DragEvent<HTMLButtonElement>) => void;
   onDragEnd?: () => void;
   onDragOver?: (event: DragEvent<HTMLTableCellElement>) => void;
@@ -86,13 +102,13 @@ export function VariationOrderCell({
 }) {
   return (
     <td
-      className="whitespace-nowrap"
+      className="w-8 whitespace-nowrap text-center"
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
       <button
         type="button"
-        className="cursor-grab px-1 text-slate-500 hover:text-slate-950 active:cursor-grabbing disabled:cursor-not-allowed select-none"
+        className="cursor-grab p-1 text-slate-400 hover:text-slate-700 active:cursor-grabbing disabled:cursor-not-allowed select-none rounded hover:bg-slate-100"
         aria-label={`Drag to reorder ${label}`}
         title="Drag to reorder"
         draggable={!disabled}
@@ -103,46 +119,8 @@ export function VariationOrderCell({
         }}
         onDragEnd={onDragEnd}
       >
-        ⋮⋮
+        <SixDotsIcon className="h-4 w-4 fill-current" />
       </button>
-      <button
-        type="button"
-        className="px-1 text-slate-600 hover:text-slate-950 disabled:text-slate-300"
-        aria-label={`Move ${label} up`}
-        title="Move up"
-        disabled={disabled || index === 0}
-        onClick={() => onMove(index, index - 1)}
-      >
-        ↑
-      </button>
-      <button
-        type="button"
-        className="px-1 text-slate-600 hover:text-slate-950 disabled:text-slate-300"
-        aria-label={`Move ${label} down`}
-        title="Move down"
-        disabled={disabled || index === count - 1}
-        onClick={() => onMove(index, index + 1)}
-      >
-        ↓
-      </button>
-      {/* Position dropdown (owner 2026-10-28): jump straight to a place, e.g. 7 → 2. */}
-      {count > 2 && (
-        <select
-          className="ml-1 h-6 rounded border border-slate-300 bg-white px-0.5 text-[11px] text-slate-700 disabled:text-slate-300"
-          aria-label={`Position of ${label}`}
-          title="Position"
-          disabled={disabled}
-          value={index + 1}
-          onChange={(e) => onMove(index, Number(e.target.value) - 1)}
-        >
-          {Array.from({ length: count }, (_, i) => (
-            <option key={i} value={i + 1}>
-              {i + 1}
-            </option>
-          ))}
-        </select>
-      )}
     </td>
   );
 }
-

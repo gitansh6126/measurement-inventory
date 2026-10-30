@@ -99,7 +99,11 @@ interface ProductDef {
       values: string[];
       isQuality?: boolean;
     }[];
+    // 0044: technical specifications of the whole product.
+    specs?: { name: string; value: string }[];
   };
+  /** 0044: a variation's own technical specifications. */
+  variationSpecs?: (a: Record<string, string>) => { name: string; value: string }[];
   price: (a: Record<string, string>) => number;
   initialStock?: number | ((a: Record<string, string>) => number);
   lowStockThreshold?: number;
@@ -117,6 +121,13 @@ const PRODUCTS: ProductDef[] = [
       officialSku: "8901234500011",
       unit: "pcs",
       description: "Motorized electric wire rope hoist with pendant control.",
+      specs: [
+        { name: "Capacity", value: "1 t" },
+        { name: "Lifting height", value: "6 m" },
+        { name: "Lifting speed", value: "8 m/min" },
+        { name: "Motor", value: "1.5 kW, 415 V, 3 phase" },
+        { name: "Duty class", value: "M4 (FEM 1Bm)" },
+      ],
     },
     price: () => 45000,
     initialStock: 6,
@@ -167,7 +178,16 @@ const PRODUCTS: ProductDef[] = [
         { name: "Size", unit: "mm", values: ["8", "10"] },
         { name: "Rope Construction", values: ["6x19", "6x24"] },
       ],
+      specs: [
+        { name: "Material", value: "Cast steel" },
+        { name: "Finish", value: "Painted yellow" },
+        { name: "Standard", value: "EN 13155" },
+      ],
     },
+    variationSpecs: (a) => [
+      { name: "Working load limit", value: a.Size === "8" ? "1 t" : "2 t" },
+      { name: "Flange width", value: a.Size === "8" ? "75–220 mm" : "80–320 mm" },
+    ],
     price: (a) => (a.Size === "8" ? 850 : 1150),
     // 8mm 6x19 is seeded with 2 units vs threshold 10 -> Low Stock demo!
     initialStock: (a) => (a.Size === "8" && a["Rope Construction"] === "6x19" ? 2 : 20),
@@ -273,7 +293,10 @@ export async function seedThroughApi(call: ReturnType<typeof client>) {
   for (const p of PRODUCTS) {
     const body: Json = { ...p.body, categoryId: categoryId.get(p.category) };
     if (p.body.productType === "variable" && p.body.attributes) {
-      body.variations = cross(p.body.attributes.map((d) => ({ name: d.name, values: [...d.values] }))).map((attributes) => ({ attributes }));
+      body.variations = cross(p.body.attributes.map((d) => ({ name: d.name, values: [...d.values] }))).map((attributes) => ({
+        attributes,
+        ...(p.variationSpecs ? { specs: p.variationSpecs(attributes) } : {}),
+      }));
     }
     const { product } = await call<{ product: Product }>("POST", "/api/products", body);
     createdProducts.push({ id: product.id, isInactive: p.isInactive });
@@ -343,10 +366,17 @@ export async function seedThroughApi(call: ReturnType<typeof client>) {
     categoryId: categoryId.get("Wire Rope"),
     description: "High tensile galvanized steel wire rope for industrial hoisting. Sold cut to length by the metre.",
     attributes: [{ name: "Diameter", unit: "mm", values: ["8", "10", "16"] }],
+    // 0044: the product's specs, then each diameter's own (minimum breaking load).
+    specs: [
+      { name: "Construction", value: "6x19 + FC" },
+      { name: "Tensile grade", value: "1770 N/mm²" },
+      { name: "Finish", value: "Galvanised" },
+      { name: "Lay", value: "Right hand ordinary" },
+    ],
     variations: [
-      { attributes: { Diameter: "8" }, defaultRollLength: 500 },
-      { attributes: { Diameter: "10" }, defaultRollLength: 500 },
-      { attributes: { Diameter: "16" }, defaultRollLength: 300 },
+      { attributes: { Diameter: "8" }, defaultRollLength: 500, specs: [{ name: "Min. breaking load", value: "39.9 kN" }, { name: "Weight", value: "0.23 kg/m" }] },
+      { attributes: { Diameter: "10" }, defaultRollLength: 500, specs: [{ name: "Min. breaking load", value: "62.3 kN" }, { name: "Weight", value: "0.36 kg/m" }] },
+      { attributes: { Diameter: "16" }, defaultRollLength: 300, specs: [{ name: "Min. breaking load", value: "160 kN" }, { name: "Weight", value: "0.92 kg/m" }, { name: "Lay", value: "Right hand Lang's" }] },
     ],
     measure: {
       lengthUnit: "m",
@@ -464,6 +494,11 @@ export async function seedThroughApi(call: ReturnType<typeof client>) {
       unit: "Set",
       categoryId: categoryId.get(PRODUCTS.find((p) => p.body.name === "Chain Hoist")!.category),
       description: "Manual chain hoist sold as a set: hoist body with load chain fitted to length, safety hook optional.",
+      specs: [
+        { name: "Capacity", value: "1 t" },
+        { name: "Hand pull at full load", value: "31 kg" },
+        { name: "Standard", value: "EN 13157" },
+      ],
       main: { name: "Hoist Body 1 Ton", shortName: "HB-1T", unit: "Nos" },
       byproducts: [
         { productId: chainProduct.id, required: true, label: "Load chain" },
@@ -517,14 +552,24 @@ export async function seedThroughApi(call: ReturnType<typeof client>) {
         salePrice: "8500",
         minSalePrice: "7800",
         lowStockThreshold: 1,
+        // 0044: shown after the product's rows when this set is picked on the product page.
+        specs: [{ name: "Lifting height", value: "3 m" }, { name: "Load chain", value: "8 mm Grade 80" }, { name: "Safety hook", value: "Included" }],
       },
-      { name: "Long 4.5 m", parts: [{ byproductId: linkChain.id, variationId: chain("8"), length: 4.5 }], salePrice: "9200", minSalePrice: "8600", lowStockThreshold: 1 },
+      {
+        name: "Long 4.5 m",
+        parts: [{ byproductId: linkChain.id, variationId: chain("8"), length: 4.5 }],
+        salePrice: "9200",
+        minSalePrice: "8600",
+        lowStockThreshold: 1,
+        specs: [{ name: "Lifting height", value: "4.5 m" }, { name: "Load chain", value: "8 mm Grade 80" }],
+      },
       {
         name: "Workshop 6 mm",
         parts: [{ byproductId: linkChain.id, variationId: chain("6"), length: 3 }, { byproductId: linkHook.id, variationId: hookVariationId }],
         salePrice: "6900",
         minSalePrice: "6400",
         lowStockThreshold: 0,
+        specs: [{ name: "Capacity", value: "0.5 t" }, { name: "Lifting height", value: "3 m" }, { name: "Load chain", value: "6 mm Grade 80" }],
       },
     ],
   });
@@ -562,6 +607,23 @@ export async function seedThroughApi(call: ReturnType<typeof client>) {
           { length: 500, supplierRollNo: "UM-26-9101", rack: "A-02" },
           { length: 500, supplierRollNo: "UM-26-9102", rack: "A-02" },
         ],
+      },
+    ],
+  });
+
+  // Purchase 3 (owner 2026-10-30): a custom Chain Hoist Set (8 mm × 6 m + hook) bought from a
+  // supplier becomes a standard set of the product, listed after the three on the product form.
+  await call("POST", "/api/purchases", {
+    partyId: parties.get("Crossbee Industries"),
+    date: dDaysAgo(2, 12, 0).toISOString(),
+    notes: "PO-2026-OCT-061 — Long-lift chain hoist set",
+    clientRef: randomUUID(),
+    paymentMode: "BANK_TRANSFER",
+    lines: [
+      {
+        variationId: hoistSet.variations[0]!.id,
+        price: "8200",
+        sets: [{ parts: [{ byproductId: linkChain.id, variationId: chain("8"), length: 6 }, { byproductId: linkHook.id, variationId: hookVariationId }] }],
       },
     ],
   });

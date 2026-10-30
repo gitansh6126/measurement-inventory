@@ -16,6 +16,7 @@ import { variationAttributeColumns } from "@/lib/variationColumns";
 import { RateField } from "@/components/measure/RateField";
 import { ProductPriceView } from "@/components/vendor/ProductPriceView";
 import { PriceHistoryModal } from "@/components/vendor/PriceHistoryModal";
+import { VendorPricingModal } from "@/components/vendor/VendorPricingModal";
 import { PriceRail, RailItem } from "@/components/vendor/PriceRail";
 import { ProductRail, type RailProduct } from "@/components/vendor/ProductRail";
 import { fmtRate, rateLabel, type LengthUnit } from "@/lib/measure";
@@ -167,6 +168,7 @@ function BySupplierView() {
 
   // History modal
   const [historyVar, setHistoryVar] = useState<{ id: string; label: string; lengthUnit: LengthUnit | null } | null>(null);
+  const [groupedModalProductId, setGroupedModalProductId] = useState<string | null>(null);
 
   // Helpers
   const activeSupplier = suppliers.find((s) => s.id === selectedSupplierId);
@@ -523,9 +525,25 @@ function BySupplierView() {
                         >
                           <td className="stack-hide text-center text-slate-300">•</td>
                           <td>
-                            <div className="font-semibold text-slate-900">{p.name}</div>
-                            <div className="text-[11px] text-slate-400">
-                              <span className="font-mono">{v.shortName}</span> · {p.productType === "grouped" ? "₹ per set" : p.lengthUnit ? `₹ / ${rateLabel(p.lengthUnit)}` : p.unit}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-semibold text-slate-900">{p.name}</span>
+                              {p.productType === "grouped" && (
+                                <span className="rounded bg-sky-100 text-sky-800 text-[10px] font-bold px-1.5 py-0.2">
+                                  Grouped Set
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-x-2">
+                              <span><span className="font-mono">{v.shortName}</span> · {p.productType === "grouped" ? "₹ per set" : p.lengthUnit ? `₹ / ${rateLabel(p.lengthUnit)}` : p.unit}</span>
+                              {p.productType === "grouped" && (
+                                <button
+                                  type="button"
+                                  onClick={() => setGroupedModalProductId(p.id)}
+                                  className="text-brand-600 hover:text-brand-700 font-medium hover:underline cursor-pointer"
+                                >
+                                  Presets & parts pricing →
+                                </button>
+                              )}
                             </div>
                           </td>
                           <td className="text-slate-600 text-xs">{p.category?.name ?? "—"}</td>
@@ -633,6 +651,16 @@ function BySupplierView() {
                               >
                                 History
                               </button>
+                              {p.productType === "grouped" && (
+                                <button
+                                  type="button"
+                                  onClick={() => setGroupedModalProductId(p.id)}
+                                  className="rounded border border-brand-200 bg-brand-50 px-2 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100 cursor-pointer"
+                                  title="View standard sets & components pricing"
+                                >
+                                  Presets
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -948,6 +976,17 @@ function BySupplierView() {
           onClose={() => setHistoryVar(null)}
         />
       )}
+
+      {/* Grouped Set Pricing Modal */}
+      {groupedModalProductId && (
+        <VendorPricingModal
+          productId={groupedModalProductId}
+          onClose={() => {
+            setGroupedModalProductId(null);
+            sheetApi.reload();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1026,6 +1065,7 @@ function SupplierPricesContent() {
   return (
     <div className="space-y-4 pb-24">
       <PageHeader
+        back={{ href: "/", label: "Home" }}
         title="Vendor Pricing &amp; Price History"
         subtitle={
           view === "product"

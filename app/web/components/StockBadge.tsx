@@ -1,8 +1,16 @@
 import { qty } from "@/lib/format";
 import { fmtLen, type MeasureMeta } from "@/lib/measure";
 import { useLengthView } from "@/lib/lengthView";
+import type { StockState } from "@/lib/types";
 
-export type StockState = "ok" | "low" | "out" | "negative";
+export type { StockState };
+
+/** The one rule for a stock level (same as the API, lib\stock.ts stockState; also per warehouse, WH-15): below zero, none, at or under the minimum, or fine. */
+export const stockState = (quantity: number, threshold: number): StockState =>
+  quantity < 0 ? "negative" : quantity <= 0 ? "out" : quantity <= threshold ? "low" : "ok";
+
+/** Needs attention: low, out of stock or negative. */
+export const isLowStock = (quantity: number, threshold: number) => quantity <= threshold;
 
 /**
  * Quantity badge: red outline when low or out of stock (current GAS Inventory Status style).

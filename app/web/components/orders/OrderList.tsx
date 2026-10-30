@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArrowLeftIcon, InvoiceIcon, PlusIcon, SlidersIcon } from "@/components/icons";
 import { PageMobileSidebar, SidebarField, SidebarSection } from "@/components/PageMobileSidebar";
@@ -10,6 +10,8 @@ import { EmptyState, PageHeader, Pagination, PeriodFilter, SearchInput, TableSke
 import { api } from "@/lib/api";
 import { money } from "@/lib/format";
 import { errorText, useApi } from "@/lib/useApi";
+import { useDebouncedSearch } from "@/lib/useDebounced";
+import { useUrlPage } from "@/lib/useUrlPage";
 import { NEXT_STEP, ORDER_STATUS, StatusPill, orderDay, type OrderKind, type OrderStatus } from "./orderStatus";
 
 interface Row {
@@ -47,15 +49,19 @@ export function OrderList({ kind }: { kind: OrderKind }) {
   const isSale = kind === "SALE";
   const base = isSale ? "/sales/orders" : "/purchases/orders";
   const canCreate = useCan(isSale ? "sale.create" : "purchase.create");
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const urlPage = parseInt(searchParams.get("page") || "1", 10);
 
   const [search, setSearch] = useState("");
-  const [q, setQ] = useState("");
   const [period, setPeriod] = useState<Period>({ from: "", to: "" });
-  const [tab, setTab] = useState<Tab>("OPEN");
-  const [page, setPage] = useState(Number.isFinite(urlPage) && urlPage > 0 ? urlPage : 1);
+  const [tab, setTab] = useState<Tab>(() => {
+    const s = searchParams.get("status") as Tab | null;
+    return s && TABS.some((t) => t.value === s) ? s : "OPEN";
+  });
+  useEffect(() => {
+    const s = searchParams.get("status") as Tab | null;
+    if (s && TABS.some((t) => t.value === s)) setTab(s);
+  }, [searchParams]);
+  const [page, updatePage] = useUrlPage();
   const [pageSize, setPageSize] = useState(25);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
@@ -87,35 +93,8 @@ export function OrderList({ kind }: { kind: OrderKind }) {
     updatePage(1);
   }
 
-  // Sync state if URL query param changes (browser Back / Forward)
-  useEffect(() => {
-    const p = parseInt(searchParams.get("page") || "1", 10);
-    const valid = Number.isFinite(p) && p > 0 ? p : 1;
-    if (valid !== page) {
-      setPage(valid);
-    }
-  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const updatePage = (nextPage: number) => {
-    const target = Math.max(1, nextPage);
-    setPage(target);
-    const nextParams = new URLSearchParams(searchParams.toString());
-    if (target <= 1) {
-      nextParams.delete("page");
-    } else {
-      nextParams.set("page", String(target));
-    }
-    const qs = nextParams.toString();
-    router.push(qs ? `?${qs}` : window.location.pathname);
-  };
-
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setQ(search.trim());
-      updatePage(1);
-    }, 250);
-    return () => clearTimeout(t);
-  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A new search goes back to page 1 (a ?page= from the URL is kept on first load).
+  const q = useDebouncedSearch(search, () => updatePage(1));
 
   const params = new URLSearchParams({ kind, status: tab, page: String(page), pageSize: String(pageSize) });
   if (q) params.set("q", q);
@@ -147,6 +126,14 @@ export function OrderList({ kind }: { kind: OrderKind }) {
       <div className="mb-3 space-y-2 lg:hidden">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
+            <Link
+              href="/"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-600 shadow-xs hover:bg-slate-50"
+              aria-label="Back to Home"
+              title="Back to Home"
+            >
+              ←
+            </Link>
             <h1 className="truncate text-lg font-bold text-slate-900">
               {isSale ? "Sale Orders" : "Purchase Orders"}
             </h1>
@@ -235,7 +222,7 @@ export function OrderList({ kind }: { kind: OrderKind }) {
         <PageHeader
           title={isSale ? "Sale Orders" : "Purchase Orders"}
           subtitle={isSale ? "Orders move Draft → Placed → On delivery → Completed. Stock is taken only when an order is completed." : "Orders move Draft → Placed → On delivery → Completed. Stock is received only when an order is completed."}
-          back={page > 1 ? { label: `Page ${page - 1}`, onClick: () => updatePage(page - 1) } : undefined}
+          back={{ href: "/", label: "Home" }}
           actions={
             canCreate && (
               <Link href={isSale ? "/sales/new" : "/purchases/new"} className="btn-primary">

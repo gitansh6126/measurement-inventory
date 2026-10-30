@@ -225,9 +225,9 @@ describe("document numbering", () => {
     const co = await makeCompany();
     const date = new Date("2026-10-13T12:00:00+05:30");
     const numbers = await Promise.all(
-      Array.from({ length: 20 }, () => prisma.$transaction((tx) => nextDocNumber(tx, co.id, "sale", date))),
+      Array.from({ length: 20 }, () => prisma.$transaction((tx) => nextDocNumber(tx, co.id, "sale", date), { timeout: 15000, maxWait: 10000 })),
     );
-    const expected = Array.from({ length: 20 }, (_, i) => `SAL/2026-27/${String(i + 1).padStart(4, "0")}`);
+    const expected = Array.from({ length: 20 }, (_, i) => `SAL-13102026-${String(i + 1).padStart(3, "0")}`);
     expect([...numbers].sort()).toEqual(expected);
   });
 
@@ -240,14 +240,14 @@ describe("document numbering", () => {
         throw new Error("rollback");
       }),
     ).rejects.toThrow("rollback");
-    expect(await prisma.$transaction((tx) => nextDocNumber(tx, co.id, "purchase", date))).toBe("PUR/2026-27/0001");
+    expect(await prisma.$transaction((tx) => nextDocNumber(tx, co.id, "purchase", date))).toBe("PUR-13102026-001");
   });
 
-  it("keeps separate sequences per type and financial year", async () => {
+  it("keeps separate sequences per type and day", async () => {
     const co = await makeCompany();
     const sale = (d: string) => prisma.$transaction((tx) => nextDocNumber(tx, co.id, "sale", new Date(d)));
-    expect(await sale("2027-03-31T12:00:00+05:30")).toBe("SAL/2026-27/0001");
-    expect(await sale("2027-04-01T09:00:00+05:30")).toBe("SAL/2027-28/0001");
-    expect(await prisma.$transaction((tx) => nextDocNumber(tx, co.id, "purchase", new Date("2027-04-01T09:00:00+05:30")))).toBe("PUR/2027-28/0001");
+    expect(await sale("2027-03-31T12:00:00+05:30")).toBe("SAL-31032027-001");
+    expect(await sale("2027-04-01T09:00:00+05:30")).toBe("SAL-01042027-001");
+    expect(await prisma.$transaction((tx) => nextDocNumber(tx, co.id, "purchase", new Date("2027-04-01T09:00:00+05:30")))).toBe("PUR-01042027-001");
   });
 });

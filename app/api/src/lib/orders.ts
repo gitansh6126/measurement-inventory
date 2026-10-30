@@ -13,6 +13,7 @@ import { checkSetRows, holdOrderSets, releaseOrderSets, saleSetInput, setInput, 
 import { lockVariations, money } from "./stock.js";
 import { isWarehousingOn, requireWarehouse, requireWarehouses, splitsInput, validateSplits, type Split } from "./warehouses.js";
 import { bumpVersion, versionField } from "./versions.js";
+import { upsertRate } from "./vendor-prices.js";
 
 // Sale and purchase orders (v2/docs/orders/ORDER-LIFECYCLE-PLAN.md).
 // DRAFT → PLACED → ON_DELIVERY → COMPLETED, CANCELLED from any open state. An order never moves
@@ -447,6 +448,29 @@ export async function createOrder(ctx: OrderContext, body: z.infer<typeof create
         select: { id: true },
       });
       await saveOrderSets(tx, ctx, { id: o.id, number, kind: body.kind }, priced);
+      if (body.kind === "PURCHASE" && party?.id) {
+        for (const l of priced.rows) {
+          if (Number(l.price) > 0) {
+            await upsertRate(
+              tx,
+              {
+                companyId,
+                actorId,
+                requestId: body.clientRef ?? null,
+                fromPurchase: true,
+                supplierName: party.name,
+              },
+              {
+                variationId: l.variationId,
+                supplierId: party.id,
+                rate: l.price,
+                notes: `Auto-updated from Purchase Order #${number}`,
+                effectiveAt: new Date(),
+              }
+            );
+          }
+        }
+      }
       await audit(tx, {
         companyId,
         actorId,

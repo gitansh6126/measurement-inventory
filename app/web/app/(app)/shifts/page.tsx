@@ -39,6 +39,14 @@ export default function ShiftsPage() {
       <div className="mb-3 space-y-2 lg:hidden">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
+            <Link
+              href="/"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-600 shadow-xs hover:bg-slate-50"
+              aria-label="Back to Home"
+              title="Back to Home"
+            >
+              ←
+            </Link>
             <h1 className="truncate text-lg font-bold text-slate-900">Shifts</h1>
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
               {data?.total ?? 0}

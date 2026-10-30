@@ -231,6 +231,32 @@ describe("products", () => {
     expect((await patch(admin, `/api/products/${p.id}/variations/${v2.id}`, { active: false })).body.error.code).toBe("LAST_VARIATION");
   });
 
+  it("keeps technical specifications on the product and on each variation (0044)", async () => {
+    const { manager } = await setup();
+    const created = await post(
+      manager,
+      "/api/products",
+      rope({
+        specs: [{ name: "Construction", value: "6x19" }, { name: "", value: "" }, { name: "Finish", value: "Galvanised" }],
+        variations: [{ attributes: { Size: "8", Brand: "Crossbee" }, specs: [{ name: "Breaking load", value: "39.9 kN" }] }, { attributes: { Size: "6", Brand: "Halfen" } }],
+      }),
+    );
+    expect(created.status).toBe(201);
+    const p = created.body.product;
+    // Blank rows are dropped; the order is kept.
+    expect(p.specs).toEqual([{ name: "Construction", value: "6x19" }, { name: "Finish", value: "Galvanised" }]);
+    expect(p.variations.map((v: { specs: unknown }) => v.specs)).toEqual([[{ name: "Breaking load", value: "39.9 kN" }], []]);
+
+    const edited = await patch(manager, `/api/products/${p.id}`, { specs: [{ name: "Finish", value: "Bright" }] });
+    expect(edited.body.product.specs).toEqual([{ name: "Finish", value: "Bright" }]);
+    const v = await patch(manager, `/api/products/${p.id}/variations/${p.variations[1].id}`, { specs: [{ name: "Breaking load", value: "22 kN" }] });
+    expect(v.body.variation.specs).toEqual([{ name: "Breaking load", value: "22 kN" }]);
+
+    // A value without a name, or the same name twice, is refused.
+    expect((await patch(manager, `/api/products/${p.id}`, { specs: [{ name: "", value: "12 t" }] })).status).toBe(400);
+    expect((await patch(manager, `/api/products/${p.id}`, { specs: [{ name: "Finish", value: "a" }, { name: "finish", value: "b" }] })).status).toBe(400);
+  });
+
   it("rejects invalid input with field details", async () => {
     const { manager } = await setup();
     const r = await post(manager, "/api/products", { productType: "variable", name: "", unit: "Nos", baseShortName: "X", attributes: [], variations: [] });

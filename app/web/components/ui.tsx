@@ -3,6 +3,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useEffect, useId, useRef, useState } from 'react';
 import { ArrowLeftIcon, SearchIcon } from '@/components/icons';
 
@@ -17,17 +18,37 @@ const STATUS_COLORS: Record<string, string> = {
 const isoDate = (d: Date = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d);
 
 // Compact page header: title (+ optional badge) with a short note beside it, actions on the right.
-export function PageHeader({ title, subtitle, actions, back, badge }: { title: React.ReactNode; subtitle?: React.ReactNode; actions?: React.ReactNode; back?: { href?: string; label: string; onClick?: () => void }; badge?: React.ReactNode }) {
+export function PageHeader({
+  title,
+  subtitle,
+  actions,
+  back,
+  badge,
+}: {
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
+  actions?: React.ReactNode;
+  back?: { href?: string; label: string; onClick?: () => void } | null | false;
+  badge?: React.ReactNode;
+}) {
+  const pathname = usePathname();
+  const effectiveBack =
+    back !== undefined
+      ? back
+      : pathname && pathname !== "/"
+      ? { href: "/", label: "Home" }
+      : null;
+
   return (
     <div className="no-print mb-3">
-      {back && (
-        back.onClick && !back.href ? (
-          <button type="button" onClick={back.onClick} className="mb-0.5 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-brand-600">
-            <ArrowLeftIcon className="h-3.5 w-3.5" /> {back.label}
+      {effectiveBack && (
+        effectiveBack.onClick && !effectiveBack.href ? (
+          <button type="button" onClick={effectiveBack.onClick} className="mb-0.5 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-brand-600">
+            <ArrowLeftIcon className="h-3.5 w-3.5" /> {effectiveBack.label}
           </button>
         ) : (
-          <Link href={back.href ?? "#"} onClick={back.onClick} className="mb-0.5 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-brand-600">
-            <ArrowLeftIcon className="h-3.5 w-3.5" /> {back.label}
+          <Link href={effectiveBack.href ?? "/"} onClick={effectiveBack.onClick} className="mb-0.5 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-brand-600">
+            <ArrowLeftIcon className="h-3.5 w-3.5" /> {effectiveBack.label}
           </Link>
         )
       )}
@@ -94,7 +115,7 @@ export function SearchInput({ value, onChange, placeholder = 'Search…', classN
   return (
     <div className={`relative min-w-[200px] flex-1 ${className}`}>
       <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-      <input className="input pl-9 pr-8" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} aria-label={placeholder} />
+      <input data-enter="off" className="input pl-9 pr-8" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} aria-label={placeholder} />
       {value && (
         <button
           type="button"

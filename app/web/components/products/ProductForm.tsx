@@ -10,12 +10,13 @@ import { HeadCategoryPicker } from "./HeadCategoryPicker";
 import { Alert, Field } from "@/components/ui";
 import { scrollToAndHighlightField } from "@/lib/formFeedback";
 import { api } from "@/lib/api";
-import { UNIT_SUGGESTIONS, type CategoryList, type Product, type ProductType } from "@/lib/types";
+import { UNIT_SUGGESTIONS, type CategoryList, type Product, type ProductType, type TechSpec } from "@/lib/types";
 import { errorText, useApi } from "@/lib/useApi";
 import { GroupedSetCard, groupedBodyParts, newByproductDraft, newMainDraft, type ByproductDraft, type MainDraft } from "./GroupedSetCard";
 import { DraftStandardSets, saveDraftStandardSets, standardSetsBody, useDraftLinks, type StdDraft } from "@/components/sets/StandardSetsEditor";
 import { MeasurementCard, newMeasureDraft, type MeasureDraft } from "./MeasurementCard";
 import { ProductImageGallery } from "./ProductImageGallery";
+import { SpecsEditor, cleanSpecs, sameSpecs } from "./SpecsEditor";
 import {
   VariationBuilder,
   draftsFromStored,
@@ -86,6 +87,9 @@ export function ProductForm({
   // V3.1 (0038): categories ticked for some variations only → their combination keys.
   const [varScopes, setVarScopes] = useState<Record<string, string[]>>({});
   const [images, setImages] = useState<string[]>([]);
+  // 0044: technical specifications of the whole product, and edits to saved variations' own.
+  const [specs, setSpecs] = useState<TechSpec[]>([]);
+  const [savedVariationSpecs, setSavedVariationSpecs] = useState<Record<string, TechSpec[]>>({});
   const [defs, setDefsState] = useState<AttributeDraft[]>([newAttr()]);
   const [combos, setCombosState] = useState<Combo[]>([]);
   // Variation keys (saved and new) in the order arranged in the builder.
@@ -138,6 +142,8 @@ export function ProductForm({
         }
       }
       setSavedVariationImages(initialVarImages);
+      setSpecs(product.specs ?? []);
+      setSavedVariationSpecs({});
       setDefsState(
         product.productType === "variable" || product.productType === "measured"
           ? draftsFromStored(product.attributes as AttributeDraft[])
@@ -163,6 +169,8 @@ export function ProductForm({
       setVarScopes({});
       setImages([]);
       setSavedVariationImages({});
+      setSpecs([]);
+      setSavedVariationSpecs({});
       setDefsState([newAttr()]);
       setMeasure(newMeasureDraft());
       setMain(newMainDraft());
@@ -188,13 +196,17 @@ export function ProductForm({
             officialSku: v.officialSku,
             active: v.active,
             image: savedVariationImages[v.id] !== undefined ? savedVariationImages[v.id] : (v.imageUrl ?? ""),
+            specs: savedVariationSpecs[v.id] ?? v.specs ?? [],
           }))
         : [],
-    [product, savedVariationImages]
+    [product, savedVariationImages, savedVariationSpecs]
   );
 
   const handleUpdateSavedImage = (vId: string, imgUrl: string) => {
     setSavedVariationImages((prev) => ({ ...prev, [vId]: imgUrl }));
+  };
+  const handleUpdateSavedSpecs = (vId: string, rows: TechSpec[]) => {
+    setSavedVariationSpecs((prev) => ({ ...prev, [vId]: rows }));
   };
 
   const setDefs = (fn: (d: AttributeDraft[]) => AttributeDraft[]) => {
@@ -272,6 +284,7 @@ export function ProductForm({
       description: f.description.trim() || null,
       imageUrl: primaryImage,
       gallery: images,
+      specs: cleanSpecs(specs),
       categoryIds: headCats.filter((id) => !scoped[id]),
     };
 
@@ -289,6 +302,7 @@ export function ProductForm({
       shortName: c.shortName,
       officialSku: c.sku.trim() || null,
       imageUrl: c.image || null,
+      specs: cleanSpecs(c.specs ?? []),
       ...rollOf(c),
       ...(scopedOf(c.key).length ? { categoryIds: scopedOf(c.key) } : {}),
     }));
@@ -401,15 +415,16 @@ export function ProductForm({
           }
         }
 
-        // Update images of any existing variations that changed
+        // Update images and technical specifications of any existing variations that changed
         if (product && (product.productType === "variable" || product.productType === "measured") && product.variations) {
           for (const v of product.variations) {
             const nextImg = savedVariationImages[v.id];
-            if (nextImg !== undefined && nextImg !== (v.imageUrl ?? "")) {
-              await api(`/products/${product.id}/variations/${v.id}`, {
-                method: "PATCH",
-                body: { imageUrl: nextImg || null },
-              });
+            const nextSpecs = savedVariationSpecs[v.id];
+            const change: Record<string, unknown> = {};
+            if (nextImg !== undefined && nextImg !== (v.imageUrl ?? "")) change.imageUrl = nextImg || null;
+            if (nextSpecs !== undefined && !sameSpecs(nextSpecs, v.specs)) change.specs = cleanSpecs(nextSpecs);
+            if (Object.keys(change).length) {
+              await api(`/products/${product.id}/variations/${v.id}`, { method: "PATCH", body: change });
             }
           }
         }
@@ -625,6 +640,22 @@ export function ProductForm({
         <ProductImageGallery images={images} onChange={setImages} disabled={saving} />
       </section>
 
+      {/* 0044: technical specifications of the whole product */}
+      <section id="field-product-specs" className={isPage ? "card p-6" : ""}>
+        <SpecsEditor
+          value={specs}
+          onChange={setSpecs}
+          disabled={saving}
+          hint={
+            variable
+              ? "Applies to every variation. A variation can add its own rows (or change one by using the same name) in step 3 of the builder."
+              : grouped
+                ? "Applies to every set. Each standard set can add its own rows below."
+                : "Shown on the product page, e.g. Material · Alloy steel, Breaking load · 12 t."
+          }
+        />
+      </section>
+
       {/* Measured: length card (W2–W3) */}
       {measured && (
         <section className={isPage ? "card p-6" : ""}>
@@ -657,6 +688,7 @@ export function ProductForm({
             setCombos={setCombos}
             saved={saved}
             onUpdateSavedImage={handleUpdateSavedImage}
+            onUpdateSavedSpecs={handleUpdateSavedSpecs}
             order={varOrder}
             setOrder={setVarOrder}
             rollLengthLabel={measured ? `Default ${(measure.rollName || "roll").toLowerCase()} (${measure.lengthUnit === "m" ? "m" : "ft"})` : undefined}

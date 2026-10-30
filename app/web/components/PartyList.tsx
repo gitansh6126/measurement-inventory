@@ -11,6 +11,7 @@ import { CreditScoreBadge } from "@/components/CreditScoreBadge";
 import { Alert, Avatar, EmptyState, PageHeader, SearchInput, Segmented, StatusBadge, Switch, TableSkeleton, Toolbar } from "@/components/ui";
 import { api } from "@/lib/api";
 import { errorText, useApi } from "@/lib/useApi";
+import { useDebounced } from "@/lib/useDebounced";
 
 export function PartyList({ mode }: { mode: "customer" | "supplier" }) {
   const isSupplier = mode === "supplier";
@@ -24,7 +25,6 @@ export function PartyList({ mode }: { mode: "customer" | "supplier" }) {
   const canEdit = useCan("party.edit");
 
   const [search, setSearch] = useState("");
-  const [q, setQ] = useState("");
   const [status, setStatus] = useState<"active" | "all">("active");
   const [category, setCategory] = useState("");
   const [sort, setSort] = useState<"name_asc" | "name_desc" | "credit_desc" | "credit_asc">("name_asc");
@@ -43,13 +43,7 @@ export function PartyList({ mode }: { mode: "customer" | "supplier" }) {
     setSort("name_asc");
   };
 
-  // Debounce search query
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setQ(search.trim());
-    }, 250);
-    return () => clearTimeout(t);
-  }, [search]);
+  const q = useDebounced(search.trim());
 
   // Deep-link / auto-open from ?new=true
   useEffect(() => {
@@ -100,6 +94,14 @@ export function PartyList({ mode }: { mode: "customer" | "supplier" }) {
       <div className="mb-3 space-y-2 lg:hidden">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
+            <Link
+              href="/"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-600 shadow-xs hover:bg-slate-50"
+              aria-label="Back to Home"
+              title="Back to Home"
+            >
+              ←
+            </Link>
             <h1 className="truncate text-lg font-bold text-slate-900">
               {isSupplier ? "Suppliers" : "Customers"}
             </h1>

@@ -32,7 +32,7 @@ export function TransactionBuilder({ mode }: { mode: CartMode }) {
     const activeUrl = activeMode === "sale" ? "/sales/checkout" : "/purchases/checkout";
     return (
       <div className="grid gap-4">
-        <PageHeader back={{ href: isSale ? "/sales" : "/purchases", label: "History" }} title={isSale ? "New Sale" : "New Purchase"} />
+        <PageHeader back={{ href: "/", label: "Home" }} title={isSale ? "New Sale" : "New Purchase"} />
         <div className="card grid justify-items-start gap-3 p-6">
           <p className="font-semibold text-slate-900">
             Complete or clear the current {activeMode} cart before starting a {mode}.
@@ -49,9 +49,10 @@ export function TransactionBuilder({ mode }: { mode: CartMode }) {
       <div className="flex items-center justify-between gap-2 lg:hidden">
         <div className="flex min-w-0 items-center gap-2">
           <Link
-            href={isSale ? "/sales" : "/purchases"}
+            href="/"
             className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-600 shadow-xs hover:bg-slate-50"
-            aria-label="Back to History"
+            aria-label="Back to Home"
+            title="Back to Home"
           >
             ←
           </Link>
@@ -80,7 +81,7 @@ export function TransactionBuilder({ mode }: { mode: CartMode }) {
       {/* Desktop PageHeader (>=1024px) */}
       <div className="hidden lg:block">
         <PageHeader
-          back={{ href: isSale ? "/sales" : "/purchases", label: "History" }}
+          back={{ href: "/", label: "Home" }}
           title={isSale ? "New Sale" : "New Purchase"}
           actions={
             <div className="flex flex-wrap gap-2">

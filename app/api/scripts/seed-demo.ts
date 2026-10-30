@@ -10,6 +10,8 @@
 //     * Variable Counted (2-attribute matrix, Quality rating stars)
 //     * Measured Metric (Reel m, Drum m)
 //     * Measured Imperial (Reel ft_in)
+//     * 0044 technical specifications: Electric Hoist (product), Girder Clamp and the measured
+//       wire rope (product + each variation's own), Chain Hoist Set (product + each standard set)
 // - Rolls & Pieces: CLOSED, OPEN, CUT offcut, USED_UP scrap with ledger history
 // - Stock KPIs: In Stock, Low Stock, Out of Stock, Inactive
 // - Parties: Customer (with credit score & contact), Supplier, Both

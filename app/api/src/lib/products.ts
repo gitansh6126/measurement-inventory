@@ -8,6 +8,7 @@ import {
   orderAttributes,
   type AttributeDef,
   type Attributes,
+  type TechSpec,
 } from "@rs-v31/shared";
 import { BASE_UNIT_LABEL, LENGTH_UNITS, type LengthUnit } from "@rs-v31/shared/measure";
 import { byproductName } from "@rs-v31/shared/sets";
@@ -55,6 +56,26 @@ export const gallery = z
   )
   .max(30)
   .optional();
+
+// 0044: technical specifications in the user's order; blank rows are dropped, a name only once.
+export const specsInput = z
+  .array(z.object({ name: z.string().trim().max(80), value: z.string().trim().max(300) }))
+  .max(60, "At most 60 specification rows")
+  .transform((rows) => rows.filter((r) => r.name || r.value))
+  .superRefine((rows, ctx) => {
+    const seen = new Set<string>();
+    for (const r of rows) {
+      if (!r.name) ctx.addIssue({ code: "custom", message: `Name the specification "${r.value}"` });
+      const k = r.name.toLowerCase();
+      if (r.name && seen.has(k)) ctx.addIssue({ code: "custom", message: `Specification listed twice: ${r.name}` });
+      seen.add(k);
+    }
+  })
+  .optional();
+
+/** Stored specs as output (older rows may hold anything). */
+export const specsOut = (v: Prisma.JsonValue | null | undefined): TechSpec[] =>
+  Array.isArray(v) ? (v as unknown as TechSpec[]).filter((r) => r && typeof r.name === "string").map((r) => ({ name: r.name, value: String(r.value ?? "") })) : [];
 
 const shortNameInput = z
   .string()
@@ -135,6 +156,7 @@ export const variationInput = z.object({
   officialSku: officialSkuInput,
   description: optionalText(1000),
   imageUrl,
+  specs: specsInput,
   // Measured products: overrides the product's default roll length (purchase pre-fill only).
   defaultRollLength: lengthSetting,
   // V3.1 (0038): categories of other heads on this variation only (Variable / Measured).
@@ -148,6 +170,7 @@ const groupCommon = {
   description: optionalText(1000),
   imageUrl,
   gallery,
+  specs: specsInput,
   categoryId: z.string().min(1).nullish().transform((v) => v ?? null),
   // V3.1 (0033): categories of heads other than Product Type, e.g. Industry → Agriculture, Gym.
   categoryIds: categoryIdsInput,
@@ -251,6 +274,7 @@ export const updateProductBody = z
     description: optionalText(1000).optional(),
     imageUrl: imageUrl.optional(),
     gallery,
+    specs: specsInput,
     categoryId: z.string().min(1).nullable().optional(),
     categoryIds: categoryIdsInput,
     // V3.1 (0038): categories on chosen variations only; replaces all of them when sent.
@@ -276,6 +300,7 @@ export const updateVariationBody = z
     officialSku: officialSkuInput,
     description: optionalText(1000).optional(),
     imageUrl: imageUrl.optional(),
+    specs: specsInput,
     active: z.boolean().optional(),
     defaultRollLength: lengthSetting.optional(),
     // V3.1 (0038): this variation's own categories of other heads (replaces them).
@@ -295,6 +320,7 @@ export interface ResolvedVariation {
   officialSku: string | null;
   description: string | null;
   imageUrl: string | null;
+  specs?: Prisma.InputJsonValue;
   defaultRollLength?: number | null;
 }
 
@@ -323,6 +349,7 @@ export function resolveVariation(v: VariationInput, defs: readonly AttributeDef[
     officialSku,
     description: v.description,
     imageUrl: v.imageUrl,
+    ...(v.specs ? { specs: v.specs as unknown as Prisma.InputJsonValue } : {}),
     ...(v.defaultRollLength ? { defaultRollLength: v.defaultRollLength } : {}),
   };
 }
@@ -475,6 +502,7 @@ export function serializeVariation(v: Variation, defs?: readonly AttributeDef[])
     attributes: defs?.length ? orderAttributes(attrs, defs) : attrs,
     description: v.description,
     imageUrl: v.imageUrl,
+    specs: specsOut(v.specs),
     salePrice: v.salePrice.toFixed(2),
     minSalePrice: v.minSalePrice.toFixed(2),
     purchaseCost: v.purchaseCost.toFixed(2),
@@ -514,6 +542,7 @@ export function serializeGroup(g: GroupWithVariations) {
     unit: g.unit,
     imageUrl: g.imageUrl,
     gallery: g.gallery && g.gallery.length > 0 ? g.gallery : (g.imageUrl ? [g.imageUrl] : []),
+    specs: specsOut(g.specs),
     category: g.category,
     categories: g.categoryLinks
       .map(({ category }) => linkOut(category))

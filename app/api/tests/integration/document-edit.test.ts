@@ -76,7 +76,7 @@ describe("document editing (sales and purchases)", () => {
     expect(editRes.status).toBe(201);
     const newSaleId = editRes.body.id;
     const newSaleNumber = editRes.body.number;
-    expect(newSaleNumber).toMatch(/^SAL\/\d{4}-\d{2}\/0001-R1$/);
+    expect(newSaleNumber).toMatch(/^SAL-\d{8}-001-R1$/);
 
     // Stock check: s should be 10 - 5 = 5; l should be 10
     expect(await stock(s)).toBe(5);
@@ -106,7 +106,7 @@ describe("document editing (sales and purchases)", () => {
       lines: [{ variationId: s, quantity: 4, price: "400" }],
     });
     expect(editRes2.status).toBe(201);
-    expect(editRes2.body.number).toMatch(/^SAL\/\d{4}-\d{2}\/0001-R2$/);
+    expect(editRes2.body.number).toMatch(/^SAL-\d{8}-001-R2$/);
     expect(await stock(s)).toBe(6);
   });
 
@@ -136,7 +136,7 @@ describe("document editing (sales and purchases)", () => {
       lines: [{ variationId: s, quantity: 10, price: "110" }],
     });
     expect(editPur.status).toBe(201);
-    expect(editPur.body.number).toMatch(/^PUR\/\d{4}-\d{2}\/0001-R1$/);
+    expect(editPur.body.number).toMatch(/^PUR-\d{8}-001-R1$/);
     expect(await stock(s)).toBe(2);
 
     const updatedDoc = (await manager.get(`/api/purchases/${editPur.body.id}`)).body.document;

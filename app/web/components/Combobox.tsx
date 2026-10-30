@@ -19,8 +19,10 @@ type Props = {
   // Shown in the box when the selected value isn't among `options` (e.g. a not-yet-saved new party).
   selectedLabel?: string;
   badge?: React.ReactNode;
-  onCreate?: (query: string) => void;
+  onCreate?: (query: string, abbr?: string) => void;
   createLabel?: (query: string) => string;
+  // Adds an optional "Abbr" box to the create row; its text is passed to onCreate.
+  createAbbr?: boolean;
   placeholder?: string;
   emptyText?: string;
   minMenuWidth?: number;
@@ -41,14 +43,17 @@ function matches(o: ComboOption, tokens: string[]) {
 // The menu is portalled to <body> with fixed positioning so scrolling containers can't clip it.
 export function Combobox({
   value, options, onSelect, selectedLabel, badge, onCreate, createLabel = (q) => `Add “${q}”`, placeholder = 'Search…',
-  emptyText = 'No matches', minMenuWidth = 320, limit = 60, autoFocus, required, inputId,
+  emptyText = 'No matches', minMenuWidth = 320, limit = 60, autoFocus, required, inputId, createAbbr,
 }: Props) {
   const listId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const abbrRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [abbr, setAbbr] = useState('');
   const [active, setActive] = useState(0);
+  const touched = useRef(false); // arrow key pressed since the menu opened
   const [pos, setPos] = useState<{ left: number; width: number; top?: number; bottom?: number; maxHeight: number } | null>(null);
 
   const selected = options.find((o) => o.id === value);
@@ -97,6 +102,7 @@ export function Combobox({
   }, [active, open]);
 
   function openMenu() {
+    touched.current = false;
     setQuery('');
     const idx = visible.findIndex((o) => o.id === value);
     setActive(idx >= 0 ? idx : 0);
@@ -105,20 +111,25 @@ export function Combobox({
   function close() {
     setOpen(false);
     setQuery('');
+    setAbbr('');
   }
   function choose(row: number) {
     if (row < visible.length) onSelect(visible[row].id);
-    else if (canCreate) onCreate!(q);
+    else if (canCreate) onCreate!(q, createAbbr ? abbr.trim() : undefined);
     close();
   }
 
+  // Enter navigation (lib/enterNav.ts): Enter picks the row only after typing or an arrow key;
+  // otherwise (and when the menu is closed) it is left to move on to the next field.
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) { e.preventDefault(); openMenu(); return; }
+    if (!open && e.key === 'ArrowDown') { e.preventDefault(); openMenu(); return; }
     if (!open) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.min(a + 1, rowCount - 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); touched.current = true; setActive((a) => Math.min(a + 1, rowCount - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); touched.current = true; setActive((a) => Math.max(a - 1, 0)); }
+    else if (e.key === 'Enter' && (e.shiftKey || (!touched.current && !q))) close();
     else if (e.key === 'Enter') { e.preventDefault(); if (rowCount) choose(active); }
     else if (e.key === 'Escape') { e.preventDefault(); close(); }
+    else if (e.key === 'Tab' && createAbbr && canCreate && !e.shiftKey) { e.preventDefault(); abbrRef.current?.focus(); }
     else if (e.key === 'Tab') close();
   }
 
@@ -204,8 +215,26 @@ export function Combobox({
                 onClick={() => choose(visible.length)}
                 className={`flex cursor-pointer items-center gap-2 border-t border-slate-100 px-3 py-2.5 font-medium text-brand-700 ${active === visible.length ? 'bg-brand-50' : ''}`}
               >
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-xs text-white">+</span>
-                {createLabel(q)}
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs text-white">+</span>
+                <span className="min-w-0 flex-1 truncate">{createLabel(q)}</span>
+                {createAbbr && (
+                  <input
+                    ref={abbrRef}
+                    className="input h-8 w-28 shrink-0 py-1 text-xs font-normal uppercase text-slate-800"
+                    placeholder="Abbr (optional)"
+                    aria-label={`Abbreviation for ${q}`}
+                    title="Short form used in the auto-generated Short Name and Official SKU"
+                    value={abbr}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    onFocus={() => setActive(visible.length)}
+                    onChange={(e) => setAbbr(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); choose(visible.length); inputRef.current?.focus(); }
+                      else if (e.key === 'Escape') { e.preventDefault(); close(); inputRef.current?.focus(); }
+                    }}
+                  />
+                )}
               </div>
             )}
           </div>,

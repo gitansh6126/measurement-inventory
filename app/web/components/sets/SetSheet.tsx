@@ -228,136 +228,138 @@ export function SetSheetTable({
 
   return (
     <>
-      {/* 1. Big & User-Friendly Standard Sets Section */}
+      {/* 1. Compact & User-Friendly Standard Sets Section */}
       {standard.length > 0 && (
-        <div className="mb-4 rounded-xl border border-sky-200 bg-gradient-to-b from-sky-50/80 to-sky-50/20 p-3.5 shadow-2xs">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-1 border-b border-sky-100 pb-2">
+        <div className="mb-3 rounded-xl border border-sky-200 bg-gradient-to-b from-sky-50/80 to-sky-50/20 p-2.5 shadow-2xs">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-1 border-b border-sky-100 pb-1.5">
             <div>
               <h3 className="text-xs font-bold uppercase tracking-wider text-sky-950 flex items-center gap-1.5">
-                <svg className="h-4 w-4 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-3.5 w-3.5 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
                 Standard Sets
               </h3>
-              <p className="text-[11px] text-sky-700">Pre-configured standard sets. Click + or type quantity to add sets directly.</p>
+              <p className="text-[10px] text-sky-700">Pre-configured standard sets. Click + or type quantity to add sets directly.</p>
             </div>
-            <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[11px] font-semibold text-sky-800">
+            <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
               {standard.length} {standard.length === 1 ? "preset" : "presets"}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {standard.map((t) => {
               const count = countForPreset(t);
               return (
                 <div
                   key={t.typeKey}
-                  className={`rounded-xl border p-3.5 transition-all shadow-2xs bg-white ${
+                  className={`rounded-lg border p-2.5 transition-all shadow-2xs bg-white flex flex-col justify-between ${
                     count > 0 ? "border-brand-500 ring-1 ring-brand-500/20" : "border-slate-200 hover:border-slate-300"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="min-w-0">
-                      <div className="font-bold text-sm text-slate-900 truncate">
-                        {t.name || setTypeName(t)}
+                  <div>
+                    <div className="flex items-start justify-between gap-1 mb-1">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-bold text-xs text-slate-900 truncate" title={t.name || setTypeName(t)}>
+                          {t.name || setTypeName(t)}
+                        </div>
+                        {t.name && (
+                          <div className="text-[10px] text-slate-400 truncate">
+                            {setTypeName(t)}
+                          </div>
+                        )}
                       </div>
-                      {t.name && (
-                        <div className="text-[11px] text-slate-500 truncate">
-                          {setTypeName(t)}
+                      {count > 0 && (
+                        <span className="shrink-0 rounded-full bg-brand-50 border border-brand-200 px-2 py-0.2 text-[10px] font-bold text-brand-700">
+                          {count} in order
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Contents Pills */}
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {t.contents.map((c) => {
+                        const { label, displayValue, isFitted, fullTitle } = formatContentItem(c);
+                        return (
+                          <span
+                            key={c.name}
+                            className="inline-flex items-center gap-0.5 text-[10px] bg-slate-50 border border-slate-200/80 px-1.5 py-0.2 rounded text-slate-700 font-medium"
+                            title={fullTitle}
+                          >
+                            {isFitted ? (
+                              <span className="font-semibold text-slate-800">{displayValue}</span>
+                            ) : (
+                              <>
+                                <span className="text-slate-400">{label}:</span>
+                                <span className="font-semibold text-slate-800">{displayValue}</span>
+                              </>
+                            )}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    {/* Pricing / Rate row */}
+                    <div className="mb-2 rounded bg-slate-50 px-2 py-1 border border-slate-100 flex items-center justify-between gap-1 text-[11px]">
+                      {prices ? (
+                        <div className="flex flex-wrap items-center gap-1.5 text-slate-600 text-[10px]">
+                          <span>Sell: <strong className="text-slate-900">₹{t.salePrice}</strong></span>
+                          <span>·</span>
+                          <span>Min: <strong className="text-slate-900">₹{t.minSalePrice}</strong></span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between w-full gap-1">
+                          <span className="text-slate-600">
+                            Rate: <strong className="text-slate-900 font-bold">₹{t.rate || defaultRate || "0"}</strong>
+                          </span>
+                          {standardRateHint?.(t)}
                         </div>
                       )}
                     </div>
-                    {count > 0 && (
-                      <span className="shrink-0 rounded-full bg-brand-50 border border-brand-200 px-2.5 py-0.5 text-xs font-bold text-brand-700">
-                        {count} in order
-                      </span>
-                    )}
-                  </div>
 
-                  {/* Contents Pills */}
-                  <div className="flex flex-wrap gap-1.5 mb-3">
-                    {t.contents.map((c) => {
-                      const { label, displayValue, isFitted, fullTitle } = formatContentItem(c);
-                      return (
-                        <span
-                          key={c.name}
-                          className="inline-flex items-center gap-1 text-[11px] bg-slate-50 border border-slate-200/80 px-2 py-0.5 rounded-md text-slate-700 font-medium"
-                          title={fullTitle}
+                    {/* Stepper & Quick Add */}
+                    <div className="flex items-center justify-between gap-1 pt-1.5 border-t border-slate-100">
+                      <span className="text-[11px] font-medium text-slate-500">Qty</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={count === 0}
+                          onClick={() => removeOneOfPreset(t)}
+                          className="h-6 w-6 rounded border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition flex items-center justify-center text-xs cursor-pointer select-none"
+                          title="Remove 1 set"
                         >
-                          {isFitted ? (
-                            <span className="font-semibold text-slate-800">{displayValue}</span>
-                          ) : (
-                            <>
-                              <span className="text-slate-500 font-medium">{label}:</span>
-                              <span className="font-semibold text-slate-800">{displayValue}</span>
-                            </>
-                          )}
+                          −
+                        </button>
+                        <span className="w-6 text-center text-xs font-bold text-slate-900">
+                          {count}
                         </span>
-                      );
-                    })}
-                  </div>
-
-                  {/* Pricing / Rate row */}
-                  <div className="mb-3 rounded-lg bg-slate-50 p-2 border border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
-                    {prices ? (
-                      <div className="flex flex-wrap items-center gap-2 text-slate-600">
-                        <span>Selling: <strong className="text-slate-900">₹{t.salePrice}</strong></span>
-                        <span>·</span>
-                        <span>Min: <strong className="text-slate-900">₹{t.minSalePrice}</strong></span>
-                        <span>·</span>
-                        <span>Min Stock: <strong className="text-slate-900">{t.lowStockThreshold}</strong></span>
+                        <button
+                          type="button"
+                          disabled={rows.length >= 100}
+                          onClick={() => addStandard(t, 1)}
+                          className="h-6 w-6 rounded border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition flex items-center justify-center text-xs cursor-pointer select-none"
+                          title="Add 1 set"
+                        >
+                          +
+                        </button>
+                        <button
+                          type="button"
+                          disabled={rows.length >= 100}
+                          onClick={() => addStandard(t, 1)}
+                          className="rounded border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700 hover:bg-sky-100 transition cursor-pointer select-none"
+                        >
+                          +1
+                        </button>
+                        <button
+                          type="button"
+                          disabled={rows.length >= 96}
+                          onClick={() => addStandard(t, 5)}
+                          className="rounded border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700 hover:bg-sky-100 transition cursor-pointer select-none"
+                        >
+                          +5
+                        </button>
                       </div>
-                    ) : (
-                      <div className="flex items-center justify-between w-full gap-2">
-                        <span className="text-slate-600">
-                          Rate: <strong className="text-slate-900">₹{t.rate || defaultRate || "0"}</strong>
-                        </span>
-                        {standardRateHint?.(t)}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Stepper & Quick Add */}
-                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                    <span className="text-xs font-semibold text-slate-600">Quantity</span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={count === 0}
-                        onClick={() => removeOneOfPreset(t)}
-                        className="h-7 w-7 rounded-md border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition flex items-center justify-center text-sm cursor-pointer"
-                        title="Remove 1 set"
-                      >
-                        −
-                      </button>
-                      <span className="w-8 text-center text-xs font-bold text-slate-900">
-                        {count}
-                      </span>
-                      <button
-                        type="button"
-                        disabled={rows.length >= 100}
-                        onClick={() => addStandard(t, 1)}
-                        className="h-7 w-7 rounded-md border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition flex items-center justify-center text-sm cursor-pointer"
-                        title="Add 1 set"
-                      >
-                        +
-                      </button>
-                      <button
-                        type="button"
-                        disabled={rows.length >= 100}
-                        onClick={() => addStandard(t, 1)}
-                        className="ml-1 rounded border border-sky-300 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700 hover:bg-sky-100 transition cursor-pointer"
-                      >
-                        +1
-                      </button>
-                      <button
-                        type="button"
-                        disabled={rows.length >= 96}
-                        onClick={() => addStandard(t, 5)}
-                        className="rounded border border-sky-300 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700 hover:bg-sky-100 transition cursor-pointer"
-                      >
-                        +5
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -527,19 +529,38 @@ export function SetSheetTable({
                                     )}
                                   </div>
 
-                                  <select
-                                    className="input py-1.5 text-xs bg-white"
-                                    value={p.variationId}
-                                    onChange={(e) => setPart(r.key, b.id, { variationId: e.target.value })}
-                                    aria-label={`Set ${i + 1} ${b.name}`}
-                                  >
-                                    <option value="">{b.required ? "Choose variation…" : "— not fitted —"}</option>
-                                    {b.variations.map((v) => (
-                                      <option key={v.id} value={v.id}>
-                                        {variationText(b, v)}
-                                      </option>
-                                    ))}
-                                  </select>
+                                  <div className="flex flex-wrap gap-1.5 py-0.5">
+                                    {!b.required && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setPart(r.key, b.id, { variationId: "" })}
+                                        className={`rounded-full px-2.5 py-1 text-xs font-medium transition cursor-pointer select-none ${
+                                          !p.variationId
+                                            ? "bg-slate-700 text-white shadow-2xs font-semibold"
+                                            : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                                        }`}
+                                      >
+                                        None
+                                      </button>
+                                    )}
+                                    {b.variations.map((v) => {
+                                      const isSelected = p.variationId === v.id;
+                                      return (
+                                        <button
+                                          key={v.id}
+                                          type="button"
+                                          onClick={() => setPart(r.key, b.id, { variationId: isSelected && !b.required ? "" : v.id })}
+                                          className={`rounded-full px-3 py-1 text-xs transition cursor-pointer select-none ${
+                                            isSelected
+                                              ? "bg-brand-600 text-white font-bold shadow-xs ring-1 ring-brand-600"
+                                              : "border border-slate-200 bg-white text-slate-700 font-medium hover:border-brand-500 hover:text-brand-600"
+                                          }`}
+                                        >
+                                          {variationText(b, v)}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
                                 </div>
 
                                 {isMeasured && (

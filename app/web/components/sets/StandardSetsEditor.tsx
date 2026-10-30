@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { variationText } from "@/components/sets/SetSheet";
 import { useSetTypes } from "@/components/sets/SetTypes";
 import type { ByproductDraft } from "@/components/products/GroupedSetCard";
+import { ImageEditorModal, type EditorImageItem } from "@/components/products/ImageEditorModal";
+import { SpecsEditor, cleanSpecs } from "@/components/products/SpecsEditor";
+import { ProductThumb } from "@/components/ProductThumb";
 import { Alert } from "@/components/ui";
 import { api } from "@/lib/api";
 import { variationLabel } from "@/lib/format";
-import type { GroupedInfo, Product } from "@/lib/types";
+import type { GroupedInfo, Product, TechSpec } from "@/lib/types";
 import { errorText, useApi } from "@/lib/useApi";
 
 // 0041 standard sets (owner 2026-10-28): the usual combinations of a grouped product, each with
@@ -16,6 +19,8 @@ import { errorText, useApi } from "@/lib/useApi";
 // the purchase set sheet fill rows from them. On Add Product they are step 4 of the same form and
 // are saved right after the product (owner 2026-10-29: same page, no extra step); on the edit page
 // they are saved on their own (PUT /api/sets/types/:id/standard).
+// 0044 (owner 2026-10-30): each standard set also has its own technical specifications and image;
+// the product page shows that image and those rows when the set is picked, like a variation.
 
 /** One by-product column: a saved link (edit page) or a step 3 draft (Add Product, id = draft key). */
 export interface StdLink {
@@ -34,6 +39,8 @@ export interface StdDraft {
   salePrice: string;
   minSalePrice: string;
   lowStockThreshold: string;
+  specs: TechSpec[];
+  image: string;
 }
 
 export interface StandardSetBody {
@@ -42,10 +49,12 @@ export interface StandardSetBody {
   salePrice: string;
   minSalePrice: string;
   lowStockThreshold: number;
+  specs: TechSpec[];
+  imageUrl: string | null;
 }
 
 let seq = 0;
-const blank = (): StdDraft => ({ key: ++seq, name: "", parts: {}, salePrice: "", minSalePrice: "", lowStockThreshold: "" });
+const blank = (): StdDraft => ({ key: ++seq, name: "", parts: {}, salePrice: "", minSalePrice: "", lowStockThreshold: "", specs: [], image: "" });
 const unitOf = (lu: "m" | "ft_in" | null) => (lu === "ft_in" ? "in" : "m");
 
 /** A part's chosen variation; a required part with one variation (a Simple part) needs no choice. */
@@ -76,7 +85,15 @@ export function standardSetsBody(links: readonly StdLink[], rows: readonly StdDr
     const key = parts.map((p) => `${p.byproductId}:${p.variationId}:${p.length ?? ""}`).join("|");
     if (seen.has(key)) throw new Error(`Standard set ${i + 1} has the same parts as an earlier one`);
     seen.add(key);
-    return { name: r.name.trim() || null, parts, salePrice: r.salePrice || "0", minSalePrice: r.minSalePrice || "0", lowStockThreshold: Number(r.lowStockThreshold || 0) };
+    return {
+      name: r.name.trim() || null,
+      parts,
+      salePrice: r.salePrice || "0",
+      minSalePrice: r.minSalePrice || "0",
+      lowStockThreshold: Number(r.lowStockThreshold || 0),
+      specs: cleanSpecs(r.specs),
+      imageUrl: r.image || null,
+    };
   });
 }
 
@@ -90,7 +107,22 @@ export function StandardSetsFields({ title, intro, links, rows, setRows }: { tit
   const setPart = (key: number, bp: string, p: Partial<StdDraft["parts"][string]>) =>
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, parts: { ...r.parts, [bp]: { ...(r.parts[bp] ?? { variationId: "", length: "" }), ...p } } } : r)));
   const duplicateDraft = (r: StdDraft) => {
-    setRows((rs) => [...rs, { ...r, key: ++seq, name: r.name ? `${r.name} (Copy)` : "", parts: structuredClone(r.parts) }]);
+    setRows((rs) => [...rs, { ...r, key: ++seq, name: r.name ? `${r.name} (Copy)` : "", parts: structuredClone(r.parts), specs: structuredClone(r.specs) }]);
+  };
+  // One image editor for all cards: `imageFor` is the set being given an image.
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [imageFor, setImageFor] = useState<number | null>(null);
+  const [editorImages, setEditorImages] = useState<EditorImageItem[]>([]);
+  const openFile = (key: number) => {
+    setImageFor(key);
+    fileRef.current?.click();
+  };
+  const onFiles = (files: FileList | File[]) => {
+    const file = Array.from(files).find((f) => f.type.startsWith("image/"));
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setEditorImages([{ id: `set-${Date.now()}`, source: reader.result as string, name: file.name }]);
+    reader.readAsDataURL(file);
   };
 
   return (
@@ -105,6 +137,26 @@ export function StandardSetsFields({ title, intro, links, rows, setRows }: { tit
         </div>
       </div>
       <p className="mb-3 text-xs text-slate-500">{intro}</p>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files?.length) onFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      <ImageEditorModal
+        open={editorImages.length > 0}
+        onClose={() => setEditorImages([])}
+        context="set"
+        images={editorImages}
+        onComplete={(urls) => {
+          if (urls[0] && imageFor !== null) patch(imageFor, { image: urls[0] });
+          setEditorImages([]);
+        }}
+      />
             {list.length === 0 ? (
         <p className="rounded-lg border border-dashed border-slate-200 p-4 text-center text-sm text-slate-400">{links.length ? "No standard sets yet (optional)." : "Choose the by-products in step 3 first."}</p>
       ) : (
@@ -148,6 +200,61 @@ export function StandardSetsFields({ title, intro, links, rows, setRows }: { tit
 
               {/* Body */}
               <div className="p-3.5 space-y-3.5">
+                {/* 0044: this set's own image (shown when the set is picked on the product page) */}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => openFile(r.key)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (e.dataTransfer.files?.length) {
+                        setImageFor(r.key);
+                        onFiles(e.dataTransfer.files);
+                      }
+                    }}
+                    className="group relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 transition hover:border-brand-400 hover:bg-slate-100"
+                    title="Click or drop an image file here"
+                    aria-label={`Standard set ${i + 1} image`}
+                  >
+                    {r.image ? (
+                      <ProductThumb src={r.image} name={r.name || `Set ${i + 1}`} className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-center text-slate-400">
+                        <span className="block text-xl">+</span>
+                        <span className="block text-[9px]">Upload</span>
+                      </span>
+                    )}
+                  </button>
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Set image</span>
+                    <div className="flex items-center gap-2">
+                      {r.image ? (
+                        <>
+                          <button
+                            type="button"
+                            className="btn-secondary px-2.5 py-1 text-xs"
+                            onClick={() => {
+                              setImageFor(r.key);
+                              setEditorImages([{ id: `set-${r.key}`, source: r.image, name: `${r.name || `Set ${i + 1}`} image` }]);
+                            }}
+                          >
+                            Crop / Edit
+                          </button>
+                          <button type="button" className="text-xs text-rose-600 hover:underline" onClick={() => patch(r.key, { image: "" })}>
+                            Remove
+                          </button>
+                        </>
+                      ) : (
+                        <button type="button" className="btn-secondary px-2.5 py-1 text-xs" onClick={() => openFile(r.key)}>
+                          Upload image
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500">Shown when this set is picked on the product page.</p>
+                  </div>
+                </div>
+
                 {/* Components */}
                 <div>
                   <div className="flex items-center gap-2 mb-2">
@@ -178,19 +285,38 @@ export function StandardSetsFields({ title, intro, links, rows, setRows }: { tit
                                 </span>
                               )}
                             </div>
-                            <select
-                              className="input py-1.5 text-xs bg-white"
-                              value={chosen(b, r)}
-                              onChange={(e) => setPart(r.key, b.id, { variationId: e.target.value })}
-                              aria-label={`Standard set ${i + 1} ${b.name}`}
-                            >
-                              <option value="">{b.required ? "Choose variation…" : "— not fitted —"}</option>
-                              {b.variations.map((v) => (
-                                <option key={v.id} value={v.id}>
-                                  {v.label}
-                                </option>
-                              ))}
-                            </select>
+                            <div className="flex flex-wrap gap-1.5 py-0.5">
+                              {!b.required && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPart(r.key, b.id, { variationId: "" })}
+                                  className={`rounded-full px-2.5 py-1 text-xs font-medium transition cursor-pointer select-none ${
+                                    !chosen(b, r)
+                                      ? "bg-slate-700 text-white shadow-2xs font-semibold"
+                                      : "border border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                                  }`}
+                                >
+                                  None
+                                </button>
+                              )}
+                              {b.variations.map((v) => {
+                                const isSelected = chosen(b, r) === v.id;
+                                return (
+                                  <button
+                                    key={v.id}
+                                    type="button"
+                                    onClick={() => setPart(r.key, b.id, { variationId: isSelected && !b.required ? "" : v.id })}
+                                    className={`rounded-full px-3 py-1 text-xs transition cursor-pointer select-none ${
+                                      isSelected
+                                        ? "bg-brand-600 text-white font-bold shadow-xs ring-1 ring-brand-600"
+                                        : "border border-slate-200 bg-white text-slate-700 font-medium hover:border-brand-500 hover:text-brand-600"
+                                    }`}
+                                  >
+                                    {v.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                           {isMeasured && (
                             <div className="mt-2 pt-2 border-t border-slate-200/70">
@@ -271,6 +397,17 @@ export function StandardSetsFields({ title, intro, links, rows, setRows }: { tit
                       />
                     </div>
                   </div>
+                </div>
+
+                {/* 0044: this set's technical specifications */}
+                <div className="border-t border-slate-100 pt-3">
+                  <SpecsEditor
+                    compact
+                    label="Technical specifications of this set"
+                    hint="Shown after the product's own rows when this set is picked; the same name replaces the product's value."
+                    value={r.specs}
+                    onChange={(rows) => patch(r.key, { specs: rows })}
+                  />
                 </div>
               </div>
             </div>
@@ -377,6 +514,8 @@ export function StandardSetsEditor({ productId, info }: { productId: string; inf
           salePrice: String(Number(t.salePrice)),
           minSalePrice: String(Number(t.minSalePrice)),
           lowStockThreshold: String(t.lowStockThreshold),
+          specs: t.specs ?? [],
+          image: t.imageUrl ?? "",
         })),
     );
   }, [data, rows]);

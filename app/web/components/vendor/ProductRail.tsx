@@ -8,6 +8,7 @@ import { SearchInput } from "@/components/ui";
 import { PriceRail, RailItem } from "@/components/vendor/PriceRail";
 import type { CatalogPage, CategoryStatsList, ProductCard } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
+import { scrollToFocus } from "@/lib/scrollToFocus";
 
 const NONE = "none";
 
@@ -70,16 +71,7 @@ export function ProductRail({ selected, onSelect, onProductsLoaded }: ProductRai
   // Auto-scroll to focused product in rail
   useEffect(() => {
     if (!focusId || !products.length) return;
-    const scroll = () => {
-      const el = document.getElementById(`product-rail-${focusId}`);
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
-    };
-    const t1 = setTimeout(scroll, 100);
-    const t2 = setTimeout(scroll, 300);
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-    };
+    return scrollToFocus(`product-rail-${focusId}`);
   }, [focusId, products]);
 
   function pick(p: RailProduct) {

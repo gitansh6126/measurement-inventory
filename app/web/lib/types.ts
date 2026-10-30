@@ -1,6 +1,6 @@
-import type { AttributeDef, Attributes } from "@rs-v31/shared";
+import type { AttributeDef, Attributes, TechSpec } from "@rs-v31/shared";
 
-export type { AttributeDef, Attributes };
+export type { AttributeDef, Attributes, TechSpec };
 
 export type ProductActivityStatus = "Active" | "Min-Active" | "Inactive" | "Never Sold";
 
@@ -47,6 +47,8 @@ export interface Variation {
   attributes: Attributes;
   description: string | null;
   imageUrl: string | null;
+  /** 0044: this variation's own technical specifications. */
+  specs?: TechSpec[];
   salePrice: string;
   minSalePrice: string;
   purchaseCost: string;
@@ -165,6 +167,9 @@ export interface SetTypeRow {
   typeKey: string;
   name: string | null;
   standard: boolean;
+  /** 0044: a standard set's technical specifications and image (empty / null otherwise). */
+  specs: TechSpec[];
+  imageUrl: string | null;
   /** Parts as the set sheet takes them; `length` in base units (m, or inches on ft + in). */
   parts: { byproductId: string; variationId: string; length: number | null }[];
   contents: SetContentRow[];
@@ -190,6 +195,8 @@ export interface Product {
   unit: string;
   imageUrl: string | null;
   gallery?: string[];
+  /** 0044: technical specifications of the whole product. */
+  specs?: TechSpec[];
   category: { id: string; name: string; active: boolean } | null;
   /** V3.1: categories under other heads (Industry, Material…), any number. */
   categories?: HeadCategory[];

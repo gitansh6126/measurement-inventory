@@ -11,13 +11,16 @@ import { CategoryRail } from "@/components/catalog/CategoryRail";
 import { ShopLayout } from "@/components/catalog/ShopLayout";
 import { CategoryModal } from "@/components/products/CategoryModal";
 import { ViewToggle } from "@/components/catalog/ViewToggle";
-import { StockBadge } from "@/components/StockBadge";
+import { StockBadge, isLowStock } from "@/components/StockBadge";
+import { ProductKind, ProductTile } from "@/components/products/ProductTile";
 import { Alert, EmptyState, Menu, Modal, PageHeader, SearchInput, TableSkeleton, Toolbar } from "@/components/ui";
 import { api } from "@/lib/api";
 import { money, qty, variationLabel } from "@/lib/format";
 import type { Category, CategoryHead, CategoryStatsList, Product, StockProduct } from "@/lib/types";
 import { errorText, useApi } from "@/lib/useApi";
 import { useViewMode } from "@/lib/useViewMode";
+import { useDebounced } from "@/lib/useDebounced";
+import { scrollToFocus } from "@/lib/scrollToFocus";
 
 /** V3.1 (0038): how a product is in the category — whole, some variations, or a set via its parts. */
 type CategoryProduct = Product & { scope?: "all" | "variations" | "parts" };
@@ -69,10 +72,7 @@ export default function CategoryDetailPage() {
 
   useEffect(() => {
     if (!focus || !data?.products?.length) return;
-    setTimeout(() => {
-      const el = document.getElementById(`cat-product-${focus}`);
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 150);
+    return scrollToFocus(`cat-product-${focus}`);
   }, [focus, data]);
 
   async function run(fn: () => Promise<unknown>, ok: string) {
@@ -216,23 +216,20 @@ export default function CategoryDetailPage() {
               {products.map((p) => {
                 const s = qtyOf.get(p.id);
                 return (
-                  <div key={p.id} id={`cat-product-${p.id}`} className={`group card relative flex flex-col transition hover:-translate-y-0.5 hover:shadow-md ${p.active ? "" : "opacity-60"} ${focus === p.id ? "card-highlight-blink" : ""}`}>
-                    <Link href={`/products/${p.id}`} className="flex flex-1 flex-col rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500" aria-label={`Open ${p.name}`}>
-                      <div className="overflow-hidden rounded-t-lg bg-slate-100">
-                        <ProductThumb src={p.imageUrl ?? p.variations[0]?.imageUrl ?? null} name={p.name} className="aspect-[4/3] w-full text-xl transition-transform duration-300 group-hover:scale-105" />
-                      </div>
-                      <div className="grid flex-1 content-start gap-1 p-3">
-                        <div className="line-clamp-2 font-semibold text-slate-900">{p.name}</div>
-                        <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
-                          <span className="truncate">{p.productType === "variable" ? `${p.variations.length} variations` : p.variations[0]?.shortName}</span>
-                          {s && <StockBadge quantity={s.quantity} state={s.state} unit={p.unit} />}
-                        </div>
-                        {!hasVariations(p) && <div className="text-sm font-semibold text-brand-700">{priceRange(p)}</div>}
-                      </div>
-                    </Link>
-                    {scopeLine(p) && <div className="px-3 pb-2">{scopeLine(p)}</div>}
-                    {actions(p) && <div className="absolute right-2 top-2 z-10">{actions(p)}</div>}
-                  </div>
+                  <ProductTile
+                    key={p.id}
+                    id={`cat-product-${p.id}`}
+                    name={p.name}
+                    image={p.imageUrl ?? p.variations[0]?.imageUrl ?? null}
+                    href={`/products/${p.id}`}
+                    inactive={!p.active}
+                    highlight={focus === p.id}
+                    meta={<ProductKind type={p.productType} count={p.variations.length} fallback={p.variations[0]?.shortName} />}
+                    badge={s && <StockBadge quantity={s.quantity} state={s.state} unit={p.unit} />}
+                    price={!hasVariations(p) && priceRange(p)}
+                    footer={scopeLine(p)}
+                    actions={actions(p)}
+                  />
                 );
               })}
             </div>
@@ -265,7 +262,7 @@ export default function CategoryDetailPage() {
                       <td className="text-slate-600">{p.productType === "variable" ? `${p.variations.length} variations` : <span className="font-mono text-xs">{p.variations[0]?.shortName}</span>}</td>
                       <td>{priceRange(p)}</td>
                       <td>{hasVariations(p) ? "" : p.variations.some((v) => Number(v.minSalePrice) > 0) ? money(Math.min(...p.variations.filter((v) => Number(v.minSalePrice) > 0).map((v) => Number(v.minSalePrice)))) : "—"}</td>
-                      <td className={s && s.quantity <= s.lowStockThreshold ? "text-rose-600" : ""}>{s ? `${qty(s.quantity)} ${p.unit}` : "—"}</td>
+                      <td className={s && isLowStock(s.quantity, s.lowStockThreshold) ? "text-rose-600" : ""}>{s ? `${qty(s.quantity)} ${p.unit}` : "—"}</td>
                       {canWrite && (
                         <td className="text-right">
                           <div className="flex justify-end">{actions(p)}</div>
@@ -331,11 +328,7 @@ function AddExistingModal({
   onChoose: (p: Product) => void;
 }) {
   const [search, setSearch] = useState("");
-  const [q, setQ] = useState("");
-  useEffect(() => {
-    const t = setTimeout(() => setQ(search.trim()), 250);
-    return () => clearTimeout(t);
-  }, [search]);
+  const q = useDebounced(search.trim());
   useEffect(() => {
     if (open) setSearch("");
   }, [open, categoryId]);
