@@ -140,7 +140,7 @@ function NewShift() {
           </select>
         </Field>
         <Field label="Note (optional)" className="min-w-[14rem] flex-1">
-          <input className="input" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={500} placeholder="e.g. Shop display stock" />
+          <input autoComplete="off" className="input" value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={500} placeholder="e.g. Shop display stock" />
         </Field>
       </div>
 
@@ -183,7 +183,7 @@ function NewShift() {
                     <td className="w-36 text-right">
                       {l.kind === "item" ? (
                         <div>
-                          <input
+                          <input autoComplete="off"
                             type="number"
                             min={1}
                             max={freeIn(l.variation, from)}

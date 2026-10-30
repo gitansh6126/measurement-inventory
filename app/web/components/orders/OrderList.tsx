@@ -389,7 +389,7 @@ export function OrderList({ kind }: { kind: OrderKind }) {
             </div>
             <div className="grid grid-cols-2 gap-2 pt-1">
               <SidebarField label="From date">
-                <input
+                <input autoComplete="off"
                   type="date"
                   className="input text-xs"
                   value={period.from}
@@ -400,7 +400,7 @@ export function OrderList({ kind }: { kind: OrderKind }) {
                 />
               </SidebarField>
               <SidebarField label="To date">
-                <input
+                <input autoComplete="off"
                   type="date"
                   className="input text-xs"
                   value={period.to}

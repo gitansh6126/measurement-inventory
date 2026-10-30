@@ -756,7 +756,7 @@ export function SaleSetsModal({
                     </label>
                     <div className="relative flex items-center">
                       <span className="pointer-events-none absolute left-2.5 text-sm font-semibold text-slate-400">₹</span>
-                      <input
+                      <input autoComplete="off"
                         id="sale-set-selling-price"
                         type="text"
                         inputMode="numeric"
@@ -865,7 +865,7 @@ export function SaleSetsModal({
                       {wh.enabled && s.warehouseId && <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-slate-600">{wh.codeOf(s.warehouseId)}</span>}
                       <div className="flex items-center gap-1">
                         <span className="text-xs text-slate-500">₹</span>
-                        <input
+                        <input autoComplete="off"
                           type="text"
                           inputMode="numeric"
                           className="w-24 rounded border border-slate-300 bg-white px-2 py-0.5 text-right text-sm font-bold text-slate-900 focus:border-brand-500 focus:outline-none"
@@ -914,7 +914,7 @@ export function SaleSetsModal({
                     <span className="min-w-0 flex-1 text-sm font-semibold text-slate-900">Set #{slot + 1}: {wantText}</span>
                     <div className="flex items-center gap-1">
                       <span className="text-xs text-slate-500">₹</span>
-                      <input
+                      <input autoComplete="off"
                         type="text"
                         inputMode="numeric"
                         className="w-24 rounded border border-slate-300 bg-white px-2 py-0.5 text-right text-sm font-bold text-slate-900 focus:border-brand-500 focus:outline-none"

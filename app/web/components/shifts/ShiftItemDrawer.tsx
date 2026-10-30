@@ -332,7 +332,7 @@ export function ShiftItemDrawer({
                     >
                       −
                     </button>
-                    <input
+                    <input autoComplete="off"
                       className="h-10 w-16 border-x border-slate-300 bg-white text-center font-semibold outline-none focus:bg-brand-50/20"
                       inputMode="numeric"
                       aria-label="Quantity"

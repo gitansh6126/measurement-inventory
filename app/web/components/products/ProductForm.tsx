@@ -490,7 +490,7 @@ export function ProductForm({
         {isPage && <h2 className="mb-4 text-base font-semibold text-slate-900">{grouped && !isEdit ? "Step 1 · Set details" : "Basic Information"}</h2>}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label={grouped ? "Set Name *" : "Product Name *"} className="sm:col-span-2" error={fieldErrors.name} id="field-product-name">
-            <input
+            <input autoComplete="off"
               id="product-name-input"
               className="input"
               required
@@ -509,7 +509,7 @@ export function ProductForm({
             error={fieldErrors.shortName}
             id="field-product-shortname"
           >
-            <input
+            <input autoComplete="off"
               id="product-shortname-input"
               className="input font-mono uppercase"
               required
@@ -525,7 +525,7 @@ export function ProductForm({
 
           {!variable && (
             <Field label="Official SKU (shown on bills)" error={fieldErrors.sku} id="field-product-sku">
-              <input
+              <input autoComplete="off"
                 id="product-sku-input"
                 className="input font-mono"
                 maxLength={80}

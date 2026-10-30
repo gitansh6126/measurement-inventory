@@ -164,6 +164,16 @@ function AppShell({ me, version, children }: { me: Me; version: VersionInfo | nu
     router.replace("/login");
   }
 
+  // Customer Mode route protection: bounce non-customer URLs to /products
+  useEffect(() => {
+    if (!isCustomerMode) return;
+    const allowedPrefixes = ["/products", "/sales/new"];
+    const isAllowed = allowedPrefixes.some((p) => pathname === p || pathname.startsWith(p + "/"));
+    if (!isAllowed) {
+      router.replace("/products");
+    }
+  }, [isCustomerMode, pathname, router]);
+
   // Lengths show in metres on purchase / supplier screens, in feet elsewhere (lib/lengthView).
   const lengthScope = /^\/(purchases|suppliers|supplier-prices)(\/|$)/.test(pathname) ? "purchase" : "stock";
   const path = pathname.replace(/\/checkout$/, "/new");

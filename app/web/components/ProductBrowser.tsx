@@ -41,7 +41,8 @@ function normalizeCategory(category: string | null) {
 }
 
 function priceDisplay(product: ProductCard, mode: CartMode, isCustomerMode?: boolean) {
-  if (isCustomerMode) return <div className="text-xs font-semibold text-emerald-700">In Catalog</div>;
+  if (isCustomerMode) return null;
+  if (product.productType !== "simple" || product.activeVariations > 1) return null;
   if (mode === "purchase") {
     const low = product.costMin ? money(product.costMin) : null;
     const high = product.costMax ? money(product.costMax) : null;
@@ -153,7 +154,7 @@ function ProductBrowserInner({ mode }: { mode: CartMode }) {
 
   return (
     <ShopLayout
-      rail={<CategoryRail data={cats.data} selected={activeCategory} onSelect={(id) => nav.selectCategory(id)} alerts />}
+      rail={<CategoryRail data={cats.data} selected={activeCategory} onSelect={(id) => nav.selectCategory(id)} alerts={!isCustomerMode} />}
       title="Products"
       count={catalog.data ? `${catalog.data.total} items` : undefined}
       toolbar={
@@ -164,7 +165,9 @@ function ProductBrowserInner({ mode }: { mode: CartMode }) {
             <select className="input w-auto shrink-0" value={sort} onChange={(e) => setSort(e.target.value as CatalogSort)} aria-label="Sort products">
               {SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
-            <Chips value={state} onChange={setState} options={STOCK_CHIPS.map((option) => ({ value: option.value, label: option.label }))} label="Stock filter" />
+            {!isCustomerMode && (
+              <Chips value={state} onChange={setState} options={STOCK_CHIPS.map((option) => ({ value: option.value, label: option.label }))} label="Stock filter" />
+            )}
           </div>
         </div>
       }
@@ -189,7 +192,11 @@ function ProductBrowserInner({ mode }: { mode: CartMode }) {
                   <div className="line-clamp-2 font-semibold text-slate-900">{row.name}</div>
                   <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
                     <span className="truncate">{row.productType === "measured" || row.productType === "variable" ? `${row.activeVariations} variations` : row.category?.name ?? row.shortName}</span>
-                    <StockBadge {...stockDisplay(row)} state={row.state} />
+                    {isCustomerMode ? (
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${row.quantity > 0 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500"}`}>{row.quantity > 0 ? "Available" : "Out"}</span>
+                    ) : (
+                      <StockBadge {...stockDisplay(row)} state={row.state} />
+                    )}
                   </div>
                   {priceDisplay(row, mode)}
                 </div>

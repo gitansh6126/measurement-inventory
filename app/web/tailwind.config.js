@@ -22,8 +22,8 @@ module.exports = {
       animation: {
         "sheet-in": "sheet-in 280ms cubic-bezier(0.32, 0.72, 0, 1) both",
         "sheet-out": "sheet-out 200ms cubic-bezier(0.4, 0, 1, 1) both",
-        "drawer-in-right": "drawer-in-right 240ms cubic-bezier(0.16, 1, 0.3, 1) both",
-        "drawer-out-right": "drawer-out-right 180ms ease-in both",
+        "drawer-in-right": "drawer-in-right 280ms cubic-bezier(0.16, 1, 0.3, 1) both",
+        "drawer-out-right": "drawer-out-right 200ms cubic-bezier(0.4, 0, 1, 1) both",
         "fade-in": "fade-in 200ms ease-out both",
         "fade-out": "fade-out 200ms ease-in both",
       },

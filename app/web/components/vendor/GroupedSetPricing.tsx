@@ -470,7 +470,7 @@ export function GroupedSetPricing({
                               <span className="text-[10px] text-slate-400">in {unitOf(b)}</span>
                             </label>
                             <div className="relative flex items-center">
-                              <input
+                              <input autoComplete="off"
                                 className="input py-1.5 pr-8 text-xs font-mono bg-white"
                                 inputMode="decimal"
                                 placeholder="Length"
@@ -612,7 +612,7 @@ export function GroupedSetPricing({
 
                       <td className="text-right">
                         <div className="inline-flex items-center gap-1.5 justify-end">
-                          <input
+                          <input autoComplete="off"
                             type="text"
                             inputMode="numeric"
                             placeholder="Enter ₹"

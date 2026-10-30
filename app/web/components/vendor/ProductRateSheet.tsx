@@ -10,6 +10,7 @@ import { RateField } from "@/components/measure/RateField";
 import { LengthViewToggle } from "@/components/measure/LengthViewToggle";
 import { PriceHistoryModal } from "@/components/vendor/PriceHistoryModal";
 import { GroupedSetPricing } from "@/components/vendor/GroupedSetPricing";
+import { VariationTabs } from "@/components/products/VariationTabs";
 import type { RailProduct } from "@/components/vendor/ProductRail";
 import { api } from "@/lib/api";
 import { dateTime, variationLabel } from "@/lib/format";
@@ -117,6 +118,9 @@ function StandardProductRateSheet({
   const [scope, setScope] = useState<"quoted" | "all">("quoted");
   const [filter, setFilter] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [varFilteredIds, setVarFilteredIds] = useState<string[] | null>(null);
+  const [varFilters, setVarFilters] = useState<Record<string, string>>({});
+  const [selectedVarId, setSelectedVarId] = useState<string | null>(null);
 
   // 4. Edits & Save state
   const [newPrices, setNewPrices] = useState<Record<string, string>>({});
@@ -196,9 +200,13 @@ function StandardProductRateSheet({
 
   // Filter variations when search filter is active
   const filteredRows = useMemo(() => {
+    let list = rows;
+    if (varFilteredIds && varFilteredIds.length > 0) {
+      list = list.filter((r) => varFilteredIds.includes(r.variationId));
+    }
     const q = filter.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) => {
+    if (!q) return list;
+    return list.filter((r) => {
       const vLabel = label(r).toLowerCase();
       const sName = r.shortName.toLowerCase();
       const attrMatch = Object.values(r.attributes).some((v) => v.toLowerCase().includes(q));
@@ -206,7 +214,7 @@ function StandardProductRateSheet({
       const lines = linesFor(r);
       return lines.length > 0;
     });
-  }, [rows, filter, scope, suppliers]);
+  }, [rows, filter, varFilteredIds, scope, suppliers]);
 
   // Header summary statistics
   const summary = useMemo(() => {
@@ -468,7 +476,7 @@ function StandardProductRateSheet({
                 onUnitChange={(u) => purchaseUnits.setRateUnit(lu, u)}
               />
             ) : (
-              <input
+              <input autoComplete="off"
                 type="text"
                 inputMode="numeric"
                 placeholder="Enter ₹"

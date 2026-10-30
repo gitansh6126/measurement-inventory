@@ -37,14 +37,6 @@ export function ProductOptionsPage({
   return <CountedProductOptionsPage product={product} mode={mode} onClose={onClose} />;
 }
 
-// Before an option is picked: the lowest to highest selling price over the variations.
-const priceRange = (vars: StockVariation[]) => {
-  const prices = vars.map((v) => Number(v.salePrice)).filter((n) => n > 0);
-  if (!prices.length) return "—";
-  const lo = Math.min(...prices);
-  const hi = Math.max(...prices);
-  return lo === hi ? money(lo) : `${money(lo)} – ${money(hi)}`;
-};
 
 function CountedProductOptionsPage({
   product,
@@ -163,7 +155,7 @@ function CountedProductOptionsPage({
           <div className="flex flex-wrap items-center gap-3">
             <div className="text-xl font-bold text-brand-700" title={isSale ? "Selling price" : "Cost / Supplier rate"}>
               {isSale ? (
-                chosen ? fmtSellRate(null, chosen.minSalePrice, chosen.salePrice, "Sell: ") : priceRange(active)
+                chosen ? fmtSellRate(null, chosen.minSalePrice, chosen.salePrice, "Sell: ") : null
               ) : (
                 sug?.supplierRate ? (
                   <span>{money(sug.supplierRate)} <span className="text-xs font-normal text-slate-500">({cart.party?.name ?? "supplier"})</span></span>
@@ -206,7 +198,7 @@ function CountedProductOptionsPage({
             </div>
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <span>{isSale ? "Selling price" : "Cost"} ₹</span>
-              <input
+              <input autoComplete="off"
                 aria-label="Price"
                 type="text"
                 inputMode="numeric"

@@ -289,7 +289,7 @@ function OpeningSetsModal({ product, info, onClose, onSaved }: { product: Produc
       </p>
       <label className="mb-3 block w-48">
         <span className="label">Date</span>
-        <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
+        <input autoComplete="off" type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
       </label>
       <SetSheetTable groupId={product.id} prices info={info} rows={rows} setRows={setRows} defaultRate={defaultRate} defaultWarehouseLabel={`Default (${wh.codeOf(wh.defaultWarehouse?.id)})`} />
       <div className="mt-2 text-xs text-slate-500">
@@ -332,7 +332,7 @@ function CancelSetModal({ set, onClose, onSaved }: { set: GroupSet; onClose: () 
       </p>
       <label className="block">
         <span className="label">Reason *</span>
-        <input className="input" maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Entered twice" />
+        <input autoComplete="off" className="input" maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Entered twice" />
       </label>
       <div className="mt-3">
         <Alert message={error} />
@@ -408,7 +408,7 @@ function DefinitionModal({ product, info, onClose, onSaved }: { product: Product
             </span>
             <span className="font-medium text-slate-800">{r.name}</span>
             {rows.filter((x) => x.productId === r.productId).length > 1 && (
-              <input
+              <input autoComplete="off"
                 className="input h-8 w-44 py-1 text-xs"
                 maxLength={60}
                 aria-label={`${r.name} label`}

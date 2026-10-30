@@ -7,6 +7,7 @@ import { prisma } from "../db.js";
 import { audit } from "../lib/audit.js";
 import {
   SESSION_COOKIE,
+  CUSTOMER_MODE_COOKIE,
   burnPasswordCheck,
   cookieOptions,
   createSession,
@@ -269,7 +270,7 @@ export function authRoutes(env: Env) {
   r.get("/me", requireAuth, async (req, res) => {
     const user = await prisma.user.findUniqueOrThrow({ where: { id: req.auth!.userId }, select: publicUser });
     const permissions = (Object.keys(PERMISSIONS) as Permission[]).filter((p) => can(user.role, p));
-    res.json({ user, permissions });
+    res.json({ user, permissions, isCustomerMode: Boolean(req.auth!.isCustomerMode) });
   });
 
   r.post("/password", requireAuth, async (req, res) => {
@@ -296,33 +297,56 @@ export function authRoutes(env: Env) {
     password: z.string().min(1).max(200),
   });
 
+  async function checkStaffPassword(companyId: string, currentUserId: string, password: string) {
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: currentUserId } });
+    if (await verifyPassword(password, user.passwordHash)) return true;
+    const privilegedUsers = await prisma.user.findMany({
+      where: {
+        companyId,
+        role: { in: ["admin", "sales_manager"] },
+        active: true,
+        id: { not: currentUserId },
+      },
+    });
+    for (const staff of privilegedUsers) {
+      if (await verifyPassword(password, staff.passwordHash)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   r.post("/verify-password", requireAuth, async (req, res) => {
     const { password } = verifyPasswordBody.parse(req.body);
     const auth = req.auth!;
-    const user = await prisma.user.findUniqueOrThrow({ where: { id: auth.userId } });
-    const ok = await verifyPassword(password, user.passwordHash);
+    const ok = await checkStaffPassword(auth.companyId, auth.userId, password);
     if (!ok) {
-      // Allow any active manager or admin of the same company to unlock
-      const privilegedUsers = await prisma.user.findMany({
-        where: {
-          companyId: auth.companyId,
-          role: { in: ["admin", "sales_manager"] },
-          active: true,
-          id: { not: auth.userId },
-        },
-      });
-      let staffOk = false;
-      for (const staff of privilegedUsers) {
-        if (await verifyPassword(password, staff.passwordHash)) {
-          staffOk = true;
-          break;
-        }
-      }
-      if (!staffOk) {
-        throw new AppError(400, "WRONG_PASSWORD", "Incorrect password");
-      }
+      throw new AppError(400, "WRONG_PASSWORD", "Incorrect password");
     }
+    res.clearCookie(CUSTOMER_MODE_COOKIE, { path: "/" });
     res.json({ ok: true });
+  });
+
+  r.post("/customer-mode/enter", requireAuth, (req, res) => {
+    res.cookie(CUSTOMER_MODE_COOKIE, "1", {
+      httpOnly: true,
+      secure: env.PUBLIC_APP_URL.startsWith("https://"),
+      sameSite: "strict",
+      path: "/",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    res.json({ ok: true, isCustomerMode: true });
+  });
+
+  r.post("/customer-mode/exit", requireAuth, async (req, res) => {
+    const { password } = verifyPasswordBody.parse(req.body);
+    const auth = req.auth!;
+    const ok = await checkStaffPassword(auth.companyId, auth.userId, password);
+    if (!ok) {
+      throw new AppError(400, "WRONG_PASSWORD", "Incorrect password");
+    }
+    res.clearCookie(CUSTOMER_MODE_COOKIE, { path: "/" });
+    res.json({ ok: true, isCustomerMode: false });
   });
 
   return r;

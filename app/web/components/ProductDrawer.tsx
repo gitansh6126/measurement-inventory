@@ -252,8 +252,8 @@ function CountedProductDrawer({
                       </th>
                     ))}
                     {!isCustomerMode && <th className="bg-slate-50 text-right">{isSale ? "Selling Price" : "Supplier Rate / Cost"}</th>}
-                    <th className="bg-slate-50 text-right">In Stock</th>
-                    {inCartOf && <th className="bg-slate-50 text-right">In cart · Left</th>}
+                    <th className="bg-slate-50 text-right">{isCustomerMode ? "Availability" : "In Stock"}</th>
+                    {!isCustomerMode && inCartOf && <th className="bg-slate-50 text-right">In cart · Left</th>}
                     <th className="bg-slate-50 text-center">Action</th>
                   </tr>
                 </thead>
@@ -278,55 +278,65 @@ function CountedProductDrawer({
                             {v.attributes[a.name] ?? "—"}
                           </td>
                         ))}
-                        <td className="whitespace-nowrap text-right text-slate-800">
-                          {isSale ? (
-                            <div className="font-semibold text-slate-900">
-                              {fmtSellRate(null, v.minSalePrice, v.salePrice, "Sell: ")}
-                            </div>
+                        {!isCustomerMode && (
+                          <td className="whitespace-nowrap text-right text-slate-800">
+                            {isSale ? (
+                              <div className="font-semibold text-slate-900">
+                                {fmtSellRate(null, v.minSalePrice, v.salePrice, "Sell: ")}
+                              </div>
+                            ) : (
+                              <div>
+                                {(() => {
+                                  const vSug = suggestions.get(v.id);
+                                  if (vSug?.supplierRate) {
+                                    return (
+                                      <>
+                                        <div className="font-semibold text-slate-900">{money(vSug.supplierRate)}</div>
+                                        {cart.party?.name && <span className="block text-[10px] text-sky-600 font-medium">{cart.party.name}</span>}
+                                        {vSug.rates.length > 1 && <span className="block text-[10px] text-slate-500">{vSug.rates.length} suppliers · best {money(vSug.rates[0]!.rate)}</span>}
+                                        {Number(v.purchaseCost) > 0 && <span className="block text-[10px] text-slate-400">Cost: {money(v.purchaseCost)}</span>}
+                                      </>
+                                    );
+                                  }
+                                  if (vSug?.cheapest) {
+                                    return (
+                                      <>
+                                        <div className="font-semibold text-slate-900">{money(vSug.cheapest.rate)}</div>
+                                        <span className="block text-[10px] text-slate-500">
+                                          {vSug.rates.length > 1 ? `Best: ${vSug.cheapest.supplierName} · ${vSug.rates.length} suppliers` : vSug.cheapest.supplierName}
+                                        </span>
+                                        {Number(v.purchaseCost) > 0 && <span className="block text-[10px] text-slate-400">Cost: {money(v.purchaseCost)}</span>}
+                                      </>
+                                    );
+                                  }
+                                  return (
+                                    <>
+                                      <div className="font-semibold">{Number(v.purchaseCost) > 0 ? money(v.purchaseCost) : "—"}</div>
+                                      {Number(v.salePrice) > 0 && (
+                                        <span className="block text-[10px] text-slate-400">Sale: {money(v.salePrice)}</span>
+                                      )}
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                            )}
+                          </td>
+                        )}
+                        <td className="whitespace-nowrap text-right">
+                          {isCustomerMode ? (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${v.quantity > 0 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+                              {v.quantity > 0 ? "Available" : "Out of stock"}
+                            </span>
                           ) : (
-                            <div>
-                              {(() => {
-                                const vSug = suggestions.get(v.id);
-                                if (vSug?.supplierRate) {
-                                  return (
-                                    <>
-                                      <div className="font-semibold text-slate-900">{money(vSug.supplierRate)}</div>
-                                      {cart.party?.name && <span className="block text-[10px] text-sky-600 font-medium">{cart.party.name}</span>}
-                                      {vSug.rates.length > 1 && <span className="block text-[10px] text-slate-500">{vSug.rates.length} suppliers · best {money(vSug.rates[0]!.rate)}</span>}
-                                      {Number(v.purchaseCost) > 0 && <span className="block text-[10px] text-slate-400">Cost: {money(v.purchaseCost)}</span>}
-                                    </>
-                                  );
-                                }
-                                if (vSug?.cheapest) {
-                                  return (
-                                    <>
-                                      <div className="font-semibold text-slate-900">{money(vSug.cheapest.rate)}</div>
-                                      <span className="block text-[10px] text-slate-500">
-                                        {vSug.rates.length > 1 ? `Best: ${vSug.cheapest.supplierName} · ${vSug.rates.length} suppliers` : vSug.cheapest.supplierName}
-                                      </span>
-                                      {Number(v.purchaseCost) > 0 && <span className="block text-[10px] text-slate-400">Cost: {money(v.purchaseCost)}</span>}
-                                    </>
-                                  );
-                                }
-                                return (
-                                  <>
-                                    <div className="font-semibold">{Number(v.purchaseCost) > 0 ? money(v.purchaseCost) : "—"}</div>
-                                    {Number(v.salePrice) > 0 && (
-                                      <span className="block text-[10px] text-slate-400">Sale: {money(v.salePrice)}</span>
-                                    )}
-                                  </>
-                                );
-                              })()}
-                            </div>
+                            <>
+                              <StockBadge quantity={v.quantity} state={v.state} unit={product.unit} />
+                              <div className="mt-0.5">
+                                <WarehouseStockChips rows={v.byWarehouse} />
+                              </div>
+                            </>
                           )}
                         </td>
-                        <td className="whitespace-nowrap text-right">
-                          <StockBadge quantity={v.quantity} state={v.state} unit={product.unit} />
-                          <div className="mt-0.5">
-                            <WarehouseStockChips rows={v.byWarehouse} />
-                          </div>
-                        </td>
-                        {inCartOf && (() => {
+                        {!isCustomerMode && inCartOf && (() => {
                           const n = inCartOf(v.id);
                           const left = v.quantity - n;
                           return (
@@ -417,15 +427,23 @@ function CountedProductDrawer({
 
             {chosen && (
               <div className="mb-4 flex flex-wrap items-center gap-4 rounded-lg bg-slate-50 px-3 py-2 text-sm border border-slate-200/60">
-                <span>
-                  In stock: <StockBadge quantity={chosen.quantity} state={chosen.state} unit={product.unit} />
-                </span>
-                <WarehouseStockChips rows={chosen.byWarehouse} />
-                {isSale ? (
-                  <span className="font-semibold text-brand-700">
-                    {fmtSellRate(null, chosen.minSalePrice, chosen.salePrice, "Sell: ")}
+                {isCustomerMode ? (
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${chosen.quantity > 0 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+                    {chosen.quantity > 0 ? "Available" : "Out of stock"}
                   </span>
-                ) : Number(chosen.purchaseCost) > 0 && <span>Last cost: <b>{money(chosen.purchaseCost)}</b></span>}
+                ) : (
+                  <>
+                    <span>
+                      In stock: <StockBadge quantity={chosen.quantity} state={chosen.state} unit={product.unit} />
+                    </span>
+                    <WarehouseStockChips rows={chosen.byWarehouse} />
+                    {isSale ? (
+                      <span className="font-semibold text-brand-700">
+                        {fmtSellRate(null, chosen.minSalePrice, chosen.salePrice, "Sell: ")}
+                      </span>
+                    ) : Number(chosen.purchaseCost) > 0 && <span>Last cost: <b>{money(chosen.purchaseCost)}</b></span>}
+                  </>
+                )}
               </div>
             )}
 
@@ -442,7 +460,7 @@ function CountedProductDrawer({
                   >
                     −
                   </button>
-                  <input
+                  <input autoComplete="off"
                     className="h-11 w-16 border-x border-slate-300 bg-white text-center font-semibold outline-none focus:bg-brand-50/20"
                     inputMode="numeric"
                     aria-label="Quantity"
@@ -462,7 +480,7 @@ function CountedProductDrawer({
               {!isCustomerMode ? (
               <div>
                 <label className="label" htmlFor="drawer-price">{isSale ? "Selling price ₹ / unit" : "Purchase cost ₹ / unit"}</label>
-                <input
+                <input autoComplete="off"
                   id="drawer-price"
                   className="input"
                   inputMode="numeric"
@@ -527,7 +545,7 @@ function CountedProductDrawer({
               />
             )}
 
-            {short && chosen && (
+            {!isCustomerMode && short && chosen && (
               <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 border border-amber-200">
                 {freeForLine < chosen.quantity
                   ? `Only ${qty(Math.max(0, freeForLine))} left (${qty(chosen.quantity)} in stock, ${qty(chosen.quantity - freeForLine)} already in the cart).`
@@ -546,8 +564,13 @@ function CountedProductDrawer({
               <div className="text-sm">
                 {chosen ? (
                   <span className="text-slate-600">
-                    Selected: <b className="text-slate-900">{formatVariationAttributesString(chosen.attributes, product.attributes) || product.name}</b> · In stock:{" "}
-                    <StockBadge quantity={chosen.quantity} state={chosen.state} unit={product.unit} />
+                    Selected: <b className="text-slate-900">{formatVariationAttributesString(chosen.attributes, product.attributes) || product.name}</b> · {isCustomerMode ? (
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${chosen.quantity > 0 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+                        {chosen.quantity > 0 ? "Available" : "Out of stock"}
+                      </span>
+                    ) : (
+                      <>In stock: <StockBadge quantity={chosen.quantity} state={chosen.state} unit={product.unit} /></>
+                    )}
                   </span>
                 ) : (
                   <span className="text-slate-400">Select a variation from the table to proceed</span>

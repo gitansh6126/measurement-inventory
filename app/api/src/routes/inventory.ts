@@ -6,7 +6,7 @@ import { audit, auditMany } from "../lib/audit.js";
 import { requirePermission } from "../lib/auth.js";
 import { AppError } from "../lib/errors.js";
 import { categoryMatches, inventoryQuery, queryInventory, UNCATEGORIZED, type InventorySummary } from "../lib/inventory-query.js";
-import { costFor, groupInclude, seesCost, serializeGroup, type SerializedGroup } from "../lib/products.js";
+import { costFor, customerModeScrub, groupInclude, seesCost, serializeGroup, type SerializedGroup } from "../lib/products.js";
 import { can } from "../lib/permissions.js";
 import { balances, freeBalances, lockVariations, money, recordMovements, stockState, type StockState } from "../lib/stock.js";
 import { ratePerOf, toMilli } from "@rs-v31/shared/measure";
@@ -138,6 +138,20 @@ export async function loadStocked(companyId: string, ids: readonly string[], cat
 export function inventoryRoutes() {
   const r = Router();
 
+  r.use((req, res, next) => {
+    if (req.auth?.isCustomerMode) {
+      if (req.method !== "GET") {
+        return next(new AppError(403, "CUSTOMER_MODE_RESTRICTED", "Inventory modifications are not allowed in customer mode"));
+      }
+      const p = req.path;
+      const isAllowed = p === "/" || p === "" || /^\/products\/[^/]+$/.test(p);
+      if (!isAllowed) {
+        return next(new AppError(403, "CUSTOMER_MODE_RESTRICTED", "This inventory data is not available in customer mode"));
+      }
+    }
+    next();
+  });
+
   r.get("/", requirePermission("catalog.view"), async (req, res) => {
     const q = inventoryQuery.parse(req.query);
     const companyId = req.auth!.companyId;
@@ -146,9 +160,10 @@ export function inventoryRoutes() {
     const products = await loadStocked(companyId, ids, q.categoryId);
     const out: Partial<InventorySummary> = { ...summary };
     if (!seesCost(req.auth!.role)) delete out.stockValue;
+    const sanitize = (p: any) => (req.auth?.isCustomerMode ? customerModeScrub(p) : costFor(req.auth!.role, p));
     res.json({
-      products: products.map((p) => costFor(req.auth!.role, p)),
-      summary: out,
+      products: products.map(sanitize),
+      summary: req.auth?.isCustomerMode ? null : out,
       total,
       page: q.page ?? 1,
       pageSize: q.page ? q.pageSize : total,
@@ -161,7 +176,9 @@ export function inventoryRoutes() {
     if (!g) throw new AppError(404, "NOT_FOUND", "Product not found");
     const vids = g.variations.map((v) => v.id);
     const [{ free, inSets }, byWh] = await Promise.all([freeBalances(prisma, companyId, vids), byWarehouseOf(prisma, companyId, vids)]);
-    res.json({ product: costFor(req.auth!.role, withStock(serializeGroup(g), free, inSets, byWh)) });
+    const stocked = withStock(serializeGroup(g), free, inSets, byWh);
+    const product = req.auth?.isCustomerMode ? customerModeScrub(stocked) : costFor(req.auth!.role, stocked);
+    res.json({ product });
   });
 
   r.get("/variations/:id/movements", requirePermission("catalog.view"), async (req, res) => {

@@ -115,7 +115,7 @@ export function SearchInput({ value, onChange, placeholder = 'Search…', classN
   return (
     <div className={`relative min-w-[200px] flex-1 ${className}`}>
       <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-      <input data-enter="off" className="input pl-9 pr-8" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} aria-label={placeholder} />
+      <input autoComplete="off" data-enter="off" className="input pl-9 pr-8" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} aria-label={placeholder} />
       {value && (
         <button
           type="button"
@@ -192,9 +192,9 @@ export function PeriodFilter({ value, onChange }: { value: Period; onChange: (p:
       </select>
       {preset === 'custom' && (
         <>
-          <input className="input w-auto" type="date" value={value.from} onChange={(e) => onChange({ ...value, from: e.target.value })} aria-label="From date" />
+          <input autoComplete="off" className="input w-auto" type="date" value={value.from} onChange={(e) => onChange({ ...value, from: e.target.value })} aria-label="From date" />
           <span className="text-slate-400">–</span>
-          <input className="input w-auto" type="date" value={value.to} onChange={(e) => onChange({ ...value, to: e.target.value })} aria-label="To date" />
+          <input autoComplete="off" className="input w-auto" type="date" value={value.to} onChange={(e) => onChange({ ...value, to: e.target.value })} aria-label="To date" />
         </>
       )}
     </div>
@@ -580,7 +580,7 @@ export function DeliveryDatePicker({
           {selectedPreset === "custom" && <option value="custom">Custom date ({value})</option>}
           {value && <option value="clear">Clear date</option>}
         </select>
-        <input
+        <input autoComplete="off"
           id={id}
           type="date"
           className="input flex-1 min-w-[130px] text-xs py-1.5"

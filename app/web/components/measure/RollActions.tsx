@@ -141,7 +141,7 @@ export function AddRollsModal({
               <tr key={i}>
                 <td className="text-slate-500"><span className="capitalize md:hidden">{word} </span>{i + 1}</td>
                 <td>
-                  <input
+                  <input autoComplete="off"
                     type="number"
                     min={1}
                     step={1}
@@ -204,7 +204,7 @@ export function AddRollsModal({
         )}
         <div className="min-w-[12rem] flex-1">
           <label className="label" htmlFor="add-note">Note</label>
-          <input id="add-note" className="input" maxLength={200} placeholder="e.g. Opening count 14 Oct" value={note} onChange={(e) => setNote(e.target.value)} />
+          <input autoComplete="off" id="add-note" className="input" maxLength={200} placeholder="e.g. Opening count 14 Oct" value={note} onChange={(e) => setNote(e.target.value)} />
         </div>
       </div>
       <Alert message={error} />
@@ -339,7 +339,7 @@ export function CutModal({ piece, meta, open, onClose, onDone, openOnly }: { pie
           </div>
           <div className="mt-3">
             <label className="label" htmlFor="cut-reason">Reason</label>
-            <input id="cut-reason" className="input" list="cut-reasons" maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} />
+            <input autoComplete="off" id="cut-reason" className="input" list="cut-reasons" maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} />
             <datalist id="cut-reasons">
               <option value="Pre-cut for stock" />
               <option value="Customer order" />
@@ -408,7 +408,7 @@ export function WriteOffModal({ piece, meta, open, onClose, onDone }: { piece: P
           </button>
         ))}
       </div>
-      <input id="wo-reason" className="input" maxLength={200} placeholder="e.g. Damaged — kinked" value={reason} onChange={(e) => setReason(e.target.value)} />
+      <input autoComplete="off" id="wo-reason" className="input" maxLength={200} placeholder="e.g. Damaged — kinked" value={reason} onChange={(e) => setReason(e.target.value)} />
       <Alert message={error} />
       <div className="mt-4 flex justify-end gap-2">
         <button className="btn-secondary" onClick={onClose}>Cancel</button>
@@ -460,7 +460,7 @@ export function CorrectModal({ piece, meta, open, onClose, onDone }: { piece: Pi
       )}
       <div className="mt-3">
         <label className="label" htmlFor="corr-note">Note *</label>
-        <input id="corr-note" className="input" maxLength={200} placeholder="e.g. Stock count 14 Oct" value={note} onChange={(e) => setNote(e.target.value)} />
+        <input autoComplete="off" id="corr-note" className="input" maxLength={200} placeholder="e.g. Stock count 14 Oct" value={note} onChange={(e) => setNote(e.target.value)} />
       </div>
       <p className="mt-1 text-xs text-slate-500">The measured length cannot be more than the original {fmtLen(piece.originalLength, meta)}.</p>
       <Alert message={error} />

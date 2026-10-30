@@ -755,11 +755,11 @@ export function OrderView({ kind, id }: { kind: OrderKind; id: string }) {
         <div className="grid gap-3">
           <div>
             <label className="label" htmlFor="dn">Vehicle / transporter / tracking</label>
-            <input id="dn" className="input" maxLength={300} placeholder="e.g. Tempo MH12 AB 1234, driver Ramesh" value={deliveryNote} onChange={(e) => setDeliveryNote(e.target.value)} />
+            <input autoComplete="off" id="dn" className="input" maxLength={300} placeholder="e.g. Tempo MH12 AB 1234, driver Ramesh" value={deliveryNote} onChange={(e) => setDeliveryNote(e.target.value)} />
           </div>
           <div>
             <label className="label" htmlFor="mv-note">Note (optional)</label>
-            <input id="mv-note" className="input" maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} />
+            <input autoComplete="off" id="mv-note" className="input" maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
           <p className="text-xs text-slate-500">Items can no longer be changed while the order is {isSale ? "on delivery" : "in transit"}. Stock moves when you complete it.</p>
           <DialogError message={actionError} />
@@ -775,7 +775,7 @@ export function OrderView({ kind, id }: { kind: OrderKind; id: string }) {
         <div className="grid gap-3">
           <div>
             <label className="label" htmlFor="mv-note2">{dialog === "back" ? "What happened?" : "Reason (optional)"}</label>
-            <input id="mv-note2" className="input" maxLength={300} placeholder={dialog === "back" ? "e.g. customer not available, returned to shop" : ""} value={note} onChange={(e) => setNote(e.target.value)} />
+            <input autoComplete="off" id="mv-note2" className="input" maxLength={300} placeholder={dialog === "back" ? "e.g. customer not available, returned to shop" : ""} value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
           <DialogError message={actionError} />
           <div className="flex justify-end gap-2">
@@ -795,7 +795,7 @@ export function OrderView({ kind, id }: { kind: OrderKind; id: string }) {
           </p>
           <div>
             <label className="label" htmlFor="cancel-reason">Reason</label>
-            <input id="cancel-reason" className="input" maxLength={300} placeholder="e.g. customer cancelled" value={reason} onChange={(e) => setReason(e.target.value)} />
+            <input autoComplete="off" id="cancel-reason" className="input" maxLength={300} placeholder="e.g. customer cancelled" value={reason} onChange={(e) => setReason(e.target.value)} />
           </div>
           <DialogError message={actionError} />
           <div className="flex justify-end gap-2">
@@ -822,11 +822,11 @@ export function OrderView({ kind, id }: { kind: OrderKind; id: string }) {
           )}
           <div>
             <label className="label" htmlFor="d-addr">{isSale ? "Delivery address" : "Deliver to"}</label>
-            <input id="d-addr" className="input" maxLength={300} value={details.deliveryAddress} onChange={(e) => setDetails({ ...details, deliveryAddress: e.target.value })} />
+            <input autoComplete="off" id="d-addr" className="input" maxLength={300} value={details.deliveryAddress} onChange={(e) => setDetails({ ...details, deliveryAddress: e.target.value })} />
           </div>
           <div>
             <label className="label" htmlFor="d-dn">Vehicle / transport</label>
-            <input id="d-dn" className="input" maxLength={300} value={details.deliveryNote} onChange={(e) => setDetails({ ...details, deliveryNote: e.target.value })} />
+            <input autoComplete="off" id="d-dn" className="input" maxLength={300} value={details.deliveryNote} onChange={(e) => setDetails({ ...details, deliveryNote: e.target.value })} />
           </div>
           <div>
             <label className="label" htmlFor="d-notes">Notes</label>
@@ -906,7 +906,7 @@ export function OrderView({ kind, id }: { kind: OrderKind; id: string }) {
                           {isSets(l) ? "all sets" : "all rolls"}
                         </label>
                       ) : (
-                        <input
+                        <input autoComplete="off"
                           className="input !w-24 text-right"
                           inputMode="decimal"
                           aria-label={`${isSale ? "Deliver" : "Receive"} now: ${l.productName} ${l.shortName}`}
@@ -951,7 +951,7 @@ export function OrderView({ kind, id }: { kind: OrderKind; id: string }) {
             </div>
             <div>
               <label className="label" htmlFor="c-paid">Amount paid ₹</label>
-              <input
+              <input autoComplete="off"
                 id="c-paid"
                 className="input"
                 inputMode="numeric"

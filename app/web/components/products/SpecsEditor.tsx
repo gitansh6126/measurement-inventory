@@ -71,7 +71,7 @@ export function SpecsEditor({
                 <button type="button" className={arrow} aria-label={`Move specification ${i + 1} up`} title="Move up" disabled={disabled || i === 0} onClick={() => moveRow(i, i - 1)}>↑</button>
                 <button type="button" className={arrow} aria-label={`Move specification ${i + 1} down`} title="Move down" disabled={disabled || i === value.length - 1} onClick={() => moveRow(i, i + 1)}>↓</button>
               </span>
-              <input
+              <input autoComplete="off"
                 className={`${input} w-2/5 min-w-0 font-medium`}
                 maxLength={80}
                 placeholder="Name (e.g. Breaking load)"
@@ -80,7 +80,7 @@ export function SpecsEditor({
                 aria-label={`Specification ${i + 1} name`}
                 onChange={(e) => set(i, { name: e.target.value })}
               />
-              <input
+              <input autoComplete="off"
                 className={`${input} min-w-0 flex-1`}
                 maxLength={300}
                 placeholder="Value (e.g. 12 t)"

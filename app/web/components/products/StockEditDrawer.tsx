@@ -189,7 +189,7 @@ export function StockEditDrawer({
           <select className="input w-auto" value={reason} onChange={(e) => onReason(e.target.value)} aria-label="Reason">
             {reasons.map((r) => <option key={r}>{r}</option>)}
           </select>
-          <input className="input min-w-[10rem] flex-1" placeholder="Notes (optional)" maxLength={300} value={notes} onChange={(e) => onNotes(e.target.value)} />
+          <input autoComplete="off" className="input min-w-[10rem] flex-1" placeholder="Notes (optional)" maxLength={300} value={notes} onChange={(e) => onNotes(e.target.value)} />
           <button type="button" className="btn-secondary" disabled={!dirty || saving} onClick={onDiscard}>Discard</button>
           <button type="button" className="btn-secondary" onClick={onClose}>Close</button>
           <button type="button" className="btn border border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800" disabled={saving || !dirty} onClick={onSave}>

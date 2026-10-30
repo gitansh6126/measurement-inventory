@@ -75,7 +75,7 @@ export function MeasurementCard({
         </div>
         <div>
           <label className="label" htmlFor="m-pack">Pack name</label>
-          <input id="m-pack" className="input" list="m-pack-names" maxLength={30} value={value.rollName} onChange={(e) => set({ rollName: e.target.value })} />
+          <input autoComplete="off" id="m-pack" className="input" list="m-pack-names" maxLength={30} value={value.rollName} onChange={(e) => set({ rollName: e.target.value })} />
           <datalist id="m-pack-names">
             {PACK_NAMES.map((n) => (
               <option key={n} value={n} />

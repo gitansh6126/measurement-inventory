@@ -51,7 +51,7 @@ export function CategoryHeadModal({
     <Modal open={open} title={head ? "Rename Category Head" : "New Category Head"} onClose={onClose}>
       <form onSubmit={submit} className="grid gap-4">
         <Field label="Head Name *">
-          <input className="input" required maxLength={60} placeholder="e.g. Industry" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          <input autoComplete="off" className="input" required maxLength={60} placeholder="e.g. Industry" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </Field>
         {!head && (
           <p className="text-xs text-slate-500">

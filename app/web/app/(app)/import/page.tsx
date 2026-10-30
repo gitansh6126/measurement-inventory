@@ -310,7 +310,7 @@ export default function ImportPage() {
           {sheet && (
             <label className="flex items-center gap-2 text-sm">
               Headers in row
-              <input
+              <input autoComplete="off"
                 className="input w-20"
                 type="number"
                 min={1}
@@ -383,10 +383,10 @@ export default function ImportPage() {
                       </td>
                       <td className="stack-full align-top">
                         {s && s.col === undefined && (
-                          <input className="input" placeholder={f.option ? "Value for every row" : f.demo || "Value for every row"} value={s.fixed ?? ""} onChange={(e) => setSource(f.key, { ...s, fixed: e.target.value })} />
+                          <input autoComplete="off" className="input" placeholder={f.option ? "Value for every row" : f.demo || "Value for every row"} value={s.fixed ?? ""} onChange={(e) => setSource(f.key, { ...s, fixed: e.target.value })} />
                         )}
                         {s && f.option && (
-                          <input
+                          <input autoComplete="off"
                             className="input mt-1"
                             placeholder="Option name"
                             aria-label={`${f.label} name`}

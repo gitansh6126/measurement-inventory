@@ -218,7 +218,7 @@ export function Combobox({
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs text-white">+</span>
                 <span className="min-w-0 flex-1 truncate">{createLabel(q)}</span>
                 {createAbbr && (
-                  <input
+                  <input autoComplete="off"
                     ref={abbrRef}
                     className="input h-8 w-28 shrink-0 py-1 text-xs font-normal uppercase text-slate-800"
                     placeholder="Abbr (optional)"

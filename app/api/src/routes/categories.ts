@@ -7,7 +7,7 @@ import { AppError } from "../lib/errors.js";
 import { assertOwnImages } from "../lib/images.js";
 import { categoryStats } from "../lib/catalog.js";
 import { inCategory, PRODUCT_TYPE_KEY, setCategoryScope } from "../lib/category-heads.js";
-import { costFor, groupInclude, imageUrl, isUniqueViolation, serializeGroup } from "../lib/products.js";
+import { costFor, customerModeScrub, groupInclude, imageUrl, isUniqueViolation, serializeGroup } from "../lib/products.js";
 
 // Categories follow main v2: one optional category per product, active/inactive lifecycle,
 // detail with product count, attach an existing product, detach a product. Never hard-deleted.
@@ -113,6 +113,13 @@ async function productCounts(companyId: string) {
 export function categoryRoutes() {
   const r = Router();
 
+  r.use((req, res, next) => {
+    if (req.method !== "GET" && req.auth?.isCustomerMode) {
+      return next(new AppError(403, "CUSTOMER_MODE_RESTRICTED", "Category modifications are not allowed in customer mode"));
+    }
+    next();
+  });
+
   // Counts are of active products, matching the catalog sidebar.
   r.get("/", requirePermission("catalog.view"), async (req, res) => {
     const { status, stats, headId } = listQuery.parse(req.query);
@@ -129,7 +136,9 @@ export function categoryRoutes() {
       stats ? categoryStats(companyId) : null,
       productCounts(companyId),
     ]);
+    const isCust = Boolean(req.auth?.isCustomerMode);
     const stockOf = (id: string | null) => {
+      if (isCust) return { lowCount: 0, outCount: 0, negativeCount: 0 };
       const { lowCount, outCount, negativeCount } = st!.counts(id);
       return { lowCount, outCount, negativeCount };
     };
@@ -144,7 +153,7 @@ export function categoryRoutes() {
       })),
       uncategorizedCount: uncategorized,
       totalCount: all,
-      ...(st
+      ...(st && !isCust
         ? {
             uncategorized: { productCount: uncategorized, ...stockOf(null) },
             all: { productCount: all, lowCount: st.all.lowCount, outCount: st.all.outCount, negativeCount: st.all.negativeCount },
@@ -195,9 +204,14 @@ export function categoryRoutes() {
         : p.variationCategoryLinks.some((l) => l.category.id === category.id)
           ? ("variations" as const)
           : ("parts" as const);
+    const scrubbed = products.map((p) => {
+      const base = serializeGroup(p);
+      const sanitized = req.auth?.isCustomerMode ? customerModeScrub(base) : costFor(req.auth!.role, base);
+      return { ...sanitized, scope: scopeOf(p) };
+    });
     res.json({
       category: { ...category, productCount: products.filter((p) => p.active).length },
-      products: products.map((p) => ({ ...costFor(req.auth!.role, serializeGroup(p)), scope: scopeOf(p) })),
+      products: scrubbed,
     });
   });
 

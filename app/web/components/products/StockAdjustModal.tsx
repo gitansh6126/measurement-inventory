@@ -82,7 +82,7 @@ export function StockAdjustModal({
               >
                 −
               </button>
-              <input className="h-9 w-24 border-x border-slate-300 text-center font-semibold outline-none focus:bg-brand-50/20" inputMode="numeric" value={value} onChange={(e) => setValue(e.target.value.replace(/[^\d]/g, ""))} aria-label="New quantity" />
+              <input autoComplete="off" className="h-9 w-24 border-x border-slate-300 text-center font-semibold outline-none focus:bg-brand-50/20" inputMode="numeric" value={value} onChange={(e) => setValue(e.target.value.replace(/[^\d]/g, ""))} aria-label="New quantity" />
               <button
                 type="button"
                 className="flex h-9 w-9 items-center justify-center rounded-r-md text-lg font-semibold text-slate-700 hover:bg-brand-50 hover:text-brand-600 active:bg-brand-100 active:scale-90 transition-all duration-150 cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
@@ -98,7 +98,7 @@ export function StockAdjustModal({
           </div>
         </Field>
         <Field label="Reason">
-          <input className="input" maxLength={100} placeholder="e.g. Recount, Damaged, Found" value={reason} onChange={(e) => setReason(e.target.value)} />
+          <input autoComplete="off" className="input" maxLength={100} placeholder="e.g. Recount, Damaged, Found" value={reason} onChange={(e) => setReason(e.target.value)} />
         </Field>
         <Alert message={error} />
         <div className="flex justify-end gap-2">

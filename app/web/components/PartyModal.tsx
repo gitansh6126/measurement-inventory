@@ -189,7 +189,7 @@ export function PartyModal({
           error={!name.trim() && error ? error : undefined}
           id="party-name-field"
         >
-          <input
+          <input autoComplete="off"
             id="party-name-input"
             className="input"
             required
@@ -206,7 +206,7 @@ export function PartyModal({
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Phone Number">
-            <input
+            <input autoComplete="off"
               className="input"
               type="tel"
               maxLength={30}
@@ -216,7 +216,7 @@ export function PartyModal({
             />
           </Field>
           <Field label="City">
-            <input
+            <input autoComplete="off"
               className="input"
               maxLength={100}
               placeholder="City"
@@ -249,10 +249,10 @@ export function PartyModal({
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Contact Person">
-              <input className="input" maxLength={150} placeholder="e.g. Store manager" value={extra.contactPerson} onChange={(e) => setExtra((x) => ({ ...x, contactPerson: e.target.value }))} />
+              <input autoComplete="off" className="input" maxLength={150} placeholder="e.g. Store manager" value={extra.contactPerson} onChange={(e) => setExtra((x) => ({ ...x, contactPerson: e.target.value }))} />
             </Field>
             <Field label="Alternate Phone">
-              <input className="input" type="tel" maxLength={30} value={extra.altPhone} onChange={(e) => setExtra((x) => ({ ...x, altPhone: e.target.value }))} />
+              <input autoComplete="off" className="input" type="tel" maxLength={30} value={extra.altPhone} onChange={(e) => setExtra((x) => ({ ...x, altPhone: e.target.value }))} />
             </Field>
             <Field label="Address" className="sm:col-span-2">
               <textarea className="input min-h-[3rem]" maxLength={500} value={extra.address} onChange={(e) => setExtra((x) => ({ ...x, address: e.target.value }))} />
@@ -287,7 +287,7 @@ export function PartyModal({
               <CreditScoreBadge score={parseInt(creditScore, 10) || 0} showTier />
             </div>
             <div className="mt-2">
-              <input
+              <input autoComplete="off"
                 id="party-credit-score"
                 className="input !w-32 tabular-nums"
                 type="number"

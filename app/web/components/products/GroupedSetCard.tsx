@@ -99,10 +99,10 @@ export function GroupedSetCard({
         </p>
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Name *" className="sm:col-span-3">
-            <input className="input" required maxLength={150} placeholder="e.g. Hoist Body 1 Ton" value={main.name} onChange={(e) => setMain({ ...main, name: e.target.value })} />
+            <input autoComplete="off" className="input" required maxLength={150} placeholder="e.g. Hoist Body 1 Ton" value={main.name} onChange={(e) => setMain({ ...main, name: e.target.value })} />
           </Field>
           <Field label="Short Name *">
-            <input
+            <input autoComplete="off"
               className="input font-mono uppercase"
               required
               maxLength={80}
@@ -179,7 +179,7 @@ export function GroupedSetCard({
               )}
               {r.mode === "existing" && r.productId && rows.filter((x) => x.mode === "existing" && x.productId === r.productId).length > 1 && (
                 <Field label="Label (tells repeats apart)" className="mt-3">
-                  <input
+                  <input autoComplete="off"
                     className="input"
                     maxLength={60}
                     placeholder={`e.g. Load chain / Hand chain — blank = #${rows.filter((x) => x.mode === "existing" && x.productId === r.productId).findIndex((x) => x.key === r.key) + 1}`}
@@ -191,10 +191,10 @@ export function GroupedSetCard({
               {r.mode === "new" && (
                 <div className="grid gap-3 sm:grid-cols-3">
                   <Field label="Name *" className="sm:col-span-3">
-                    <input className="input" maxLength={150} placeholder="e.g. Safety Hook 1 Ton" value={r.newName} onChange={(e) => update(r.key, { newName: e.target.value })} />
+                    <input autoComplete="off" className="input" maxLength={150} placeholder="e.g. Safety Hook 1 Ton" value={r.newName} onChange={(e) => update(r.key, { newName: e.target.value })} />
                   </Field>
                   <Field label="Short Name *">
-                    <input className="input font-mono uppercase" maxLength={80} placeholder="e.g. SH-1T" value={r.newShortName} onChange={(e) => update(r.key, { newShortName: e.target.value.toUpperCase() })} />
+                    <input autoComplete="off" className="input font-mono uppercase" maxLength={80} placeholder="e.g. SH-1T" value={r.newShortName} onChange={(e) => update(r.key, { newShortName: e.target.value.toUpperCase() })} />
                   </Field>
                   <div>
                     <span className="label">Unit</span>

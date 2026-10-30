@@ -137,7 +137,7 @@ export function RateField({
       )}
       <div className="flex items-center gap-1 sm:gap-1.5">
         <span className="text-xs sm:text-sm text-slate-500 font-medium">₹</span>
-        <input
+        <input autoComplete="off"
           id={id}
           className={`input ${box} ${compact ? "w-20 sm:w-24" : "w-full min-w-0 flex-1"} text-right font-semibold ${
             hasError ? "border-rose-500 bg-rose-50 text-rose-900 focus:border-rose-600 focus:ring-rose-500" : ""

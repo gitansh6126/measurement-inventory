@@ -7,6 +7,7 @@ import { AppError } from "./errors.js";
 import { can, type Permission } from "./permissions.js";
 
 export const SESSION_COOKIE = "rs_session";
+export const CUSTOMER_MODE_COOKIE = "rs_customer_mode";
 const BCRYPT_COST = 12;
 // Refresh lastSeenAt (and slide the expiry) at most this often to avoid a write on every request.
 const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
@@ -75,7 +76,8 @@ export function authenticate(env: Env): RequestHandler {
       await prisma.session.update({ where: { id: session.id }, data: { lastSeenAt: new Date(now), expiresAt } });
       res.cookie(SESSION_COOKIE, token, cookieOptions(env, expiresAt.getTime() - now));
     }
-    req.auth = { userId: session.user.id, companyId: session.user.companyId, role: session.user.role, sessionId: session.id };
+    const isCustomerMode = req.cookies?.[CUSTOMER_MODE_COOKIE] === "1" || req.headers["x-customer-mode"] === "1";
+    req.auth = { userId: session.user.id, companyId: session.user.companyId, role: session.user.role, sessionId: session.id, isCustomerMode };
     next();
   };
 }
@@ -92,3 +94,10 @@ export function requirePermission(permission: Permission): RequestHandler {
     next();
   };
 }
+
+export const blockInCustomerMode: RequestHandler = (req, _res, next) => {
+  if (req.auth?.isCustomerMode) {
+    return next(new AppError(403, "CUSTOMER_MODE_RESTRICTED", "This resource or action is not available in customer mode"));
+  }
+  next();
+};

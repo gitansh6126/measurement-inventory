@@ -2,12 +2,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "@/lib/api";
+import { queryClient } from "@/lib/useApi";
 
 const STORAGE_KEY = "rs_customer_mode";
 
 interface CustomerModeContextValue {
   isCustomerMode: boolean;
-  enableCustomerMode: () => void;
+  enableCustomerMode: () => Promise<void>;
   disableCustomerMode: (password: string) => Promise<{ ok: boolean; error?: string }>;
   exitModalOpen: boolean;
   openExitModal: () => void;
@@ -42,26 +43,33 @@ export function CustomerModeProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("storage", check);
   }, []);
 
-  const enableCustomerMode = useCallback(() => {
+  const enableCustomerMode = useCallback(async () => {
     try {
       sessionStorage.setItem(STORAGE_KEY, "1");
     } catch {
       // ignore
     }
+    try {
+      await api("/auth/customer-mode/enter", { method: "POST" });
+    } catch {
+      // continue even if offline
+    }
+    queryClient.clear();
     setIsCustomerMode(true);
   }, []);
 
   const disableCustomerMode = useCallback(async (password: string): Promise<{ ok: boolean; error?: string }> => {
     try {
-      await api<{ ok: boolean }>("/auth/verify-password", {
+      await api<{ ok: boolean }>("/auth/customer-mode/exit", {
         method: "POST",
-        body: JSON.stringify({ password }),
+        body: { password },
       });
       try {
         sessionStorage.removeItem(STORAGE_KEY);
       } catch {
         // ignore
       }
+      queryClient.clear();
       setIsCustomerMode(false);
       setExitModalOpen(false);
       return { ok: true };

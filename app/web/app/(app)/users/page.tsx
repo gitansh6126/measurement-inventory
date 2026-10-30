@@ -253,7 +253,7 @@ function UserModal({
       {/* key remounts the form so fields reset for each user */}
       <form key={user?.id ?? "new"} onSubmit={submit} className="grid gap-4">
         <Field label="Name">
-          <input className="input" name="name" required maxLength={120} defaultValue={user?.name ?? ""} />
+          <input autoComplete="off" className="input" name="name" required maxLength={120} defaultValue={user?.name ?? ""} />
         </Field>
         <Field label="Email (sign-in)">
           <input className="input" name="email" type="email" required maxLength={200} defaultValue={user?.email ?? ""} disabled={isEdit} autoComplete="off" />

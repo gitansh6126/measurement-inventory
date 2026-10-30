@@ -176,7 +176,7 @@ function CompareGrid({ initialQuery }: { initialQuery: string }) {
       );
     }
     return (
-      <input
+      <input autoComplete="off"
         type="text"
         inputMode="numeric"
         placeholder="₹"

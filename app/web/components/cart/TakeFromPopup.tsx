@@ -107,7 +107,7 @@ export function TakeFromPopup({
                   </td>
                   <td className="text-right tabular-nums">{qty(have)}</td>
                   <td className="text-right">
-                    <input
+                    <input autoComplete="off"
                       className={`input w-24 text-right ${!receive && Number(values[w.id] ?? 0) > have ? "border-rose-400" : ""}`}
                       inputMode="numeric"
                       aria-label={`${receive ? "Receive into" : "Take from"} ${w.code}`}

@@ -16,12 +16,20 @@ import {
 import { listSetTypes, saveSetTypeOrder, saveStandardSets, setTypeOrderBody, setTypeStockBody, setTypesQuery, standardSetsBody, stockInSetTypes } from "../lib/set-types.js";
 import { can } from "../lib/permissions.js";
 import { AppError } from "../lib/errors.js";
+import { customerModeScrub } from "../lib/products.js";
 
 // V3.1 grouped products / sets (docs\GROUPED-PRODUCTS-V3-PLAN.md §2–§4).
 const ctx = (req: Request) => ({ companyId: req.auth!.companyId, actorId: req.auth!.userId, requestId: req.requestId });
 
 export function setRoutes() {
   const r = Router();
+
+  r.use((req, res, next) => {
+    if (req.method !== "GET" && req.auth?.isCustomerMode) {
+      return next(new AppError(403, "CUSTOMER_MODE_RESTRICTED", "Set modifications are not allowed in customer mode"));
+    }
+    next();
+  });
 
   // Sets of a grouped product (Sets tab, sale set drawer). Default: in stock.
   r.get("/", requirePermission("catalog.view"), async (req, res) => {
@@ -33,14 +41,17 @@ export function setRoutes() {
       q.groupId ? prisma.groupSetType.findMany({ where: { companyId, groupId: q.groupId }, select: { typeKey: true, salePrice: true, minSalePrice: true } }) : [],
     ]);
     // 0041: selling price per set type (the sale set drawer prices a set from its type).
-    const typePrices = Object.fromEntries(types.map((t) => [t.typeKey, { salePrice: t.salePrice.toFixed(2), minSalePrice: t.minSalePrice.toFixed(2) }]));
-    res.json({ sets, counts, typePrices });
+    const isCust = Boolean(req.auth?.isCustomerMode);
+    const typePrices = isCust ? {} : Object.fromEntries(types.map((t) => [t.typeKey, { salePrice: t.salePrice.toFixed(2), minSalePrice: t.minSalePrice.toFixed(2) }]));
+    const safeSets = isCust ? customerModeScrub(sets) : sets;
+    res.json({ sets: safeSets, counts: isCust ? null : counts, typePrices });
   });
 
   // 0041: set types of a grouped product (standard sets + types in stock) with prices and counts.
   r.get("/types/:groupId", requirePermission("catalog.view"), async (req, res) => {
     const q = setTypesQuery.parse(req.query);
-    res.json({ types: await listSetTypes(prisma, req.auth!.companyId, String(req.params.groupId), q) });
+    const rawTypes = await listSetTypes(prisma, req.auth!.companyId, String(req.params.groupId), q);
+    res.json({ types: req.auth?.isCustomerMode ? customerModeScrub(rawTypes) : rawTypes });
   });
 
   // Product form: the grouped product's standard sets.

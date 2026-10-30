@@ -639,3 +639,76 @@ export function withoutCost<T extends object>(product: T): T {
 
 /** Applies withoutCost when the role may not see cost. */
 export const costFor = <T extends object>(role: Role, product: T): T => (seesCost(role) ? product : withoutCost(product));
+
+const CUSTOMER_SENSITIVE_KEYS = [
+  "purchaseCost",
+  "minSalePrice",
+  "salePrice",
+  "stockValue",
+  "totalStockValue",
+  "costMin",
+  "costMax",
+  "priceMin",
+  "priceMax",
+  "activityStatus",
+  "lastSaleAt",
+  "byWarehouse",
+  "warehouseId",
+  "warehouse",
+  "warehouses",
+  "warehouseStock",
+  "warehouseName",
+  "warehouseCode",
+  "stockByWarehouse",
+  "lowStockThreshold",
+  "rolls",
+  "pieces",
+  "pieceCount",
+  "totalQuantity",
+  "stockOnHand",
+  "margin",
+  "markup",
+  "vendorPrices",
+  "supplierPrices",
+  "vendor",
+  "saleCount30d",
+  "salesCount",
+  "movementCount",
+  "lowVariations",
+  "outVariations",
+  "negativeVariations",
+  "cost",
+  "lastCost",
+  "minStock",
+  "maxStock",
+  "reorderPoint",
+  "inSets",
+  "lowCount",
+  "outCount",
+  "negativeCount",
+];
+
+export function customerModeScrub<T>(input: T): T {
+  if (input === null || input === undefined) return input;
+  if (Array.isArray(input)) {
+    return input.map((item) => customerModeScrub(item)) as unknown as T;
+  }
+  if (typeof input === "object" && !(input instanceof Date)) {
+    const res: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+      if (CUSTOMER_SENSITIVE_KEYS.includes(k)) continue;
+      if (k === "quantity" && typeof v === "number") {
+        res.inStock = v > 0;
+        res.quantity = v > 0 ? 1 : 0;
+        continue;
+      }
+      if (k === "state") {
+        res.state = v === "out" ? "out" : "ok";
+        continue;
+      }
+      res[k] = customerModeScrub(v);
+    }
+    return res as T;
+  }
+  return input;
+}

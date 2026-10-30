@@ -570,7 +570,7 @@ export function SetSheetTable({
                                       <span className="text-[10px] text-slate-400">in {unitOf(b)}</span>
                                     </label>
                                     <div className="relative flex items-center">
-                                      <input
+                                      <input autoComplete="off"
                                         className="input py-1.5 pr-8 text-xs font-mono bg-white"
                                         inputMode="decimal"
                                         placeholder="Length"
@@ -607,7 +607,7 @@ export function SetSheetTable({
                             </label>
                             <div className="relative flex items-center">
                               <span className="absolute left-2.5 text-xs font-bold text-slate-400 pointer-events-none">₹</span>
-                              <input
+                              <input autoComplete="off"
                                 className="input pl-6 py-1.5 text-xs font-semibold"
                                 inputMode="numeric"
                                 placeholder="0"
@@ -654,7 +654,7 @@ export function SetSheetTable({
                                   </label>
                                   <div className="relative flex items-center">
                                     <span className="absolute left-2.5 text-xs font-bold text-slate-400 pointer-events-none">₹</span>
-                                    <input
+                                    <input autoComplete="off"
                                       className={`input pl-6 py-1.5 text-xs ${priceErr ? "border-rose-500 bg-rose-50 text-rose-900" : ""}`}
                                       inputMode="numeric"
                                       placeholder="Unchanged"
@@ -671,7 +671,7 @@ export function SetSheetTable({
                                   </label>
                                   <div className="relative flex items-center">
                                     <span className="absolute left-2.5 text-xs font-bold text-slate-400 pointer-events-none">₹</span>
-                                    <input
+                                    <input autoComplete="off"
                                       className={`input pl-6 py-1.5 text-xs ${priceErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:border-rose-600 focus:ring-rose-500" : ""}`}
                                       inputMode="numeric"
                                       placeholder="Unchanged"
@@ -686,7 +686,7 @@ export function SetSheetTable({
                                   <label className="label text-[11px] font-semibold text-slate-600 mb-1" title="Warn when this set type is at or below it">
                                     Min Stock Alert
                                   </label>
-                                  <input
+                                  <input autoComplete="off"
                                     className="input py-1.5 text-xs"
                                     inputMode="numeric"
                                     placeholder="Unchanged"
@@ -704,7 +704,7 @@ export function SetSheetTable({
                             <label className="label text-[11px] font-semibold text-slate-600 mb-1">
                               Note / Remarks
                             </label>
-                            <input
+                            <input autoComplete="off"
                               className="input py-1.5 text-xs"
                               maxLength={300}
                               placeholder="Optional notes, condition or serial #"

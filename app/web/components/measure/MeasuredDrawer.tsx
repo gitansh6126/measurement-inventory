@@ -76,7 +76,7 @@ export function MeasuredDrawer({
   const { suggestions, reload: reloadRates } = useSupplierRates(!isSale ? activeVarIds : [], supplierId);
 
   const [showStock, setShowStock] = useState(false);
-  const pieces = useApi<ProductPieces>(isSale || showStock ? `/measure/products/${product.id}/pieces` : null);
+  const pieces = useApi<ProductPieces>(!isCustomerMode && (isSale || showStock) ? `/measure/products/${product.id}/pieces` : null);
 
   // One row of option buttons per attribute, like the single-product page. Nothing is picked up
   // front (owner 2026-10-27) unless the line is being edited or there is only one variation.
@@ -240,10 +240,10 @@ export function MeasuredDrawer({
       attributeUnits: attrUnits,
       unit,
       imageUrl: chosen.imageUrl ?? product.imageUrl,
-      price: price.trim(),
+      price: isCustomerMode ? "0" : price.trim(),
       quantity: qty,
       available: chosen.quantity,
-      measure,
+      measure: isCustomerMode ? { ...meta, pieceId: null } : measure,
     };
     if (edit) {
       cart.replace(edit.index, line);
@@ -333,10 +333,10 @@ export function MeasuredDrawer({
                   <thead className="sticky top-0 z-10 bg-slate-50 shadow-xs">
                     <tr>
                       <th className="bg-slate-50">Variation</th>
-                      <th className="bg-slate-50 text-right">{isSale ? `Min – Selling / ${rUnit}` : `Supplier rate / Cost per ${rUnit}`}</th>
-                      <th className="bg-slate-50 text-right">In stock</th>
-                      <th className="bg-slate-50 text-right">{KIND_LABEL.CUT} · {KIND_LABEL.OPEN} · {KIND_LABEL.CLOSED}</th>
-                      <th className="bg-slate-50 text-right">Longest{isSale && cart.mode === "sale" ? " (after cart)" : ""}</th>
+                      {!isCustomerMode && <th className="bg-slate-50 text-right">{isSale ? `Min – Selling / ${rUnit}` : `Supplier rate / Cost per ${rUnit}`}</th>}
+                      <th className="bg-slate-50 text-right">{isCustomerMode ? "Availability" : "In stock"}</th>
+                      {!isCustomerMode && <th className="bg-slate-50 text-right">{KIND_LABEL.CUT} · {KIND_LABEL.OPEN} · {KIND_LABEL.CLOSED}</th>}
+                      {!isCustomerMode && <th className="bg-slate-50 text-right">Longest{isSale && cart.mode === "sale" ? " (after cart)" : ""}</th>}
                       <th className="bg-slate-50 text-center">Action</th>
                     </tr>
                   </thead>
@@ -351,35 +351,49 @@ export function MeasuredDrawer({
                       return (
                         <tr key={v.id} className={`cursor-pointer transition-colors hover:bg-brand-50/50 ${isSel ? "bg-brand-50 font-medium" : ""}`} onClick={() => { setVariationId(v.id); setPieceId(null); setError(""); }}>
                           <td className="whitespace-nowrap text-slate-800">{varName(v)}</td>
-                          <td className="whitespace-nowrap text-right text-sm">
-                            {isSale ? (
-                              <span className="font-semibold text-brand-700">
-                                {fmtSellRate(meta.lengthUnit, v.minSalePrice, v.salePrice, "Sell: ")}
-                              </span>
-                            ) : vSug?.supplierRate ? (
-                              <>
-                                <b>{money(vSug.supplierRate)}</b>
-                                <span className="block text-[10px] text-sky-600">{cart.party?.name}</span>
-                              </>
-                            ) : vSug?.cheapest ? (
-                              <>
-                                <b>{money(vSug.cheapest.rate)}</b>
-                                <span className="block text-[10px] text-slate-500">
-                                  {vSug.rates.length > 1 ? `Best: ${vSug.cheapest.supplierName} · ${vSug.rates.length} suppliers` : vSug.cheapest.supplierName}
+                          {!isCustomerMode && (
+                            <td className="whitespace-nowrap text-right text-sm">
+                              {isSale ? (
+                                <span className="font-semibold text-brand-700">
+                                  {fmtSellRate(meta.lengthUnit, v.minSalePrice, v.salePrice, "Sell: ")}
                                 </span>
-                              </>
+                              ) : vSug?.supplierRate ? (
+                                <>
+                                  <b>{money(vSug.supplierRate)}</b>
+                                  <span className="block text-[10px] text-sky-600">{cart.party?.name}</span>
+                                </>
+                              ) : vSug?.cheapest ? (
+                                <>
+                                  <b>{money(vSug.cheapest.rate)}</b>
+                                  <span className="block text-[10px] text-slate-500">
+                                    {vSug.rates.length > 1 ? `Best: ${vSug.cheapest.supplierName} · ${vSug.rates.length} suppliers` : vSug.cheapest.supplierName}
+                                  </span>
+                                </>
+                              ) : (
+                                <span className={Number(v.purchaseCost) > 0 ? "font-semibold" : "text-slate-400"}>{Number(v.purchaseCost) > 0 ? money(v.purchaseCost) : "—"}</span>
+                              )}
+                            </td>
+                          )}
+                          <td className="whitespace-nowrap text-right">
+                            {isCustomerMode ? (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${v.quantity > 0 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+                                {v.quantity > 0 ? "Available" : "Out of stock"}
+                              </span>
                             ) : (
-                              <span className={Number(v.purchaseCost) > 0 ? "font-semibold" : "text-slate-400"}>{Number(v.purchaseCost) > 0 ? money(v.purchaseCost) : "—"}</span>
+                              <>
+                                <b className={v.quantity > 0 ? "text-emerald-700" : "text-rose-600"}>{L(v.quantity)}</b>
+                                <div className="mt-0.5"><WarehouseStockChips rows={v.byWarehouse} /></div>
+                              </>
                             )}
                           </td>
-                          <td className="whitespace-nowrap text-right">
-                            <b className={v.quantity > 0 ? "text-emerald-700" : "text-rose-600"}>{L(v.quantity)}</b>
-                            <div className="mt-0.5"><WarehouseStockChips rows={v.byWarehouse} /></div>
-                          </td>
-                          <td className="whitespace-nowrap text-right text-xs text-slate-600">
-                            {pieces.data ? `${count("CUT")} · ${count("OPEN")} · ${count("CLOSED")}` : "…"}
-                          </td>
-                          <td className="whitespace-nowrap text-right text-sm">{pieces.data ? (max ? L(max / 1000) : <span className="text-slate-400">—</span>) : "…"}</td>
+                          {!isCustomerMode && (
+                            <td className="whitespace-nowrap text-right text-xs text-slate-600">
+                              {pieces.data ? `${count("CUT")} · ${count("OPEN")} · ${count("CLOSED")}` : "…"}
+                            </td>
+                          )}
+                          {!isCustomerMode && (
+                            <td className="whitespace-nowrap text-right text-sm">{pieces.data ? (max ? L(max / 1000) : <span className="text-slate-400">—</span>) : "…"}</td>
+                          )}
                           <td className="text-center">
                             <span className={`rounded px-2 py-0.5 text-xs font-semibold ${isSel ? "bg-brand-600 text-white" : "border border-slate-300 text-slate-700"}`}>{isSel ? "Selected ✓" : "Select"}</span>
                           </td>
@@ -412,7 +426,11 @@ export function MeasuredDrawer({
                   {chosen ? (
                     <span className="text-slate-600">
                       Selected: <b className="text-slate-800">{varName(chosen)}</b>
-                      {isSale && pieces.data && (() => {
+                      {isCustomerMode ? (
+                        <span className={`ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${chosen.quantity > 0 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+                          {chosen.quantity > 0 ? "Available" : "Out of stock"}
+                        </span>
+                      ) : isSale && pieces.data && (() => {
                         const vp = pieces.data.variations.find((x) => x.id === chosen.id)?.pieces ?? [];
                         return <span className={vp.length ? "text-emerald-700" : "text-rose-600"}> · {vp.length ? `${L(vp.reduce((s, p) => s + p.remainingLength, 0))} in stock` : "no stock"}</span>;
                       })()}
@@ -502,7 +520,7 @@ export function MeasuredDrawer({
                 ) : null}
               </div>
 
-              {(SHOW_CUT_HINTS || !(pieces.data && need && plan && plan.kind !== "CLOSED" && !scrap)) && (
+              {!isCustomerMode && (SHOW_CUT_HINTS || !(pieces.data && need && plan && plan.kind !== "CLOSED" && !scrap)) && (
               <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
                 {!pieces.data ? (
                   <p className="text-sm text-slate-500">{pieces.error || "Loading stock…"}</p>
@@ -565,7 +583,7 @@ export function MeasuredDrawer({
               )}
 
               {/* Suggestions (owner design 2026-10-16): only when they apply. */}
-              {need > 0 && cutFit && (
+              {!isCustomerMode && need > 0 && cutFit && (
                 <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs">
                   <span className="text-amber-900">
                     💡 <b>Cut piece available:</b> a {L(cutFit.remainingMilli / 1000)} cut piece is in stock.
@@ -598,7 +616,7 @@ export function MeasuredDrawer({
                 </div>
               )}
 
-              {pieces.data && own.length > 0 && (
+              {!isCustomerMode && pieces.data && own.length > 0 && (
                 <div className="mt-4">
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-xs font-bold uppercase tracking-wider text-slate-700">Choose stock piece</span>
@@ -678,7 +696,7 @@ export function MeasuredDrawer({
                 </div>
                 <div className="w-36">
                   <label className="label" htmlFor="pur-roll-count">No. of {rollWord(meta, 2)}</label>
-                  <input
+                  <input autoComplete="off"
                     id="pur-roll-count"
                     className="input h-10 text-right font-semibold"
                     type="number"
@@ -768,7 +786,9 @@ export function MeasuredDrawer({
                 ? "Update line"
                 : isSale
                 ? need
-                  ? plan
+                  ? isCustomerMode
+                    ? `Add ${L(need / 1000)} to cart`
+                    : plan
                     ? `Add ${L(need / 1000)} to cart`
                     : `Add ${L(need / 1000)} as backorder`
                   : "Add to cart"

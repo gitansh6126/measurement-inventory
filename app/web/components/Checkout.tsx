@@ -488,7 +488,7 @@ export function Checkout({ mode }: { mode: CartMode }) {
         <div className="card flex flex-wrap items-end gap-2 border-sky-200 bg-sky-50 p-3">
           <div className="min-w-[12rem] flex-1">
             <label className="label" htmlFor="hold-title">Name this held cart</label>
-            <input id="hold-title" className="input" maxLength={120} placeholder={cart.draft?.title ?? "e.g. Kishan — waiting for length confirmation"} value={holdTitle} onChange={(e) => setHoldTitle(e.target.value)} />
+            <input autoComplete="off" id="hold-title" className="input" maxLength={120} placeholder={cart.draft?.title ?? "e.g. Kishan — waiting for length confirmation"} value={holdTitle} onChange={(e) => setHoldTitle(e.target.value)} />
           </div>
           <button className="btn-primary" onClick={hold}>{cart.draft ? "Update held cart" : "Hold cart"}</button>
           <p className="w-full text-xs text-slate-600">Held carts do not reserve stock. Resume from Drafts on any counter.</p>
@@ -635,11 +635,11 @@ export function Checkout({ mode }: { mode: CartMode }) {
               <div className="mt-3 grid gap-2 sm:grid-cols-[8rem_1fr]">
                 <div>
                   <label className="label" htmlFor={`disc-${k}`}>Discount ₹</label>
-                  <input id={`disc-${k}`} className="input" inputMode="numeric" placeholder="0" value={l.discount ?? ""} onChange={(e) => cart.patchLine(i, { discount: e.target.value.replace(/[^\d]/g, "") })} />
+                  <input autoComplete="off" id={`disc-${k}`} className="input" inputMode="numeric" placeholder="0" value={l.discount ?? ""} onChange={(e) => cart.patchLine(i, { discount: e.target.value.replace(/[^\d]/g, "") })} />
                 </div>
                 <div>
                   <label className="label" htmlFor={`note-${k}`}>Line note</label>
-                  <input id={`note-${k}`} className="input" maxLength={300} placeholder="e.g. cut to 25 m, old customer rate" value={l.note ?? ""} onChange={(e) => cart.patchLine(i, { note: e.target.value })} />
+                  <input autoComplete="off" id={`note-${k}`} className="input" maxLength={300} placeholder="e.g. cut to 25 m, old customer rate" value={l.note ?? ""} onChange={(e) => cart.patchLine(i, { note: e.target.value })} />
                 </div>
               </div>
             )}
@@ -735,7 +735,7 @@ export function Checkout({ mode }: { mode: CartMode }) {
         </div>
         <div>
           <label className="label" htmlFor="pay-amount">Amount paid ₹</label>
-          <input
+          <input autoComplete="off"
             id="pay-amount"
             className="input"
             inputMode="numeric"
@@ -761,7 +761,7 @@ export function Checkout({ mode }: { mode: CartMode }) {
           <label className="label font-semibold text-slate-800" htmlFor="edit-reason">
             Reason for edit <span className="text-rose-500">*</span>
           </label>
-          <input
+          <input autoComplete="off"
             id="edit-reason"
             className="input bg-white"
             placeholder="e.g. Customer returned 1 item, price correction (required, 3–300 chars)"
@@ -810,7 +810,7 @@ export function Checkout({ mode }: { mode: CartMode }) {
             </div>
             <div>
               <label className="label" htmlFor="order-address">{isSale ? "Delivery address" : "Deliver to"}</label>
-              <input id="order-address" className="input" maxLength={300} placeholder="Optional" value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} />
+              <input autoComplete="off" id="order-address" className="input" maxLength={300} placeholder="Optional" value={deliveryAddress} onChange={(e) => setDeliveryAddress(e.target.value)} />
             </div>
           </div>
           <div className="flex justify-end gap-2">

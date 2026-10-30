@@ -478,8 +478,8 @@ export function VariationBuilder({
               <div key={i} className={`card p-3 transition${rowState("attr", i)}`} {...dragRow("attr", i)}>
                 <div className="flex flex-wrap items-center gap-2">
                   {defs.length > 1 && handle("attr", i, defs.length, d.name.trim() || `attribute ${i + 1}`)}
-                  <input className="input min-w-[10rem] flex-1" placeholder={`Attribute ${i + 1} (e.g. Size)`} value={d.name} disabled={locked} aria-label={`Attribute ${i + 1} name`} onChange={(e) => setAttr(i, { name: e.target.value })} />
-                  {!d.isQuality && <input className="input w-28" placeholder="Unit (mm)" value={d.unit ?? ""} aria-label={`Attribute ${i + 1} unit`} onChange={(e) => setAttr(i, { unit: e.target.value })} />}
+                  <input autoComplete="off" className="input min-w-[10rem] flex-1" placeholder={`Attribute ${i + 1} (e.g. Size)`} value={d.name} disabled={locked} aria-label={`Attribute ${i + 1} name`} onChange={(e) => setAttr(i, { name: e.target.value })} />
+                  {!d.isQuality && <input autoComplete="off" className="input w-28" placeholder="Unit (mm)" value={d.unit ?? ""} aria-label={`Attribute ${i + 1} unit`} onChange={(e) => setAttr(i, { unit: e.target.value })} />}
                   {!d.isQuality && (
                     <button type="button" disabled={locked} className={toolBtn(!!d.sub, "violet")} onClick={() => toggleSub(i)} title="Add a secondary (sub) option — e.g. Core Fibre/Steel">
                       {d.sub ? "−" : "+"} Sub Var
@@ -496,8 +496,8 @@ export function VariationBuilder({
                 </div>
                 {d.sub && !d.isQuality && (
                   <div className="mt-2 flex flex-wrap gap-2 border-l-2 border-violet-200 pl-3">
-                    <input className="input min-w-[10rem] flex-1" placeholder="Sub attribute name (e.g. Core)" value={d.subName ?? ""} disabled={locked} onChange={(e) => setAttr(i, { subName: e.target.value })} />
-                    <input className="input w-28" placeholder="Sub unit" value={d.subUnit ?? ""} disabled={locked} onChange={(e) => setAttr(i, { subUnit: e.target.value })} />
+                    <input autoComplete="off" className="input min-w-[10rem] flex-1" placeholder="Sub attribute name (e.g. Core)" value={d.subName ?? ""} disabled={locked} onChange={(e) => setAttr(i, { subName: e.target.value })} />
+                    <input autoComplete="off" className="input w-28" placeholder="Sub unit" value={d.subUnit ?? ""} disabled={locked} onChange={(e) => setAttr(i, { subUnit: e.target.value })} />
                   </div>
                 )}
               </div>
@@ -582,7 +582,7 @@ export function VariationBuilder({
                         />
                       </div>
                     )}
-                    <input
+                    <input autoComplete="off"
                       className="input w-24 uppercase"
                       value={abbrs[k] ?? ""}
                       disabled={!pickedValue(d)}
@@ -636,7 +636,7 @@ export function VariationBuilder({
                         );
                       })}
                     </span>
-                    <input
+                    <input autoComplete="off"
                       className="input w-48 font-mono text-xs uppercase"
                       value={c.shortName}
                       aria-label={`Short Name for ${Object.values(c.attrs).join(" / ")}`}
@@ -644,7 +644,7 @@ export function VariationBuilder({
                     />
                     <span className="w-36 truncate font-mono text-xs text-slate-500" title="Official SKU (auto-generated)">{c.sku || "—"}</span>
                     {rollLengthLabel && (
-                      <input
+                      <input autoComplete="off"
                         className="input w-28 text-right text-xs"
                         inputMode="decimal"
                         placeholder={rollLengthLabel}

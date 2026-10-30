@@ -154,7 +154,7 @@ export default function CategoryDetailPage() {
             ? ` · ${data.products.filter((p) => p.active && p.scope && p.scope !== "all").length} for some variations or sets only`
             : ""
         }`}
-        actions={
+        actions={isCustomerMode ? undefined : (
           <div className="flex items-center gap-2">
             {canWrite && (
               <button
@@ -177,7 +177,7 @@ export default function CategoryDetailPage() {
               />
             )}
           </div>
-        }
+        )}
       />
       <Alert message={flash?.text} kind={flash?.kind} />
 
@@ -227,7 +227,7 @@ export default function CategoryDetailPage() {
                     inactive={!p.active}
                     highlight={focus === p.id}
                     meta={<ProductKind type={p.productType} count={p.variations.length} fallback={p.variations[0]?.shortName} />}
-                    badge={s && <StockBadge quantity={s.quantity} state={s.state} unit={p.unit} />}
+                    badge={s && (isCustomerMode ? (<span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${s.quantity > 0 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>{s.quantity > 0 ? "Available" : "Out of stock"}</span>) : (<StockBadge quantity={s.quantity} state={s.state} unit={p.unit} />))}
                     price={!hasVariations(p) && !isCustomerMode && priceRange(p)}
                     footer={scopeLine(p)}
                     actions={isCustomerMode ? null : actions(p)}
@@ -241,9 +241,9 @@ export default function CategoryDetailPage() {
                 <tr>
                   <th>Product</th>
                   <th>Type</th>
-                  <th>Selling Price</th>
-                  <th>Minimum Selling Price</th>
-                  <th>Stock</th>
+                  {!isCustomerMode && <th>Selling Price</th>}
+                  {!isCustomerMode && <th>Minimum Selling Price</th>}
+                  <th>{isCustomerMode ? "Availability" : "Stock"}</th>
                   {!isCustomerMode && canWrite && <th className="text-right">Actions</th>}
                 </tr>
               </thead>
@@ -262,10 +262,18 @@ export default function CategoryDetailPage() {
                         </div>
                       </td>
                       <td className="text-slate-600">{p.productType === "variable" ? `${p.variations.length} variations` : <span className="font-mono text-xs">{p.variations[0]?.shortName}</span>}</td>
-                      <td>{priceRange(p)}</td>
-                      <td>{hasVariations(p) ? "" : p.variations.some((v) => Number(v.minSalePrice) > 0) ? money(Math.min(...p.variations.filter((v) => Number(v.minSalePrice) > 0).map((v) => Number(v.minSalePrice)))) : "—"}</td>
-                      <td className={s && isLowStock(s.quantity, s.lowStockThreshold) ? "text-rose-600" : ""}>{s ? `${qty(s.quantity)} ${p.unit}` : "—"}</td>
-                      {canWrite && (
+                      {!isCustomerMode && <td>{priceRange(p)}</td>}
+                      {!isCustomerMode && <td>{hasVariations(p) ? "" : p.variations.some((v) => Number(v.minSalePrice) > 0) ? money(Math.min(...p.variations.filter((v) => Number(v.minSalePrice) > 0).map((v) => Number(v.minSalePrice)))) : "—"}</td>}
+                      <td>
+                        {isCustomerMode ? (
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${s ? (s.quantity > 0 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600") : "bg-slate-100 text-slate-600"}`}>
+                            {s && s.quantity > 0 ? "Available" : "Out of stock"}
+                          </span>
+                        ) : (
+                          <span className={s && isLowStock(s.quantity, s.lowStockThreshold) ? "text-rose-600" : ""}>{s ? `${qty(s.quantity)} ${p.unit}` : "—"}</span>
+                        )}
+                      </td>
+                      {!isCustomerMode && canWrite && (
                         <td className="text-right">
                           <div className="flex justify-end">{actions(p)}</div>
                         </td>

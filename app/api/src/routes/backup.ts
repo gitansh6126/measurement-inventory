@@ -196,6 +196,7 @@ export const RESTORE_TRIGGERS: readonly (readonly [string, string])[] = [
   // whose rolls do not add up to the restored stock is rolled back.
   ["measurement_pieces", "measurement_pieces_no_delete"],
   ["measurement_piece_ledger", "measurement_piece_ledger_no_update_delete"],
+  ["group_set_part_changes", "group_set_part_changes_no_update_delete"],
   // V3.1 shifts (0035): append-only guards and the commit-time line check (a restored shift of a
   // set whose parts changed later no longer matches its lines). The warehouse balance itself is
   // kept by the maintain trigger like stock_balances.
@@ -242,8 +243,8 @@ export async function wipeCompanyData(tx: Prisma.TransactionClient, companyId: s
   await tx.measurementPiece.updateMany({ where: { companyId, setOrigin: true }, data: { setOrigin: false, kind: "OPEN" } });
   await tx.measurementPiece.deleteMany({ where: { companyId } });
   await tx.stockMovement.deleteMany({ where: { companyId } });
-  await tx.sale.updateMany({ where: { companyId, replacesId: { not: null } }, data: { replacesId: null } });
-  await tx.purchase.updateMany({ where: { companyId, replacesId: { not: null } }, data: { replacesId: null } });
+  await tx.sale.updateMany({ where: { companyId, replacesId: { not: null } }, data: { replacesId: null, revision: 0 } });
+  await tx.purchase.updateMany({ where: { companyId, replacesId: { not: null } }, data: { replacesId: null, revision: 0 } });
   await tx.sale.deleteMany({ where: { companyId } });
   await tx.purchase.deleteMany({ where: { companyId } });
   await tx.productCategory.deleteMany({ where: { companyId } });

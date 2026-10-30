@@ -110,7 +110,7 @@ export default function ShiftPage() {
           </p>
           <Alert message={cancelError} />
           <Field label="Reason">
-            <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="e.g. Shifted to the wrong warehouse" />
+            <input autoComplete="off" className="input" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={300} placeholder="e.g. Shifted to the wrong warehouse" />
           </Field>
           <div className="flex justify-end gap-2">
             <button type="button" className="btn-secondary" onClick={() => setCancelling(false)}>

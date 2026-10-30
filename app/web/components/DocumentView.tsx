@@ -240,7 +240,7 @@ export function DocumentView({ mode, id }: { mode: CartMode; id: string }) {
             {!isSale && " A purchase whose stock was already sold cannot be cancelled."}
           </p>
           <label className="label mt-3" htmlFor="void-reason">Reason</label>
-          <input id="void-reason" className="input" maxLength={300} placeholder="e.g. Customer returned the goods / entered twice" value={reason} onChange={(e) => setReason(e.target.value)} />
+          <input autoComplete="off" id="void-reason" className="input" maxLength={300} placeholder="e.g. Customer returned the goods / entered twice" value={reason} onChange={(e) => setReason(e.target.value)} />
           {measuredSets.length > 0 && (
             <div className="mt-3 rounded-lg border border-rose-200 bg-white p-3">
               <p className="font-semibold text-slate-900">Sets with measured parts</p>

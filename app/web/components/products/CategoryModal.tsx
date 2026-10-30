@@ -82,7 +82,7 @@ export function CategoryModal({
     <Modal open={open} title={category ? "Edit Category" : head?.id ? `Add Category to ${head.name}` : "Add Category"} onClose={onClose}>
       <form onSubmit={submit} className="grid gap-4">
         <Field label="Category Name *">
-          <input
+          <input autoComplete="off"
             className="input"
             required
             maxLength={100}

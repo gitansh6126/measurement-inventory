@@ -126,6 +126,13 @@ async function measuredGroup(companyId: string, groupId: string) {
 export function measureRoutes() {
   const r = Router();
 
+  r.use((req, res, next) => {
+    if (req.auth?.isCustomerMode) {
+      return next(new AppError(403, "CUSTOMER_MODE_RESTRICTED", "Measurement pieces are not available in customer mode"));
+    }
+    next();
+  });
+
   /**
    * Every roll of a Measured product, per variation (inventory rows W7, sale piece picker and
    * "Show alternatives" W15 — other variations are in the same response).

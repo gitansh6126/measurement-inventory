@@ -31,9 +31,14 @@ const PUBLIC_PATHS = /^\/(auth\/(login|me|password-reset\/)|version)/;
 // keepCache: a write that changes no business data (e.g. a screen preference) does not clear
 // the cached screens.
 export async function api<T>(path: string, init: { method?: string; body?: unknown; signal?: AbortSignal; keepCache?: boolean } = {}): Promise<T> {
+  const isCust = typeof window !== "undefined" && window.sessionStorage?.getItem("rs_customer_mode") === "1";
+  const headers: Record<string, string> = {};
+  if (init.body !== undefined) headers["Content-Type"] = "application/json";
+  if (isCust) headers["X-Customer-Mode"] = "1";
+
   const res = await fetch(`/api${path}`, {
     method: init.method ?? "GET",
-    headers: init.body === undefined ? undefined : { "Content-Type": "application/json" },
+    headers: Object.keys(headers).length ? headers : undefined,
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
     credentials: "same-origin",
     cache: "no-store",
@@ -53,6 +58,7 @@ export type Role = "admin" | "sales_manager" | "sales_staff";
 export interface Me {
   user: { id: string; name: string; email: string; role: Role };
   permissions: string[];
+  isCustomerMode?: boolean;
 }
 export interface VersionInfo {
   environment: "CLIENT_READY" | "DEMO" | "TEST";

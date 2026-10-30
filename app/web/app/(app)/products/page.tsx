@@ -119,7 +119,7 @@ function ProductsPage() {
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<{ loaded: number; total: number } | null>(null);
   // Category column is off by default (the By Category layout already groups by it).
-  const columns = PRODUCT_SCREEN_COLUMNS.filter((column) => (!column.cost || canViewCost) && (!isCustomerMode || (column.id !== "salePrice" && column.id !== "minSalePrice")));
+  const columns = PRODUCT_SCREEN_COLUMNS.filter((column) => (!column.cost || canViewCost) && (!isCustomerMode || (column.id !== "salePrice" && column.id !== "minSalePrice" && column.id !== "activity" && column.id !== "actions")));
   const cols = useTableColumns("products.columns", columns, ["category", "sku", "type", "minSalePrice"]);
   const [view, setView] = useViewMode("products", "grid");
 
@@ -318,15 +318,25 @@ function ProductsPage() {
   const iconBtn = "flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900";
   // V3.1: grouped products expand too (into set types, like variations).
   const variableRows = rows.filter((p) => p.productType === "variable" || p.productType === "measured" || p.productType === "grouped");
-  const visibleColumns = cols.shown().filter((id) => !isCustomerMode || (id !== "salePrice" && id !== "minSalePrice"));
+  const visibleColumns = cols.shown().filter((id) => !isCustomerMode || (id !== "salePrice" && id !== "minSalePrice" && id !== "activity" && id !== "actions"));
   const expandAll = (expanded: boolean) =>
     setOpen(expanded ? new Set(variableRows.map((p) => p.id)) : new Set());
-  const stockCell = (quantity: number, threshold: number, unit: string, bold = false, len?: MeasureMeta) => (
-    <span className={`inline-flex items-center gap-1 ${isLowStock(quantity, threshold) ? "text-rose-600" : "text-emerald-700"} ${bold ? "font-semibold" : ""}`}>
-      {len ? fmtLen(quantity, len) : <>{qty(quantity)} <span className="text-xs text-slate-400">{unit}</span></>}
-      {isLowStock(quantity, threshold) && <WarnIcon className="h-3.5 w-3.5" />}
-    </span>
-  );
+  const stockCell = (quantity: number, threshold: number, unit: string, bold = false, len?: MeasureMeta) => {
+    if (isCustomerMode) {
+      const inStock = quantity > 0;
+      return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${inStock ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-slate-100 text-slate-500 border border-slate-200"}`}>
+          {inStock ? "Available" : "Unavailable"}
+        </span>
+      );
+    }
+    return (
+      <span className={`inline-flex items-center gap-1 ${isLowStock(quantity, threshold) ? "text-rose-600" : "text-emerald-700"} ${bold ? "font-semibold" : ""}`}>
+        {len ? fmtLen(quantity, len) : <>{qty(quantity)} <span className="text-xs text-slate-400">{unit}</span></>}
+        {isLowStock(quantity, threshold) && <WarnIcon className="h-3.5 w-3.5" />}
+      </span>
+    );
+  };
 
   // One link per row to the same product on Stock In (shown in all products, auto-scrolled & blinking).
   const stockHref = (p: StockProduct) => `/inventory?focus=${p.id}`;
@@ -338,7 +348,7 @@ function ProductsPage() {
     ) : null;
   const priceRange = (p: StockProduct, field: "salePrice" | "minSalePrice", vars = p.variations.filter((v) => v.active)) =>
     range(vars.map((v) => Number(v[field])), p.measure?.lengthUnit);
-  const headLabel: Record<string, string> = { image: "Image", product: "Name", sku: "SKU", category: "Category", type: "Type", stock: "Stock on Hand", salePrice: "Selling Price", minSalePrice: "Min. Selling Price", activity: "Sales Activity", actions: "Actions" };
+  const headLabel: Record<string, string> = { image: "Image", product: "Name", sku: "SKU", category: "Category", type: "Type", stock: isCustomerMode ? "Availability" : "Stock on Hand", salePrice: "Selling Price", minSalePrice: "Min. Selling Price", activity: "Sales Activity", actions: "Actions" };
   const hasMeasuredRows = rows.some((p) => p.productType === "measured");
   const headCell = (id: string) => (
     <th key={id} {...cols.headerDrag(id)} className={`${cols.headerDrag(id).className ?? ""} ${id === "actions" || id === "salePrice" || id === "minSalePrice" ? "text-right" : ""} ${id === "product" ? "col-product" : ""}`}>
@@ -405,7 +415,7 @@ function ProductsPage() {
                 <button type="button" onClick={() => handleHeadChange(PRODUCT_TYPE_KEY)} className="hover:text-slate-950 font-bold ml-0.5" aria-label="Remove head filter">×</button>
               </span>
             )}
-            {quick && (
+            {!isCustomerMode && quick && (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100/90 px-2.5 py-0.5 font-medium text-amber-800 text-[11px]">
                 {quick === "low" ? "Low Stock" : "Out of Stock"}
                 <button type="button" onClick={() => setQuick("")} className="hover:text-amber-950 font-bold ml-0.5" aria-label="Remove stock filter">×</button>
@@ -417,7 +427,7 @@ function ProductsPage() {
                 <button type="button" onClick={() => setCategory("")} className="hover:text-brand-950 font-bold ml-0.5" aria-label="Remove category filter">×</button>
               </span>
             )}
-            {activityStage && (
+            {!isCustomerMode && activityStage && (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-violet-100/90 px-2.5 py-0.5 font-medium text-violet-800 text-[11px]">
                 {activityStage}
                 <button type="button" onClick={() => setActivityStage("")} className="hover:text-violet-950 font-bold ml-0.5" aria-label="Remove sales activity filter">×</button>
@@ -710,27 +720,31 @@ function ProductsPage() {
                 <EyeIcon className="h-4 w-4" />
                 <span>{showKpi ? "Hide KPIs" : "Show KPIs"}</span>
               </button>
-              <button
-                type="button"
-                className={`btn-secondary ${!showTableSettings ? "bg-slate-100 text-slate-700" : ""}`}
-                onClick={toggleTableSettings}
-                aria-expanded={showTableSettings}
-                title={showTableSettings ? "Hide table layout & columns settings" : "Show table layout & columns settings"}
-              >
-                <CogIcon className="h-4 w-4" />
-                <span>{showTableSettings ? "Hide Table Settings" : "Table Settings"}</span>
-              </button>
-              {canAdjust && (
-                <Link href="/inventory" className="btn-secondary"><BoxesIcon className="h-4 w-4" /> Stock In</Link>
-              )}
-              {canEdit && (
-                <Link href="/products/new" className="btn-primary"><PlusIcon className="h-4 w-4" /> Add Product</Link>
+              {!isCustomerMode && (
+                <>
+                  <button
+                    type="button"
+                    className={`btn-secondary ${!showTableSettings ? "bg-slate-100 text-slate-700" : ""}`}
+                    onClick={toggleTableSettings}
+                    aria-expanded={showTableSettings}
+                    title={showTableSettings ? "Hide table layout & columns settings" : "Show table layout & columns settings"}
+                  >
+                    <CogIcon className="h-4 w-4" />
+                    <span>{showTableSettings ? "Hide Table Settings" : "Table Settings"}</span>
+                  </button>
+                  {canAdjust && (
+                    <Link href="/inventory" className="btn-secondary"><BoxesIcon className="h-4 w-4" /> Stock In</Link>
+                  )}
+                  {canEdit && (
+                    <Link href="/products/new" className="btn-primary"><PlusIcon className="h-4 w-4" /> Add Product</Link>
+                  )}
+                </>
               )}
             </div>
           }
         />
 
-        {showKpi && (
+        {!isCustomerMode && showKpi && (
           <StatStrip cols={canViewCost ? 4 : 3}>
             <StatCell icon={<PackageIcon className="h-4 w-4" />} tone="blue" label="Total Products" value={qty(kpi.total)} />
             <StatCell icon={<WarnIcon className="h-4 w-4" />} tone="orange" label="Low Stock" value={qty(kpi.low)} onClick={() => setQuick(quick === "low" ? "" : "low")} active={quick === "low"} />
@@ -768,13 +782,15 @@ function ProductsPage() {
               onChange={handleHeadChange}
             />
           </div>
-          <select className="input w-auto" value={activityStage} onChange={(e) => setActivityStage(e.target.value as ProductActivityStatus | "")} aria-label="Sales activity">
-            <option value="">All sales activity</option>
-            <option value="Active">Active</option>
-            <option value="Min-Active">Min-Active</option>
-            <option value="Inactive">Inactive</option>
-            <option value="Never Sold">Never Sold</option>
-          </select>
+          {!isCustomerMode && (
+            <select className="input w-auto" value={activityStage} onChange={(e) => setActivityStage(e.target.value as ProductActivityStatus | "")} aria-label="Sales activity">
+              <option value="">All sales activity</option>
+              <option value="Active">Active</option>
+              <option value="Min-Active">Min-Active</option>
+              <option value="Inactive">Inactive</option>
+              <option value="Never Sold">Never Sold</option>
+            </select>
+          )}
           {(search || category || headKey !== PRODUCT_TYPE_KEY || activityStage || quick) && (
             <button className="btn-secondary" onClick={() => { setSearch(""); setCategory(""); setHeadKey(PRODUCT_TYPE_KEY); setActivityStage(""); setQuick(""); }}>Clear All</button>
           )}
@@ -847,7 +863,7 @@ function ProductsPage() {
                   meta={<ProductKind type={p.productType} count={p.variations.length} fallback={p.category?.name ?? "Uncategorized"} />}
                   badge={p.productType === "measured" ? null : stockCell(p.quantity, p.lowStockThreshold, p.unit, false, stockLengthOf(p))}
                   price={sale}
-                  actions={
+                  actions={isCustomerMode ? null : (
                     <>
                       {stockLink(p)}
                       {canEdit && (
@@ -856,7 +872,7 @@ function ProductsPage() {
                         </Link>
                       )}
                     </>
-                  }
+                  )}
                 />
               );
             })}

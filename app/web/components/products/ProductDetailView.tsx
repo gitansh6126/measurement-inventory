@@ -50,14 +50,6 @@ type ProductMovement = Omit<Movement, "type"> & {
 const priceText = (v: StockVariation, lu?: LengthUnit | null) =>
   fmtSellRate(lu, v.minSalePrice, v.salePrice, "Sell: ");
 
-// (No range text shown for products with variations)
-const rangeText = (vars: StockVariation[], lu?: LengthUnit | null) => {
-  const prices = vars.map((v) => Number(v.salePrice)).filter((n) => n > 0);
-  if (!prices.length) return "—";
-  const lo = Math.min(...prices);
-  const hi = Math.max(...prices);
-  return lo === hi ? fmtRate(lu, lo) : fmtRate(lu, lo, hi);
-};
 
 export function ProductDetailView({ productId, back }: { productId: string; back: { href: string; label: string } }) {
   useLengthView();
@@ -167,12 +159,12 @@ export function ProductDetailView({ productId, back }: { productId: string; back
             <div className="truncate text-sm font-bold uppercase tracking-wide text-slate-900" title={product.name}>{product.name}</div>
             <div className="truncate text-xs text-slate-500">
               {/* Phones: the price sits here so the name keeps the full width. */}
-              {!isCustomerMode && <span className="font-bold text-slate-900 sm:hidden">{grouped ? <SetTypesPriceRange groupId={product.id} /> : chosen ? priceText(chosen, per) : rangeText(allVars, per)} · </span>}
+              {!isCustomerMode && chosen && !grouped && <span className="font-bold text-slate-900 sm:hidden">{priceText(chosen, per)} · </span>}
               {variable ? (chosen ? `${variationLabel(chosen, product.attributes)} · ${chosen.shortName}` : "Select options") : (product.category?.name ?? "Uncategorized")}
             </div>
           </div>
           <div className="hidden shrink-0 text-right sm:block">
-            {!isCustomerMode && <div className="text-sm font-bold text-slate-900">{grouped ? <SetTypesPriceRange groupId={product.id} /> : chosen ? priceText(chosen, per) : rangeText(allVars, per)}</div>}
+            {!isCustomerMode && chosen && !grouped && <div className="text-sm font-bold text-slate-900">{priceText(chosen, per)}</div>}
             {chosen && <div><StockBadge quantity={chosen.quantity} state={chosen.state} unit={stockUnit} /></div>}
           </div>
           <button
@@ -261,16 +253,24 @@ export function ProductDetailView({ productId, back }: { productId: string; back
             {variable && chosen && <div className="mt-1 text-sm text-slate-500">{variationLabel(chosen, product.attributes)} · <span className="font-mono text-xs">{chosen.shortName}</span></div>}
           </div>
           <div ref={heroRef} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-slate-200 pb-4">
-            {!isCustomerMode && (
+            {!isCustomerMode && !grouped && chosen && (
               <div className="text-2xl font-bold text-slate-900">
                 <span className="text-base font-medium text-slate-500">Price: </span>
-                {/* 0041: a grouped product has no own price; the range over its set types. */}
-                {grouped ? <SetTypesPriceRange groupId={product.id} /> : chosen ? priceText(chosen, per) : rangeText(allVars, per)}
+                {priceText(chosen, per)}
               </div>
             )}
-            {chosen && <StockBadge quantity={chosen.quantity} state={chosen.state} unit={stockUnit} />}
+            {chosen && (
+              isCustomerMode ? (
+                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${chosen.quantity > 0 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>
+                  {chosen.quantity > 0 ? "Available to order" : "Out of stock"}
+                </span>
+              ) : (
+                <StockBadge quantity={chosen.quantity} state={chosen.state} unit={stockUnit} />
+              )
+            )}
             {!chosen && variable && !isCustomerMode && <span className="text-sm text-amber-700">Select options to see price and stock</span>}
             {!chosen && variable && isCustomerMode && <span className="text-sm text-slate-500">Select options to add to cart</span>}
+            {grouped && !isCustomerMode && <span className="text-sm text-slate-500">Prices vary by set type (see below)</span>}
           </div>
 
           {variable && (
@@ -380,8 +380,8 @@ export function ProductDetailView({ productId, back }: { productId: string; back
           {/* Grouped (set) products never show a short name or SKU (owner, 2026-10-22). */}
           {chosen && !grouped && row("Short name", <span className="font-mono text-xs">{chosen.shortName}</span>)}
           {chosen?.officialSku && !grouped && row("SKU", <span className="font-mono text-xs">{chosen.officialSku}</span>)}
-          {row("Sales activity", product.activityStatus)}
-          {row("Last completed sale", product.lastSaleAt ? dateTime(product.lastSaleAt) : "Never sold")}
+          {!isCustomerMode && row("Sales activity", product.activityStatus)}
+          {!isCustomerMode && row("Last completed sale", product.lastSaleAt ? dateTime(product.lastSaleAt) : "Never sold")}
           {(chosen?.description || product.description) && <p className="mt-2 text-sm text-slate-600">{chosen?.description || product.description}</p>}
         </section>
 
@@ -399,16 +399,21 @@ export function ProductDetailView({ productId, back }: { productId: string; back
           {grouped && <SetTypePrices groupId={product.id} row={row} hidePrices={isCustomerMode} />}
           {chosen && !grouped && (
             <>
-              {row(grouped ? "Sets in stock" : (chosen.inSets ?? 0) > 0 ? "Free stock" : "Stock on hand", <StockBadge quantity={chosen.quantity} state={chosen.state} unit={stockUnit} />)}
-              {!grouped && (chosen.inSets ?? 0) > 0 && row("In sets", `${qty(chosen.inSets!)} ${product.unit}`)}
-              {/* V3.1: per-warehouse stock (absent while warehousing is off). */}
-              {!grouped && chosen.byWarehouse && row("In warehouses", chosen.byWarehouse.some((w) => w.quantity !== 0) ? <WarehouseStockChips rows={chosen.byWarehouse} /> : "—")}
-              {!isCustomerMode && row("Minimum stock", chosen.lowStockThreshold)}
-              {!isCustomerMode && row("Selling price", fmtSellRate(per, chosen.minSalePrice, chosen.salePrice, "Sell: "))}
-              {!isCustomerMode && canViewCost && row("Purchasing price", Number(chosen.purchaseCost) > 0 ? fmtRate(per, chosen.purchaseCost) : "—")}
+              {isCustomerMode ? (
+                row("Availability", chosen.quantity > 0 ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Available</span> : <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">Unavailable</span>)
+              ) : (
+                <>
+                  {row(grouped ? "Sets in stock" : (chosen.inSets ?? 0) > 0 ? "Free stock" : "Stock on hand", <StockBadge quantity={chosen.quantity} state={chosen.state} unit={stockUnit} />)}
+                  {!grouped && (chosen.inSets ?? 0) > 0 && row("In sets", `${qty(chosen.inSets!)} ${product.unit}`)}
+                  {!grouped && chosen.byWarehouse && row("In warehouses", chosen.byWarehouse.some((w) => w.quantity !== 0) ? <WarehouseStockChips rows={chosen.byWarehouse} /> : "—")}
+                  {row("Minimum stock", chosen.lowStockThreshold)}
+                  {row("Selling price", fmtSellRate(per, chosen.minSalePrice, chosen.salePrice, "Sell: "))}
+                  {canViewCost && row("Purchasing price", Number(chosen.purchaseCost) > 0 ? fmtRate(per, chosen.purchaseCost) : "—")}
+                </>
+              )}
             </>
           )}
-          {variable && row("Total stock", `${qty(product.quantity)} ${product.unit}`)}
+          {!isCustomerMode && variable && row("Total stock", `${qty(product.quantity)} ${product.unit}`)}
           {variable && !isCustomerMode && (low > 0 || out > 0) && row("Low / out", `${low} low · ${out} out`)}
           {!isCustomerMode && (
             <div className="mt-2 grid gap-2 border-t border-slate-100 pt-2">
@@ -454,7 +459,13 @@ export function ProductDetailView({ productId, back }: { productId: string; back
                   <div className="text-sm font-semibold text-slate-900">{variationLabel(v, product.attributes)}</div>
                   <div className="flex items-center justify-between text-xs text-slate-500">
                     <span className="font-mono">{v.shortName}</span>
-                    <StockBadge quantity={v.quantity} state={v.state} />
+                    {isCustomerMode ? (
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${v.quantity > 0 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500"}`}>
+                        {v.quantity > 0 ? "Available" : "Out"}
+                      </span>
+                    ) : (
+                      <StockBadge quantity={v.quantity} state={v.state} />
+                    )}
                   </div>
                   {!isCustomerMode && <div className="text-sm font-semibold text-brand-700">{priceText(v, per)}</div>}
                 </div>
@@ -469,8 +480,8 @@ export function ProductDetailView({ productId, back }: { productId: string; back
                 cell: (v: StockVariation) => <span className="font-medium text-slate-900">{v.attributes[c.name] ?? "—"}</span>,
               })),
               { id: "short", header: "Short name", cell: (v) => <span className="font-mono text-xs">{v.shortName}</span> },
-              { id: "stock", header: "Stock", cell: (v) => <StockBadge quantity={v.quantity} state={v.state} unit={product.unit} /> },
-              ...(product.variations.some((v) => v.byWarehouse) ? [{ id: "warehouses", header: "In warehouses", cell: (v: StockVariation) => <WarehouseStockChips rows={v.byWarehouse} /> }] : []),
+              { id: "stock", header: isCustomerMode ? "Availability" : "Stock", cell: (v) => isCustomerMode ? (<span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${v.quantity > 0 ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>{v.quantity > 0 ? "Available" : "Out of stock"}</span>) : <StockBadge quantity={v.quantity} state={v.state} unit={product.unit} /> },
+              ...(!isCustomerMode && product.variations.some((v) => v.byWarehouse) ? [{ id: "warehouses", header: "In warehouses", cell: (v: StockVariation) => <WarehouseStockChips rows={v.byWarehouse} /> }] : []),
               ...(!isCustomerMode ? [{ id: "min", header: "Min stock", align: "right" as const, cell: (v: StockVariation) => v.lowStockThreshold }] : []),
               ...(!isCustomerMode ? [{ id: "price", header: "Selling price", align: "right" as const, cell: (v: StockVariation) => priceText(v, per) }] : []),
               ...(!isCustomerMode && canViewCost ? [{ id: "cost", header: "Cost", align: "right" as const, cell: (v: StockVariation) => (Number(v.purchaseCost) > 0 ? fmtRate(per, v.purchaseCost) : "—") }] : []),
@@ -482,7 +493,7 @@ export function ProductDetailView({ productId, back }: { productId: string; back
       {/* Measured rolls & physical pieces (owner design 2026-10-16): one card per variation with its
           total length and sealed / in-use / cut counts; the chosen variation opens first and its
           pieces show in Cut / Open / Closed columns. */}
-      {product.productType === "measured" && (
+      {product.productType === "measured" && !isCustomerMode && (
         <section className="card p-4">
           <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
             <div>

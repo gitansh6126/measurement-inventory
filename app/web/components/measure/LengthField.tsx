@@ -98,7 +98,7 @@ export function LengthField({
         </label>
       )}
       <div className="flex items-center gap-1.5">
-        <input
+        <input autoComplete="off"
           id={id}
           className={`input ${box} ${unit === "ft+in" ? "w-20" : "w-28"} text-right font-semibold`}
           inputMode="decimal"
@@ -116,7 +116,7 @@ export function LengthField({
         {unit === "ft+in" && (
           <>
             <span className="text-xs text-slate-500">ft</span>
-            <input
+            <input autoComplete="off"
               className={`input ${box} w-20 text-right font-semibold`}
               inputMode="decimal"
               aria-label={`${label} inches`}

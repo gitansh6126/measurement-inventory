@@ -201,7 +201,7 @@ function Builder() {
 
         <div className="card p-3">
           <Toolbar>
-            <input className="input flex-1" value={title} maxLength={80} onChange={(e) => setTitle(e.target.value)} aria-label="Report title" />
+            <input autoComplete="off" className="input flex-1" value={title} maxLength={80} onChange={(e) => setTitle(e.target.value)} aria-label="Report title" />
             <button className="btn-primary" disabled={busy || !data} onClick={download}>{busy ? "Preparing…" : `Download PDF (${rows.length} rows)`}</button>
           </Toolbar>
           <div className="overflow-x-auto">

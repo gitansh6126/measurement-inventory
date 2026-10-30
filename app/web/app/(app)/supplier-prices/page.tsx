@@ -594,7 +594,7 @@ function BySupplierView({
                               {p.lengthUnit ? (
                                 <RateField compact unit={p.lengthUnit} label={`Rate for ${v.shortName}`} placeholder="Enter ₹" value={entered} disabled={!canManage} onChange={(val) => setNewPrices((prev) => ({ ...prev, [v.id]: val }))} preferredUnit={purchaseUnits.rateUnit(p.lengthUnit)} onUnitChange={(u) => p.lengthUnit && purchaseUnits.setRateUnit(p.lengthUnit, u)} />
                               ) : (
-                              <input
+                              <input autoComplete="off"
                                 type="text"
                                 inputMode="numeric"
                                 placeholder="Enter ₹"
@@ -821,7 +821,7 @@ function BySupplierView({
                                               {p.lengthUnit ? (
                                                 <RateField compact unit={p.lengthUnit} label={`Rate for ${v.shortName}`} placeholder="Enter ₹" value={entered} disabled={!canManage} onChange={(val) => setNewPrices((prev) => ({ ...prev, [v.id]: val }))} preferredUnit={purchaseUnits.rateUnit(p.lengthUnit)} onUnitChange={(u) => p.lengthUnit && purchaseUnits.setRateUnit(p.lengthUnit, u)} />
                                               ) : (
-                                              <input
+                                              <input autoComplete="off"
                                                 type="text"
                                                 inputMode="numeric"
                                                 placeholder="Enter ₹"

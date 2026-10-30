@@ -18,6 +18,7 @@ import {
   assertCodesFree,
   companyLengthSettings,
   costFor,
+  customerModeScrub,
   createProductBody,
   groupInclude,
   isUniqueViolation,
@@ -61,6 +62,13 @@ const ctx = (req: Request) => ({ companyId: req.auth!.companyId, actorId: req.au
 
 export function productRoutes() {
   const r = Router();
+  r.use((req, res, next) => {
+    if (req.method !== "GET" && req.auth?.isCustomerMode) {
+      return next(new AppError(403, "CUSTOMER_MODE_RESTRICTED", "Product modifications are not allowed in customer mode"));
+    }
+    next();
+  });
+
 
   r.get("/", requirePermission("catalog.view"), async (req, res) => {
     const q = listQuery.parse(req.query);
@@ -97,12 +105,18 @@ export function productRoutes() {
         take: q.pageSize,
       }),
     ]);
-    res.json({ products: groups.map((g) => costFor(req.auth!.role, serializeGroup(g))), total, page: q.page, pageSize: q.pageSize });
+    const sanitize = (g: any) => {
+      const s = serializeGroup(g);
+      return req.auth?.isCustomerMode ? customerModeScrub(s) : costFor(req.auth!.role, s);
+    };
+    res.json({ products: groups.map(sanitize), total, page: q.page, pageSize: q.pageSize });
   });
 
   r.get("/:id", requirePermission("catalog.view"), async (req, res) => {
     const g = await loadGroup(prisma, req.auth!.companyId, String(req.params.id));
-    res.json({ product: costFor(req.auth!.role, serializeGroup(g)) });
+    const s = serializeGroup(g);
+    const product = req.auth?.isCustomerMode ? customerModeScrub(s) : costFor(req.auth!.role, s);
+    res.json({ product });
   });
 
   r.post("/", requirePermission("product.write"), async (req, res) => {

@@ -184,14 +184,14 @@ function WarehouseModal({ warehouse, first, onClose, onSaved }: { warehouse: War
         <Alert message={error} />
         <div className="grid grid-cols-3 gap-3">
           <Field label="Code">
-            <input className="input font-mono uppercase" value={code} onChange={(e) => setCode(e.target.value)} maxLength={10} required placeholder="W2" />
+            <input autoComplete="off" className="input font-mono uppercase" value={code} onChange={(e) => setCode(e.target.value)} maxLength={10} required placeholder="W2" />
           </Field>
           <Field label="Name" className="col-span-2">
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} required placeholder="Shop" />
+            <input autoComplete="off" className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} required placeholder="Shop" />
           </Field>
         </div>
         <Field label="Address (optional)">
-          <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} maxLength={300} />
+          <input autoComplete="off" className="input" value={address} onChange={(e) => setAddress(e.target.value)} maxLength={300} />
         </Field>
         {first && (
           <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">

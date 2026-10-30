@@ -104,7 +104,7 @@ export function LineSheet({
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <span>Price</span>
-            <input aria-label="Price" value={price} onChange={(e) => setPrice(e.target.value)} className="input w-28" />
+            <input autoComplete="off" aria-label="Price" value={price} onChange={(e) => setPrice(e.target.value)} className="input w-28" />
           </label>
         </div>
 

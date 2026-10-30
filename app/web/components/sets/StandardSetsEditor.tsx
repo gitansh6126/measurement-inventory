@@ -169,7 +169,7 @@ export function StandardSetsFields({ title, intro, links, rows, setRows }: { tit
                   <span className="inline-flex items-center justify-center h-6 px-2.5 rounded-full bg-brand-600 text-white text-xs font-bold tracking-wide">
                     #{i + 1}
                   </span>
-                  <input
+                  <input autoComplete="off"
                     className="input py-1 text-xs font-semibold bg-white max-w-xs"
                     maxLength={80}
                     placeholder={`Standard Set ${i + 1} Name`}
@@ -325,7 +325,7 @@ export function StandardSetsFields({ title, intro, links, rows, setRows }: { tit
                                 <span className="text-[10px] text-slate-400">in {unitOf(b.lengthUnit)}</span>
                               </label>
                               <div className="relative flex items-center">
-                                <input
+                                <input autoComplete="off"
                                   className="input py-1.5 pr-8 text-xs font-mono bg-white"
                                   inputMode="decimal"
                                   placeholder="Length"
@@ -360,7 +360,7 @@ export function StandardSetsFields({ title, intro, links, rows, setRows }: { tit
                       </label>
                       <div className="relative flex items-center">
                         <span className="absolute left-2.5 text-xs font-bold text-slate-400 pointer-events-none">₹</span>
-                        <input
+                        <input autoComplete="off"
                           className="input pl-6 py-1.5 text-xs font-semibold"
                           inputMode="numeric"
                           value={r.salePrice}
@@ -375,7 +375,7 @@ export function StandardSetsFields({ title, intro, links, rows, setRows }: { tit
                       </label>
                       <div className="relative flex items-center">
                         <span className="absolute left-2.5 text-xs font-bold text-slate-400 pointer-events-none">₹</span>
-                        <input
+                        <input autoComplete="off"
                           className="input pl-6 py-1.5 text-xs font-semibold"
                           inputMode="numeric"
                           value={r.minSalePrice}
@@ -388,7 +388,7 @@ export function StandardSetsFields({ title, intro, links, rows, setRows }: { tit
                       <label className="label text-[11px] font-semibold text-slate-600 mb-1">
                         Min Stock Alert
                       </label>
-                      <input
+                      <input autoComplete="off"
                         className="input py-1.5 text-xs"
                         inputMode="numeric"
                         value={r.lowStockThreshold}

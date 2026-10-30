@@ -3,7 +3,7 @@ import express from "express";
 import helmet from "helmet";
 import type { Env } from "./env.js";
 import { authenticate } from "./lib/auth.js";
-import { errorHandler, notFound } from "./lib/errors.js";
+import { errorHandler, notFound, AppError } from "./lib/errors.js";
 import { accessLog, noStore, requestId, sameOrigin } from "./lib/middleware.js";
 import { authRoutes } from "./routes/auth.js";
 import { backupRoutes } from "./routes/backup.js";
@@ -42,6 +42,31 @@ export function createApp(env: Env) {
   app.use(express.json({ limit: "100kb" }));
   app.use(cookieParser());
   app.use("/api", noStore, sameOrigin(env.allowedOrigins), authenticate(env));
+
+  const CUSTOMER_MODE_BLOCKED_PATHS = [
+    "/api/users",
+    "/api/warehouses",
+    "/api/transfers",
+    "/api/parties",
+    "/api/sales",
+    "/api/purchases",
+    "/api/backup",
+    "/api/demo",
+    "/api/import",
+    "/api/drafts",
+    "/api/orders",
+    "/api/vendor-prices",
+    "/api/measure",
+  ];
+  app.use((req, res, next) => {
+    if (req.auth?.isCustomerMode) {
+      const path = req.path.toLowerCase();
+      if (CUSTOMER_MODE_BLOCKED_PATHS.some((prefix) => path.startsWith(prefix))) {
+        return next(new AppError(403, "CUSTOMER_MODE_RESTRICTED", "This resource is not accessible in customer mode"));
+      }
+    }
+    next();
+  });
 
   app.use("/api", systemRoutes(env));
   app.use("/api/auth", authRoutes(env));

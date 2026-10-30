@@ -5,6 +5,7 @@ export interface AuthContext {
   companyId: string;
   role: Role;
   sessionId: string;
+  isCustomerMode?: boolean;
 }
 
 declare global {

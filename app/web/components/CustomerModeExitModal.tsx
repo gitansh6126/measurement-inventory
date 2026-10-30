@@ -65,7 +65,7 @@ export function CustomerModeExitModal() {
             Staff Password
           </label>
           <div className="relative flex items-center">
-            <input
+            <input autoComplete="off"
               id="customer-mode-pwd"
               type={showPassword ? "text" : "password"}
               autoFocus
