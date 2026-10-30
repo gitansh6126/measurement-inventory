@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ProductThumb } from "@/components/ProductThumb";
 import { SearchInput } from "@/components/ui";
-import { PriceRail, RailItem } from "@/components/vendor/PriceRail";
+import { PriceRail, RailItem, type RailMode } from "@/components/vendor/PriceRail";
 import type { CatalogPage, CategoryStatsList, ProductCard } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
 import { scrollToFocus } from "@/lib/scrollToFocus";
