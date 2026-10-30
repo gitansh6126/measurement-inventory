@@ -155,6 +155,9 @@ function BySupplierView({
 
   // Expand / Collapse state for variable product rows
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [varFiltersByProduct, setVarFiltersByProduct] = useState<
+    Record<string, { ids: string[] | null; filters: Record<string, string>; singleId: string | null }>
+  >({});
 
   // 4. Load sheet data
   const sheetUrl = selectedSupplierId
