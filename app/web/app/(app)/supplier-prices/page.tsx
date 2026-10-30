@@ -67,7 +67,13 @@ interface SheetResponse {
 
 
 /** "By supplier" view: one supplier's rate sheet, product by product. */
-function BySupplierView() {
+function BySupplierView({
+  railMode = "expanded",
+  onRailModeChange,
+}: {
+  railMode?: RailMode;
+  onRailModeChange?: (mode: RailMode) => void;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const canManage = useCan("vendor_pricing.manage");
@@ -316,13 +322,15 @@ function BySupplierView() {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-3 lg:grid-cols-[18rem_minmax(0,1fr)] lg:gap-5 xl:grid-cols-[20rem_minmax(0,1fr)]">
+      <div className="flex flex-col lg:flex-row items-start gap-3 lg:gap-5">
         {/* Left rail: supplier directory (a slide-in drawer below lg). */}
         <PriceRail
           title="Suppliers"
           count={`${suppliers.length} active`}
           open={railOpen}
           onOpenChange={setRailOpen}
+          mode={railMode}
+          onModeChange={onRailModeChange}
           current={
             activeSupplier ? (
               <span className="flex items-center gap-2.5">
@@ -358,7 +366,7 @@ function BySupplierView() {
         </PriceRail>
 
         {/* Right Main Content Area */}
-        <div className="min-w-0 space-y-4">
+        <div className="min-w-0 flex-1 space-y-4">
           {/* Active supplier header (desktop; phones show it on the rail bar). */}
           {activeSupplier && (
             <div className="card hidden flex-wrap items-center justify-between gap-3 p-3.5 lg:flex">
@@ -383,6 +391,17 @@ function BySupplierView() {
           {/* Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 p-4">
             <div className="flex flex-wrap items-center gap-3">
+              {railMode !== "expanded" && onRailModeChange && (
+                <button
+                  type="button"
+                  onClick={() => onRailModeChange("expanded")}
+                  className="btn-secondary py-1.5 px-2.5 text-xs inline-flex items-center gap-1.5"
+                  title="Expand suppliers sidebar"
+                >
+                  <SidebarIcon className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Show Suppliers</span>
+                </button>
+              )}
               <div className="w-64">
                 <SearchInput
                   value={search}
@@ -994,7 +1013,15 @@ function BySupplierView() {
 type PriceView = "supplier" | "product";
 
 /** "By product" view: product rail on the left, the picked product's (or every product's) rates on the right. */
-function ByProductView({ initialQuery }: { initialQuery: string }) {
+function ByProductView({
+  initialQuery,
+  railMode = "expanded",
+  onRailModeChange,
+}: {
+  initialQuery: string;
+  railMode?: RailMode;
+  onRailModeChange?: (mode: RailMode) => void;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const paramProductId = searchParams.get("productId");
@@ -1038,9 +1065,28 @@ function ByProductView({ initialQuery }: { initialQuery: string }) {
   }
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-3 lg:grid-cols-[18rem_minmax(0,1fr)] lg:gap-5 xl:grid-cols-[20rem_minmax(0,1fr)]">
-      <ProductRail selected={product} onSelect={pick} onProductsLoaded={handleProductsLoaded} />
-      <div className="min-w-0">
+    <div className="flex flex-col lg:flex-row items-start gap-3 lg:gap-5">
+      <ProductRail
+        selected={product}
+        onSelect={pick}
+        onProductsLoaded={handleProductsLoaded}
+        mode={railMode}
+        onModeChange={onRailModeChange}
+      />
+      <div className="min-w-0 flex-1 space-y-4">
+        {railMode !== "expanded" && onRailModeChange && (
+          <div className="hidden lg:flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onRailModeChange("expanded")}
+              className="btn-secondary py-1 px-2.5 text-xs inline-flex items-center gap-1.5"
+              title="Expand products sidebar"
+            >
+              <SidebarIcon className="h-3.5 w-3.5 text-slate-500" />
+              <span>Show Products</span>
+            </button>
+          </div>
+        )}
         <ProductPriceView initialQuery={initialQuery} product={product} onDirtyChange={setDirty} />
       </div>
     </div>
@@ -1056,6 +1102,23 @@ function SupplierPricesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const view: PriceView = searchParams.get("view") === "product" ? "product" : "supplier";
+
+  const [railMode, setRailMode] = useState<RailMode>("expanded");
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("rs:supplier-prices-rail-mode");
+      if (saved === "small" || saved === "hidden" || saved === "expanded") {
+        setRailMode(saved as RailMode);
+      }
+    }
+  }, []);
+
+  function handleRailModeChange(next: RailMode) {
+    setRailMode(next);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rs:supplier-prices-rail-mode", next);
+    }
+  }
 
   function switchView(v: PriceView) {
     if (v === view) return;
@@ -1084,7 +1147,15 @@ function SupplierPricesContent() {
           />
         }
       />
-      {view === "product" ? <ByProductView initialQuery={searchParams.get("q") ?? ""} /> : <BySupplierView />}
+      {view === "product" ? (
+        <ByProductView
+          initialQuery={searchParams.get("q") ?? ""}
+          railMode={railMode}
+          onRailModeChange={handleRailModeChange}
+        />
+      ) : (
+        <BySupplierView railMode={railMode} onRailModeChange={handleRailModeChange} />
+      )}
     </div>
   );
 }

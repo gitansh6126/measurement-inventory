@@ -22,6 +22,8 @@ export interface ProductRailProps {
   selected: RailProduct;
   onSelect: (p: RailProduct) => void;
   onProductsLoaded?: (products: ProductCard[]) => void;
+  mode?: RailMode;
+  onModeChange?: (mode: RailMode) => void;
 }
 
 /**
@@ -29,7 +31,7 @@ export interface ProductRailProps {
  * Provides instant category filtering, search, and a direct list of products,
  * plus a quick link to the cross-supplier Matrix Comparison view.
  */
-export function ProductRail({ selected, onSelect, onProductsLoaded }: ProductRailProps) {
+export function ProductRail({ selected, onSelect, onProductsLoaded, mode, onModeChange }: ProductRailProps) {
   const searchParams = useSearchParams();
   const focusId = searchParams.get("focus") ?? searchParams.get("productId");
   const [open, setOpen] = useState(false);
@@ -92,6 +94,8 @@ export function ProductRail({ selected, onSelect, onProductsLoaded }: ProductRai
       title="Products"
       count={cats.data ? `${totalProducts} products` : undefined}
       open={open}
+      mode={mode}
+      onModeChange={onModeChange}
       onOpenChange={setOpen}
       current={
         selected ? (
