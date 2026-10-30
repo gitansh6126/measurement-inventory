@@ -1473,7 +1473,7 @@ function StockIn() {
                 {products.map((p) => {
                   const active = p.variations.filter((v) => v.active);
                   if (p.productType === "measured") {
-                    const isOpen = !!openGroup[p.id];
+                    const isOpen = openGroup[p.id] !== undefined ? !!openGroup[p.id] : (search.trim().length > 0 || focus === p.id);
                     return (
                       <Fragment key={p.id}>
                         <tr
@@ -1556,7 +1556,7 @@ function StockIn() {
                   if (p.productType === "grouped") {
                     const v = active[0];
                     if (!v) return null;
-                    const isOpen = !!openGroup[p.id];
+                    const isOpen = openGroup[p.id] !== undefined ? !!openGroup[p.id] : (search.trim().length > 0 || focus === p.id);
                     return (
                       <Fragment key={p.id}>
                         <tr
@@ -1639,7 +1639,7 @@ function StockIn() {
                       </tr>
                     );
                   }
-                  const isOpen = !!openGroup[p.id];
+                  const isOpen = openGroup[p.id] !== undefined ? !!openGroup[p.id] : (search.trim().length > 0 || focus === p.id);
                   const total = active.reduce((s, v) => s + v.quantity, 0);
                   const attrCols = attrColumns(p, active);
                   return (

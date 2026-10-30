@@ -531,7 +531,7 @@ function BySupplierView({
                 <tbody>
                   {products.map((p) => {
                     const isVariable = p.productType === "variable" || p.variations.length > 1;
-                    const isExpanded = expanded[p.id] ?? false;
+                    const isExpanded = expanded[p.id] !== undefined ? expanded[p.id] : search.trim().length > 0;
 
                     if (!isVariable) {
                       // Simple or single-variation product: 1 single row

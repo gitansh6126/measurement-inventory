@@ -7,6 +7,7 @@ import { ViewToggle } from "@/components/catalog/ViewToggle";
 import { OptionButtons } from "@/components/cart/OptionButtons";
 import { useCan } from "@/components/MeContext";
 import { ProductThumb } from "@/components/ProductThumb";
+import { VariationTabs } from "@/components/products/VariationTabs";
 import { MOVEMENT_LABEL } from "@/components/products/ProductDetailModal";
 import { VendorPricingModal } from "@/components/vendor/VendorPricingModal";
 import { StockBadge } from "@/components/StockBadge";
@@ -71,6 +72,8 @@ export function ProductDetailView({ productId, back }: { productId: string; back
   const [pick, setPick] = useState<Record<string, string>>({});
   const [slide, setSlide] = useState(0);
   const [view, setView] = useViewMode("product.variations", "grid");
+  const [tableFilteredIds, setTableFilteredIds] = useState<string[] | null>(null);
+  const [tableFilters, setTableFilters] = useState<Record<string, string>>({});
   const [vendorModalOpen, setVendorModalOpen] = useState(false);
   const [stockHistoryOpen, setStockHistoryOpen] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
@@ -440,14 +443,30 @@ export function ProductDetailView({ productId, back }: { productId: string; back
             <h3 className="text-lg font-semibold text-slate-900">Variations <span className="text-sm font-normal text-slate-500">{product.variations.length}</span></h3>
             <ViewToggle value={view} onChange={setView} />
           </div>
+          {product.variations.length > 1 && (
+            <VariationTabs
+              attributes={product.attributes}
+              variations={product.variations}
+              selectedFilters={tableFilters}
+              selectedVariationId={chosen?.id}
+              onFilterChange={(filteredIds, filters, singleId) => {
+                setTableFilteredIds(filteredIds);
+                setTableFilters(filters);
+                if (singleId) {
+                  const match = product.variations.find((v) => v.id === singleId);
+                  if (match) setPick({ ...match.attributes });
+                }
+              }}
+            />
+          )}
           <DataView<StockVariation>
-            rows={product.variations}
+            rows={tableFilteredIds ? product.variations.filter((v) => tableFilteredIds.includes(v.id)) : product.variations}
             view={view}
             rowKey={(v) => v.id}
             label="Variations"
             containerClassName="card overflow-auto max-h-[60vh]"
             onOpen={selectVariation}
-            rowClassName={(v) => (v.id === chosen?.id ? "bg-brand-50" : "")}
+            rowClassName={(v) => (v.id === chosen?.id ? "bg-brand-50/80 font-medium ring-1 ring-brand-400" : "")}
             renderCard={(v) => (
               <button
                 type="button"
