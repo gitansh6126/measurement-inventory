@@ -13,7 +13,7 @@ import { StockBadge } from "@/components/StockBadge";
 import { WarehouseStockChips } from "@/components/cart/TakeFromPopup";
 import { MeasuredStockPanel } from "@/components/measure/MeasuredStock";
 import { SetsPanel } from "@/components/sets/SetsPanel";
-import { SetTypesPriceRange, setTypeName, useSetTypes } from "@/components/sets/SetTypes";
+import { setTypeName, useSetTypes } from "@/components/sets/SetTypes";
 import { Alert, Modal, PageHeader, TableSkeleton } from "@/components/ui";
 import { api } from "@/lib/api";
 import { dateTime, formatVariationAttributes, money, qty, variationLabel } from "@/lib/format";
@@ -50,7 +50,7 @@ type ProductMovement = Omit<Movement, "type"> & {
 const priceText = (v: StockVariation, lu?: LengthUnit | null) =>
   fmtSellRate(lu, v.minSalePrice, v.salePrice, "Sell: ");
 
-// Before an option is picked: the lowest to highest selling price over every variation.
+// (No range text shown for products with variations)
 const rangeText = (vars: StockVariation[], lu?: LengthUnit | null) => {
   const prices = vars.map((v) => Number(v.salePrice)).filter((n) => n > 0);
   if (!prices.length) return "—";
