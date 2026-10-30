@@ -17,6 +17,7 @@ import { RateField } from "@/components/measure/RateField";
 import { ProductPriceView } from "@/components/vendor/ProductPriceView";
 import { PriceHistoryModal } from "@/components/vendor/PriceHistoryModal";
 import { VendorPricingModal } from "@/components/vendor/VendorPricingModal";
+import { VariationTabs } from "@/components/products/VariationTabs";
 import { PriceRail, RailItem, type RailMode } from "@/components/vendor/PriceRail";
 import { ProductRail, type RailProduct } from "@/components/vendor/ProductRail";
 import { fmtRate, rateLabel, type LengthUnit } from "@/lib/measure";

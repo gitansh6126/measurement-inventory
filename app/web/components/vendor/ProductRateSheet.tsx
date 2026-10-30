@@ -664,6 +664,30 @@ function StandardProductRateSheet({
 
         <Alert message={msg?.text ?? (compareApi.error || undefined)} kind={msg?.kind ?? "error"} />
 
+        {multi && rows.length > 1 && (
+          <div className="border-b border-slate-200 bg-slate-50/60 p-3">
+            <VariationTabs
+              attributes={rows[0]?.attributeDefinitions ?? []}
+              variations={rows.map((r) => ({
+                id: r.variationId,
+                shortName: r.shortName,
+                attributes: r.attributes,
+              }))}
+              selectedFilters={varFilters}
+              selectedVariationId={selectedVarId}
+              onFilterChange={(filteredIds, filters, singleId) => {
+                setVarFilteredIds(filteredIds);
+                setVarFilters(filters);
+                setSelectedVarId(singleId);
+                if (singleId) {
+                  setExpanded((prev) => ({ ...prev, [singleId]: true }));
+                }
+              }}
+              scrollTargetPrefix="rate-sheet-var"
+            />
+          </div>
+        )}
+
         {/* Table Content */}
         {compareApi.loading && !compareApi.data ? (
           <TableSkeleton rows={8} />
@@ -751,7 +775,10 @@ function StandardProductRateSheet({
                     <Fragment key={r.variationId}>
                       {/* Parent Row */}
                       <tr
-                        className="cursor-pointer bg-white hover:bg-slate-50/80 transition-colors"
+                        id={`rate-sheet-var-${r.variationId}`}
+                        className={`cursor-pointer transition-colors ${
+                          selectedVarId === r.variationId ? "bg-brand-50/80 font-medium" : "bg-white hover:bg-slate-50/80"
+                        }`}
                         onClick={() => setExpanded((o) => ({ ...o, [r.variationId]: !isExpanded }))}
                       >
                         <td className="stack-hide text-center">
