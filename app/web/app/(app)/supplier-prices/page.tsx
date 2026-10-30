@@ -17,6 +17,7 @@ import { RateField } from "@/components/measure/RateField";
 import { ProductPriceView } from "@/components/vendor/ProductPriceView";
 import { PriceHistoryModal } from "@/components/vendor/PriceHistoryModal";
 import { VendorPricingModal } from "@/components/vendor/VendorPricingModal";
+import { VariationTabs } from "@/components/products/VariationTabs";
 import { PriceRail, RailItem, type RailMode } from "@/components/vendor/PriceRail";
 import { ProductRail, type RailProduct } from "@/components/vendor/ProductRail";
 import { fmtRate, rateLabel, type LengthUnit } from "@/lib/measure";
@@ -154,6 +155,9 @@ function BySupplierView({
 
   // Expand / Collapse state for variable product rows
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [varFiltersByProduct, setVarFiltersByProduct] = useState<
+    Record<string, { ids: string[] | null; filters: Record<string, string>; singleId: string | null }>
+  >({});
 
   // 4. Load sheet data
   const sheetUrl = selectedSupplierId
@@ -527,7 +531,7 @@ function BySupplierView({
                 <tbody>
                   {products.map((p) => {
                     const isVariable = p.productType === "variable" || p.variations.length > 1;
-                    const isExpanded = expanded[p.id] ?? false;
+                    const isExpanded = expanded[p.id] !== undefined ? expanded[p.id] : search.trim().length > 0;
 
                     if (!isVariable) {
                       // Simple or single-variation product: 1 single row
@@ -594,7 +598,7 @@ function BySupplierView({
                               {p.lengthUnit ? (
                                 <RateField compact unit={p.lengthUnit} label={`Rate for ${v.shortName}`} placeholder="Enter ₹" value={entered} disabled={!canManage} onChange={(val) => setNewPrices((prev) => ({ ...prev, [v.id]: val }))} preferredUnit={purchaseUnits.rateUnit(p.lengthUnit)} onUnitChange={(u) => p.lengthUnit && purchaseUnits.setRateUnit(p.lengthUnit, u)} />
                               ) : (
-                              <input
+                              <input autoComplete="off"
                                 type="text"
                                 inputMode="numeric"
                                 placeholder="Enter ₹"
@@ -743,6 +747,21 @@ function BySupplierView({
                         {isExpanded && (
                           <tr>
                             <td colSpan={7} className="bg-slate-50/70 p-4 border-y border-slate-200">
+                              <div className="mb-3">
+                                <VariationTabs
+                                  attributes={p.attributes}
+                                  variations={p.variations}
+                                  selectedFilters={varFiltersByProduct[p.id]?.filters}
+                                  selectedVariationId={varFiltersByProduct[p.id]?.singleId}
+                                  onFilterChange={(filteredIds, filters, singleId) => {
+                                    setVarFiltersByProduct((prev) => ({
+                                      ...prev,
+                                      [p.id]: { ids: filteredIds, filters, singleId },
+                                    }));
+                                  }}
+                                  scrollTargetPrefix={`supp-var-${p.id}`}
+                                />
+                              </div>
                               <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-sm">
                                 <table className="table table-stack">
                                   <thead>
@@ -761,19 +780,26 @@ function BySupplierView({
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {p.variations.map((v) => {
+                                    {(varFiltersByProduct[p.id]?.ids
+                                      ? p.variations.filter((v) => varFiltersByProduct[p.id]!.ids!.includes(v.id))
+                                      : p.variations
+                                    ).map((v) => {
                                       const entered = newPrices[v.id] ?? "";
                                       const isSaving = savingRows[v.id] ?? false;
                                       const active = statusOverrides[v.id] ?? v.rate?.active ?? true;
+                                      const isSelected = varFiltersByProduct[p.id]?.singleId === v.id;
 
                                       return (
                                         <tr
+                                          id={`supp-var-${p.id}-${v.id}`}
                                           key={v.id}
-                                          className={
+                                          className={`${
+                                            isSelected ? "bg-brand-50/80 font-medium ring-1 ring-brand-400" : ""
+                                          } ${
                                             !v.active
                                               ? "opacity-50 bg-slate-50/60"
                                               : "hover:bg-slate-50/50"
-                                          }
+                                          }`}
                                         >
                                           {attrColumns.map((col) => (
                                             <td key={col.name} className="font-medium text-slate-800">
@@ -821,7 +847,7 @@ function BySupplierView({
                                               {p.lengthUnit ? (
                                                 <RateField compact unit={p.lengthUnit} label={`Rate for ${v.shortName}`} placeholder="Enter ₹" value={entered} disabled={!canManage} onChange={(val) => setNewPrices((prev) => ({ ...prev, [v.id]: val }))} preferredUnit={purchaseUnits.rateUnit(p.lengthUnit)} onUnitChange={(u) => p.lengthUnit && purchaseUnits.setRateUnit(p.lengthUnit, u)} />
                                               ) : (
-                                              <input
+                                              <input autoComplete="off"
                                                 type="text"
                                                 inputMode="numeric"
                                                 placeholder="Enter ₹"

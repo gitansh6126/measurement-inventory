@@ -14,6 +14,7 @@ import { useCan } from "@/components/MeContext";
 import { StockBadge, stockState } from "@/components/StockBadge";
 import { ProductKind, ProductTile } from "@/components/products/ProductTile";
 import { StockEditDrawer } from "@/components/products/StockEditDrawer";
+import { VariationTabs } from "@/components/products/VariationTabs";
 import { MeasuredStock, MeasuredStockPanel } from "@/components/measure/MeasuredStock";
 import { AddRollsModal } from "@/components/measure/RollActions";
 import { AddSetsModal } from "@/components/sets/SetsPanel";
@@ -194,6 +195,9 @@ function StockIn() {
   const [reordering, setReordering] = useState("");
   const [draggedVariation, setDraggedVariation] = useState<{ productId: string; variationId: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<{ productId: string; variationId: string; position: "before" | "after" } | null>(null);
+  const [varFilterByProduct, setVarFilterByProduct] = useState<
+    Record<string, { ids: string[] | null; filters: Record<string, string>; singleId: string | null }>
+  >({});
 
   // V3.1 (0038, VC8): under a category on some variations only, rows list just those variations;
   // `fullById` keeps every variation for reordering.
@@ -626,12 +630,12 @@ function StockIn() {
           </td>
         ),
         minStock: (
-          <td><input className={`input w-16 sm:w-20 h-8 text-xs sm:h-9 sm:text-sm ${c.min ? "border-brand-500 bg-brand-50" : ""}`} inputMode="numeric" aria-label={`Minimum stock of ${v.shortName}`} value={e?.min ?? String(v.lowStockThreshold)} onChange={(ev) => setItemEdit(p, v, { min: ev.target.value.replace(/[^\d]/g, "") })} /></td>
+          <td><input autoComplete="off" className={`input w-16 sm:w-20 h-8 text-xs sm:h-9 sm:text-sm ${c.min ? "border-brand-500 bg-brand-50" : ""}`} inputMode="numeric" aria-label={`Minimum stock of ${v.shortName}`} value={e?.min ?? String(v.lowStockThreshold)} onChange={(ev) => setItemEdit(p, v, { min: ev.target.value.replace(/[^\d]/g, "") })} /></td>
         ),
       } : {
         minSalePrice: (
             <td className={priceErr ? "bg-rose-50/50" : ""}>
-              <input
+              <input autoComplete="off"
                 className={`input w-24 ${priceErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:border-rose-600 focus:ring-rose-500" : c.minPrice ? "border-brand-500 bg-brand-50" : ""}`}
                 inputMode="numeric"
                 aria-label={`Minimum selling price of ${v.shortName}`}
@@ -648,7 +652,7 @@ function StockIn() {
           ),
         salePrice: (
             <td className={priceErr ? "bg-rose-50/50" : ""}>
-              <input
+              <input autoComplete="off"
                 className={`input w-24 ${priceErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:border-rose-600 focus:ring-rose-500" : c.price ? "border-brand-500 bg-brand-50" : ""}`}
                 inputMode="numeric"
                 aria-label={`Selling price of ${v.shortName}`}
@@ -659,7 +663,7 @@ function StockIn() {
             </td>
           ),
         minStock: (
-            <td><input className={`input w-20 ${c.min ? "border-brand-500 bg-brand-50" : ""}`} inputMode="numeric" aria-label={`Minimum stock of ${v.shortName}`} value={e?.min ?? String(v.lowStockThreshold)} onChange={(ev) => setItemEdit(p, v, { min: ev.target.value.replace(/[^\d]/g, "") })} /></td>
+            <td><input autoComplete="off" className={`input w-20 ${c.min ? "border-brand-500 bg-brand-50" : ""}`} inputMode="numeric" aria-label={`Minimum stock of ${v.shortName}`} value={e?.min ?? String(v.lowStockThreshold)} onChange={(ev) => setItemEdit(p, v, { min: ev.target.value.replace(/[^\d]/g, "") })} /></td>
           ),
       };
     // V3.1 grouped product: its stock is its sets (plan §4) — the set count, with "+ Add sets"
@@ -741,7 +745,7 @@ function StockIn() {
                       {!whFilter && <span className="w-9 font-mono text-[11px] font-semibold text-slate-500">{wh.codeOf(w)}</span>}
                       <div className={`flex w-fit items-center rounded-md border bg-white ${we && Number(we.qty) !== we.base ? "border-brand-500" : "border-slate-300"}`}>
                         <button type="button" className="h-7 w-7" aria-label={`Decrease ${v.shortName} in ${wh.codeOf(w)}`} onClick={() => stepWh(-1)}>−</button>
-                        <input className="h-7 w-16 border-x border-slate-300 text-center text-sm font-semibold outline-none" inputMode="numeric" aria-label={`New stock of ${v.shortName} in ${wh.codeOf(w)}`} value={we?.qty ?? String(b)} onChange={(ev) => setWhEdit(v, w, ev.target.value.replace(/[^\d]/g, ""))} />
+                        <input autoComplete="off" className="h-7 w-16 border-x border-slate-300 text-center text-sm font-semibold outline-none" inputMode="numeric" aria-label={`New stock of ${v.shortName} in ${wh.codeOf(w)}`} value={we?.qty ?? String(b)} onChange={(ev) => setWhEdit(v, w, ev.target.value.replace(/[^\d]/g, ""))} />
                         <button type="button" className="h-7 w-7" aria-label={`Increase ${v.shortName} in ${wh.codeOf(w)}`} onClick={() => stepWh(1)}>+</button>
                       </div>
                       {canShift && freeIn(v, w) > 0 && wh.active.length > 1 && (
@@ -793,7 +797,7 @@ function StockIn() {
           <td>
             <div className="flex w-fit items-center rounded-md border border-slate-300 bg-white">
               <button type="button" className="h-8 w-8" aria-label={`Decrease ${v.shortName}`} onClick={() => step(-1)}>−</button>
-              <input className="h-8 w-20 border-x border-slate-300 text-center text-sm font-semibold outline-none" inputMode="numeric" aria-label={`New stock of ${v.shortName}`} value={e?.qty ?? String(v.quantity)} onChange={(ev) => setItemEdit(p, v, { qty: ev.target.value.replace(/[^\d]/g, "") })} />
+              <input autoComplete="off" className="h-8 w-20 border-x border-slate-300 text-center text-sm font-semibold outline-none" inputMode="numeric" aria-label={`New stock of ${v.shortName}`} value={e?.qty ?? String(v.quantity)} onChange={(ev) => setItemEdit(p, v, { qty: ev.target.value.replace(/[^\d]/g, "") })} />
               <button type="button" className="h-8 w-8" aria-label={`Increase ${v.shortName}`} onClick={() => step(1)}>+</button>
             </div>
           </td>
@@ -834,7 +838,7 @@ function StockIn() {
         <td>
           <div className={`flex w-fit items-center rounded-md border bg-white ${c.count ? "border-brand-500" : "border-slate-300"}`}>
             <button type="button" className="h-8 w-8" aria-label={`Decrease ${name}`} onClick={() => step(-1)}>−</button>
-            <input className="h-8 w-16 border-x border-slate-300 text-center text-sm font-semibold outline-none" inputMode="numeric" aria-label={`New set count of ${name}`} value={e?.count ?? String(t.count)} onChange={(ev) => setEdit(p.id, t, { count: ev.target.value.replace(/[^\d]/g, "") })} />
+            <input autoComplete="off" className="h-8 w-16 border-x border-slate-300 text-center text-sm font-semibold outline-none" inputMode="numeric" aria-label={`New set count of ${name}`} value={e?.count ?? String(t.count)} onChange={(ev) => setEdit(p.id, t, { count: ev.target.value.replace(/[^\d]/g, "") })} />
             <button type="button" className="h-8 w-8" aria-label={`Increase ${name}`} onClick={() => step(1)}>+</button>
           </div>
         </td>
@@ -850,7 +854,7 @@ function StockIn() {
         const setPriceErr = setTypePriceError(p.id, t);
         return (
           <td className={setPriceErr ? "bg-rose-50/50" : ""}>
-            <input
+            <input autoComplete="off"
               className={`input w-24 ${setPriceErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:border-rose-600 focus:ring-rose-500" : c.minPrice ? "border-brand-500 bg-brand-50" : ""}`}
               inputMode="numeric"
               aria-label={`Minimum selling price of ${name}`}
@@ -870,7 +874,7 @@ function StockIn() {
         const setPriceErr = setTypePriceError(p.id, t);
         return (
           <td className={setPriceErr ? "bg-rose-50/50" : ""}>
-            <input
+            <input autoComplete="off"
               className={`input w-24 ${setPriceErr ? "border-rose-500 bg-rose-50 text-rose-900 focus:border-rose-600 focus:ring-rose-500" : c.price ? "border-brand-500 bg-brand-50" : ""}`}
               inputMode="numeric"
               aria-label={`Selling price of ${name}`}
@@ -882,7 +886,7 @@ function StockIn() {
         );
       })(),
       minStock: (
-        <td><input className={`input w-20 ${c.min ? "border-brand-500 bg-brand-50" : ""}`} inputMode="numeric" aria-label={`Minimum stock of ${name}`} value={e?.min ?? String(t.lowStockThreshold)} onChange={(ev) => setEdit(p.id, t, { min: ev.target.value.replace(/[^\d]/g, "") })} /></td>
+        <td><input autoComplete="off" className={`input w-20 ${c.min ? "border-brand-500 bg-brand-50" : ""}`} inputMode="numeric" aria-label={`Minimum stock of ${name}`} value={e?.min ?? String(t.lowStockThreshold)} onChange={(ev) => setEdit(p.id, t, { min: ev.target.value.replace(/[^\d]/g, "") })} /></td>
       ),
     };
   };
@@ -1137,7 +1141,7 @@ function StockIn() {
             </SidebarField>
 
             <SidebarField label="Notes (optional)">
-              <input
+              <input autoComplete="off"
                 className="input text-sm"
                 placeholder="Enter notes for this batch…"
                 maxLength={300}
@@ -1362,7 +1366,7 @@ function StockIn() {
           <select className="input w-auto" value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Reason">
             {REASONS.map((r) => <option key={r}>{r}</option>)}
           </select>
-          <input className="input min-w-[10rem] flex-1" placeholder="Notes (optional)" maxLength={300} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          <input autoComplete="off" className="input min-w-[10rem] flex-1" placeholder="Notes (optional)" maxLength={300} value={notes} onChange={(e) => setNotes(e.target.value)} />
           <button className="btn border border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800" disabled={saving || changeCount === 0} onClick={() => void save()}>
             {saving ? "Saving…" : `Save Stock (${changeCount})`}
           </button>
@@ -1469,7 +1473,7 @@ function StockIn() {
                 {products.map((p) => {
                   const active = p.variations.filter((v) => v.active);
                   if (p.productType === "measured") {
-                    const isOpen = !!openGroup[p.id];
+                    const isOpen = openGroup[p.id] !== undefined ? !!openGroup[p.id] : (search.trim().length > 0 || focus === p.id);
                     return (
                       <Fragment key={p.id}>
                         <tr
@@ -1552,7 +1556,7 @@ function StockIn() {
                   if (p.productType === "grouped") {
                     const v = active[0];
                     if (!v) return null;
-                    const isOpen = !!openGroup[p.id];
+                    const isOpen = openGroup[p.id] !== undefined ? !!openGroup[p.id] : (search.trim().length > 0 || focus === p.id);
                     return (
                       <Fragment key={p.id}>
                         <tr
@@ -1635,7 +1639,7 @@ function StockIn() {
                       </tr>
                     );
                   }
-                  const isOpen = !!openGroup[p.id];
+                  const isOpen = openGroup[p.id] !== undefined ? !!openGroup[p.id] : (search.trim().length > 0 || focus === p.id);
                   const total = active.reduce((s, v) => s + v.quantity, 0);
                   const attrCols = attrColumns(p, active);
                   return (
@@ -1699,7 +1703,22 @@ function StockIn() {
                       {isOpen && (
                         <tr>
                           <td colSpan={colCount} className="bg-slate-50/70 !p-0">
-                            <div className="child-panel">
+                            <div className="child-panel space-y-2.5">
+                              {p.variations.length > 1 && (
+                                <VariationTabs
+                                  attributes={p.attributes}
+                                  variations={p.variations}
+                                  selectedFilters={varFilterByProduct[p.id]?.filters}
+                                  selectedVariationId={varFilterByProduct[p.id]?.singleId}
+                                  onFilterChange={(filteredIds, filters, singleId) => {
+                                    setVarFilterByProduct((prev) => ({
+                                      ...prev,
+                                      [p.id]: { ids: filteredIds, filters, singleId },
+                                    }));
+                                  }}
+                                  scrollTargetPrefix={`stockin-var-${p.id}`}
+                                />
+                              )}
                               <table className="table rounded-md bg-white">
                                 <thead>
                                   <tr>
@@ -1716,23 +1735,30 @@ function StockIn() {
                                     }
                                   }}
                                 >
-                                  {shownVariations(p).map((v, index, ordered) => {
-                                    const isSelected = draggedVariation?.variationId === v.id;
-                                    const isDropTarget = dropTarget?.productId === p.id && dropTarget?.variationId === v.id && !isSelected;
-                                    const indicatorClass = isDropTarget
-                                      ? dropTarget.position === "before"
-                                        ? "drop-indicator-top"
-                                        : "drop-indicator-bottom"
-                                      : "";
-                                    const rowClass = [
-                                      isSelected ? "row-dragging bg-light border shadow-sm" : "",
-                                      indicatorClass,
-                                    ].filter(Boolean).join(" ");
+                                  {(() => {
+                                    const pFilter = varFilterByProduct[p.id];
+                                    const allShown = shownVariations(p);
+                                    const filtered = pFilter?.ids ? allShown.filter((v) => pFilter.ids!.includes(v.id)) : allShown;
+                                    return filtered.map((v, index, ordered) => {
+                                      const isSelected = draggedVariation?.variationId === v.id;
+                                      const isDropTarget = dropTarget?.productId === p.id && dropTarget?.variationId === v.id && !isSelected;
+                                      const isVarPicked = pFilter?.singleId === v.id;
+                                      const indicatorClass = isDropTarget
+                                        ? dropTarget.position === "before"
+                                          ? "drop-indicator-top"
+                                          : "drop-indicator-bottom"
+                                        : "";
+                                      const rowClass = [
+                                        isSelected ? "row-dragging bg-light border shadow-sm" : "",
+                                        isVarPicked ? "bg-brand-50/70 ring-1 ring-brand-400 font-medium" : "",
+                                        indicatorClass,
+                                      ].filter(Boolean).join(" ");
 
-                                    return (
-                                      <tr
-                                        key={v.id}
-                                        className={rowClass}
+                                      return (
+                                        <tr
+                                          id={`stockin-var-${p.id}-${v.id}`}
+                                          key={v.id}
+                                          className={rowClass}
                                         onDragOver={(event) => {
                                           if (!draggedVariation || draggedVariation.productId !== p.id) return;
                                           if (draggedVariation.variationId === v.id) {
@@ -1792,7 +1818,8 @@ function StockIn() {
                                       {rowCells(subCols, { ...idCellMap(v), ...editCellMap(p, v) })}
                                     </tr>
                                   );
-                                })}
+                                });
+                              })()}
                                 </tbody>
                               </table>
                             </div>

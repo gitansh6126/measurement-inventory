@@ -7,6 +7,7 @@ import { ViewToggle } from "@/components/catalog/ViewToggle";
 import { OptionButtons } from "@/components/cart/OptionButtons";
 import { useCan } from "@/components/MeContext";
 import { ProductThumb } from "@/components/ProductThumb";
+import { VariationTabs } from "@/components/products/VariationTabs";
 import { MOVEMENT_LABEL } from "@/components/products/ProductDetailModal";
 import { VendorPricingModal } from "@/components/vendor/VendorPricingModal";
 import { StockBadge } from "@/components/StockBadge";
@@ -45,7 +46,7 @@ type ProductMovement = Omit<Movement, "type"> & {
 const priceText = (v: StockVariation, lu?: LengthUnit | null) =>
   fmtSellRate(lu, v.minSalePrice, v.salePrice, "Sell: ");
 
-// Before an option is picked: the lowest to highest selling price over every variation.
+// (No range text shown for products with variations)
 const rangeText = (vars: StockVariation[], lu?: LengthUnit | null) => {
   const prices = vars.map((v) => Number(v.salePrice)).filter((n) => n > 0);
   if (!prices.length) return "—";
@@ -69,6 +70,8 @@ export function ProductDetailView({ productId, back }: { productId: string; back
   const [pick, setPick] = useState<Record<string, string>>({});
   const [slide, setSlide] = useState(0);
   const [view, setView] = useViewMode("product.variations", "grid");
+  const [tableFilteredIds, setTableFilteredIds] = useState<string[] | null>(null);
+  const [tableFilters, setTableFilters] = useState<Record<string, string>>({});
   const [vendorModalOpen, setVendorModalOpen] = useState(false);
   const [stockHistoryOpen, setStockHistoryOpen] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);

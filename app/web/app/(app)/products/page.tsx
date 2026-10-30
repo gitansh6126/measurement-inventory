@@ -18,6 +18,7 @@ import { ProductKind, ProductTile } from "@/components/products/ProductTile";
 import { isLowStock } from "@/components/StockBadge";
 import { ProductDetailModal } from "@/components/products/ProductDetailModal";
 import { ProductModal } from "@/components/products/ProductModal";
+import { VariationTabs } from "@/components/products/VariationTabs";
 import { VendorPricingModal } from "@/components/vendor/VendorPricingModal";
 import { VariationOrderCell } from "@/components/VariationOrderCell";
 import { Alert, EmptyState, PageHeader, SearchInput, Segmented, StatCell, StatStrip, TableSkeleton, Toolbar } from "@/components/ui";
@@ -114,6 +115,9 @@ function ProductsPage() {
   const [reordering, setReordering] = useState("");
   const [draggedVariation, setDraggedVariation] = useState<{ productId: string; variationId: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<{ productId: string; variationId: string; position: "before" | "after" } | null>(null);
+  const [varFilterByProduct, setVarFilterByProduct] = useState<
+    Record<string, { ids: string[] | null; filters: Record<string, string>; singleId: string | null }>
+  >({});
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<{ loaded: number; total: number } | null>(null);
   // Category column is off by default (the By Category layout already groups by it).
@@ -873,7 +877,7 @@ function ProductsPage() {
                 const measured = p.productType === "measured";
                 const sets = p.productType === "grouped";
                 const expandable = variable || measured || sets;
-                const expanded = open.has(p.id);
+                const expanded = open.has(p.id) || (search.trim().length > 0 && !open.has(`closed-${p.id}`));
                 const only = p.variations[0]!;
                 // Child rows: one column per attribute, its unit in the header ("Size (mm)" → 3).
                 const attrCols = variable ? variationAttributeColumns(p, p.variations) : [];
@@ -1001,7 +1005,22 @@ function ProductsPage() {
                     {variable && expanded && (
                       <tr>
                         <td colSpan={visibleColumns.length + 1} className="bg-slate-50/70 !p-0">
-                          <div className="child-panel">
+                          <div className="child-panel space-y-2.5">
+                            {p.variations.length > 1 && (
+                              <VariationTabs
+                                attributes={p.attributes}
+                                variations={p.variations}
+                                selectedFilters={varFilterByProduct[p.id]?.filters}
+                                selectedVariationId={varFilterByProduct[p.id]?.singleId}
+                                onFilterChange={(filteredIds, filters, singleId) => {
+                                  setVarFilterByProduct((prev) => ({
+                                    ...prev,
+                                    [p.id]: { ids: filteredIds, filters, singleId },
+                                  }));
+                                }}
+                                scrollTargetPrefix={`product-var-${p.id}`}
+                              />
+                            )}
                             <table className="table rounded-md bg-white">
                               <thead>
                                 <tr>
@@ -1018,24 +1037,31 @@ function ProductsPage() {
                                   }
                                 }}
                               >
-                                {orderedVariations(p).map((v, index, ordered) => {
-                                  const varLabel = variationLabel(v, p.attributes);
-                                  const isSelected = draggedVariation?.variationId === v.id;
-                                  const isDropTarget = dropTarget?.productId === p.id && dropTarget?.variationId === v.id && !isSelected;
-                                  const indicatorClass = isDropTarget
-                                    ? dropTarget.position === "before"
-                                      ? "drop-indicator-top"
-                                      : "drop-indicator-bottom"
-                                    : "";
-                                  const rowClass = [
-                                    isSelected ? "row-dragging bg-light border shadow-sm" : v.active ? "" : "opacity-60",
-                                    indicatorClass,
-                                  ].filter(Boolean).join(" ");
+                                {(() => {
+                                  const pFilter = varFilterByProduct[p.id];
+                                  const allVars = orderedVariations(p);
+                                  const filtered = pFilter?.ids ? allVars.filter((v) => pFilter.ids!.includes(v.id)) : allVars;
+                                  return filtered.map((v, index, ordered) => {
+                                    const varLabel = variationLabel(v, p.attributes);
+                                    const isSelected = draggedVariation?.variationId === v.id;
+                                    const isDropTarget = dropTarget?.productId === p.id && dropTarget?.variationId === v.id && !isSelected;
+                                    const isVarPicked = pFilter?.singleId === v.id;
+                                    const indicatorClass = isDropTarget
+                                      ? dropTarget.position === "before"
+                                        ? "drop-indicator-top"
+                                        : "drop-indicator-bottom"
+                                      : "";
+                                    const rowClass = [
+                                      isSelected ? "row-dragging bg-light border shadow-sm" : v.active ? "" : "opacity-60",
+                                      isVarPicked ? "bg-brand-50/70 ring-1 ring-brand-400 font-medium" : "",
+                                      indicatorClass,
+                                    ].filter(Boolean).join(" ");
 
-                                  return (
-                                    <tr
-                                      key={v.id}
-                                      className={rowClass}
+                                    return (
+                                      <tr
+                                        id={`product-var-${p.id}-${v.id}`}
+                                        key={v.id}
+                                        className={rowClass}
                                       onDragOver={(event) => {
                                         if (!draggedVariation || draggedVariation.productId !== p.id) return;
                                         if (draggedVariation.variationId === v.id) {
@@ -1118,7 +1144,8 @@ function ProductsPage() {
                                       })}
                                     </tr>
                                   );
-                                })}
+                                });
+                              })()}
                               </tbody>
                             </table>
                           </div>

@@ -5,6 +5,7 @@ import { paise, useCart, type CartLine, type CartMode } from "@/components/CartC
 import { ProductThumb } from "@/components/ProductThumb";
 import { StockBadge } from "@/components/StockBadge";
 import { SearchInput, Segmented } from "@/components/ui";
+import { VariationTabs } from "@/components/products/VariationTabs";
 import { formatVariationAttributesString, money, qty } from "@/lib/format";
 import { fmtSellRate } from "@/lib/measure";
 import type { StockProduct, StockVariation } from "@/lib/types";
