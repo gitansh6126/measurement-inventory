@@ -117,6 +117,9 @@ function ProductsPage() {
   const [reordering, setReordering] = useState("");
   const [draggedVariation, setDraggedVariation] = useState<{ productId: string; variationId: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<{ productId: string; variationId: string; position: "before" | "after" } | null>(null);
+  const [varFilterByProduct, setVarFilterByProduct] = useState<
+    Record<string, { ids: string[] | null; filters: Record<string, string>; singleId: string | null }>
+  >({});
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<{ loaded: number; total: number } | null>(null);
   // Category column is off by default (the By Category layout already groups by it).
