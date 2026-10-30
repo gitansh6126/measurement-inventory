@@ -1502,20 +1502,16 @@ function StockIn() {
                                   <div className="flex items-center gap-2.5">
                                     {show("image") && <ProductThumb src={p.imageUrl ?? active[0]?.imageUrl ?? null} name={p.name} className="h-9 w-9 rounded-md text-[7px] shrink-0" />}
                                     <div>
-                                      <div className="flex items-center gap-1">
-                                        <span className="hover:text-brand-700">{p.name}</span>
-                                        <Link
-                                          href={`/inventory/${p.id}`}
-                                          className="text-xs text-slate-400 hover:text-brand-700"
-                                          title={`View ${p.name} details`}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            guardLeave(e);
-                                          }}
-                                        >
-                                          ↗
-                                        </Link>
-                                      </div>
+                                      <Link
+                                        href={`/inventory/${p.id}`}
+                                        className="hover:text-brand-700 hover:underline"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          guardLeave(e);
+                                        }}
+                                      >
+                                        {p.name}
+                                      </Link>
                                       <div className="mt-1 flex items-center gap-1.5">
                                         <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-700">
                                           {active.length}{ofAll(p)} variation{active.length === 1 && !ofAll(p) ? "" : "s"}
@@ -1589,20 +1585,16 @@ function StockIn() {
                                   <div className="flex items-center gap-2.5">
                                     {show("image") && <ProductThumb src={p.imageUrl ?? v.imageUrl ?? null} name={p.name} className="h-9 w-9 rounded-md text-[7px] shrink-0" />}
                                     <div>
-                                      <div className="flex items-center gap-1">
-                                        <span className="hover:text-brand-700">{p.name}</span>
-                                        <Link
-                                          href={`/inventory/${p.id}`}
-                                          className="text-xs text-slate-400 hover:text-brand-700"
-                                          title={`View ${p.name} details`}
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            guardLeave(e);
-                                          }}
-                                        >
-                                          ↗
-                                        </Link>
-                                      </div>
+                                      <Link
+                                        href={`/inventory/${p.id}`}
+                                        className="hover:text-brand-700 hover:underline"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          guardLeave(e);
+                                        }}
+                                      >
+                                        {p.name}
+                                      </Link>
                                       <div className="mt-1">
                                         <SetTypesBadge groupId={p.id} warehouseId={whFilter} categoryId={setCategory_} />
                                       </div>
@@ -1678,20 +1670,16 @@ function StockIn() {
                                 <div className="flex items-center gap-2.5">
                                   {show("image") && <ProductThumb src={p.imageUrl ?? active[0]?.imageUrl ?? null} name={p.name} className="h-9 w-9 rounded-md text-[7px] shrink-0" />}
                                   <div>
-                                    <div className="flex items-center gap-1">
-                                      <span className="hover:text-brand-700">{p.name}</span>
-                                      <Link
-                                        href={`/inventory/${p.id}`}
-                                        className="text-xs text-slate-400 hover:text-brand-700"
-                                        title={`View ${p.name} details`}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          guardLeave(e);
-                                        }}
-                                      >
-                                        ↗
-                                      </Link>
-                                    </div>
+                                    <Link
+                                      href={`/inventory/${p.id}`}
+                                      className="hover:text-brand-700 hover:underline"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        guardLeave(e);
+                                      }}
+                                    >
+                                      {p.name}
+                                    </Link>
                                     <div className="mt-1">
                                       <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-xs font-semibold text-violet-700">
                                         {active.length} variation{active.length === 1 ? "" : "s"}
