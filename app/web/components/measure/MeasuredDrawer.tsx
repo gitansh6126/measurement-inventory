@@ -7,7 +7,7 @@ import { LengthField } from "@/components/measure/LengthField";
 import { RateField } from "@/components/measure/RateField";
 import { ProductThumb } from "@/components/ProductThumb";
 import { money, variationLabel } from "@/lib/format";
-import { KIND_CLASS, KIND_LABEL, baseLabel, fmtLen, fmtSellRate, kindPhrase, metaOf, rateLabel, rollWord, type PieceView, type ProductPieces } from "@/lib/measure";
+import { KIND_CLASS, KIND_LABEL, baseLabel, fmtLen, fmtRate, fmtSellRate, kindPhrase, metaOf, rateLabel, rollWord, type PieceView, type ProductPieces } from "@/lib/measure";
 import { PieceColumns, dayMonth } from "@/components/measure/PieceColumns";
 import type { StockProduct, StockVariation } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
@@ -20,6 +20,7 @@ import { SupplierRateList } from "@/components/vendor/SupplierRateList";
 import { WarehouseStockChips } from "@/components/cart/TakeFromPopup";
 import { OptionButtons } from "@/components/cart/OptionButtons";
 import { useLengthView } from "@/lib/lengthView";
+import { useCustomerMode } from "@/components/CustomerModeContext";
 
 // Measured products in the sale / purchase drawer (wireframes W12, W14–W15, W17).
 //
@@ -40,8 +41,23 @@ const round3 = (n: number) => Math.round(n * 1000) / 1000;
 // "Other sizes" suggestions for now (kept for later use). Set true to show them again.
 const SHOW_CUT_HINTS = false;
 
-export function MeasuredDrawer({ product, mode, onClose, edit }: { product: StockProduct; mode: CartMode; onClose: () => void; edit?: { index: number; line: CartLine } }) {
+export function MeasuredDrawer({
+  product,
+  mode,
+  onClose,
+  edit,
+  initialPick,
+  initialVariationId,
+}: {
+  product: StockProduct;
+  mode: CartMode;
+  onClose: () => void;
+  edit?: { index: number; line: CartLine };
+  initialPick?: Record<string, string>;
+  initialVariationId?: string;
+}) {
   useLengthView();
+  const { isCustomerMode } = useCustomerMode();
   const cart = useCart();
   const canViewVendor = useCan("vendor_pricing.view");
   const canManageVendor = useCan("vendor_pricing.manage");
@@ -66,10 +82,23 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
   // front (owner 2026-10-27) unless the line is being edited or there is only one variation.
   const optionAttrs = useMemo(() => product.attributes.filter((a) => active.some((v) => v.attributes[a.name])), [product.attributes, active]);
   const [pick, setPick] = useState<Record<string, string>>(() => {
-    const start = edit ? active.find((v) => v.id === edit.line.variationId) : active.length === 1 ? active[0] : undefined;
-    return start ? { ...start.attributes } : {};
+    const start = edit
+      ? active.find((v) => v.id === edit.line.variationId)
+      : initialVariationId
+        ? active.find((v) => v.id === initialVariationId)
+        : active.length === 1
+          ? active[0]
+          : undefined;
+    if (start) return { ...start.attributes };
+    if (initialPick && Object.keys(initialPick).length > 0) return { ...initialPick };
+    return {};
   });
-  const [flatId, setFlatId] = useState<string | null>(edit?.line.variationId ?? (active.length === 1 ? active[0].id : null));
+  const [flatId, setFlatId] = useState<string | null>(() => {
+    if (edit?.line.variationId) return edit.line.variationId;
+    if (initialVariationId) return initialVariationId;
+    if (active.length === 1) return active[0].id;
+    return null;
+  });
   const variationId = optionAttrs.length
     ? active.find((v) => optionAttrs.every((a) => (v.attributes[a.name] ?? "") === (pick[a.name] ?? "")))?.id ?? null
     : flatId;
@@ -99,8 +128,12 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
   // A new variation starts empty so another variation's rate is never carried over.
   useEffect(() => {
     if (!chosen || (edit && chosen.id === edit.line.variationId)) return;
-    setPrice("");
-  }, [chosen?.id, edit]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (isCustomerMode) {
+      setPrice(String(chosen.salePrice || 0));
+    } else {
+      setPrice("");
+    }
+  }, [chosen?.id, edit, isCustomerMode, chosen?.salePrice]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -433,42 +466,40 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
                 <div className="sm:col-span-2">
                   <LengthField id="sale-length" base={meta.lengthUnit} decimals={meta.decimals} value={Number.isFinite(length) ? length : null} onChange={setLength} autoFocus={!edit} {...lenPref} />
                 </div>
-                <div>
-                  <RateField id="sale-rate" label={`Rate ₹ / ${rUnit}`} unit={meta.lengthUnit} value={price} onChange={(x) => { setPrice(x); }} {...ratePref} />
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
-                    <span className="font-medium text-slate-500">Price guide:</span>
-                    {Number(chosen.minSalePrice) > 0 && (
+                {!isCustomerMode ? (
+                  <div>
+                    <RateField id="sale-rate" label={`Rate ₹ / ${rUnit}`} unit={meta.lengthUnit} value={price} onChange={(x) => { setPrice(x); }} {...ratePref} />
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+                      <span className="font-medium text-slate-500">Price guide:</span>
+                      {Number(chosen.minSalePrice) > 0 && (
+                        <button
+                          type="button"
+                          className={`rounded-full border px-2 py-0.5 transition-colors cursor-pointer ${
+                            price === String(Math.round(Number(chosen.minSalePrice)))
+                              ? "border-emerald-500 bg-emerald-50 text-emerald-800 font-medium"
+                              : "border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                          }`}
+                          onClick={() => setPrice(String(Math.round(Number(chosen.minSalePrice))))}
+                          title="Use minimum selling price"
+                        >
+                          Min {fmtRate(meta.lengthUnit, chosen.minSalePrice)}
+                        </button>
+                      )}
                       <button
                         type="button"
                         className={`rounded-full border px-2 py-0.5 transition-colors cursor-pointer ${
-                          price === String(Math.round(Number(chosen.minSalePrice)))
-                            ? "border-emerald-500 bg-emerald-50 text-emerald-800 font-medium"
+                          price === String(Math.round(Number(chosen.salePrice)))
+                            ? "border-brand-500 bg-brand-50 text-brand-800 font-medium"
                             : "border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
                         }`}
-                        onClick={() => {
-                          setPrice(String(Math.round(Number(chosen.minSalePrice))));
-                        }}
-                        title="Use minimum selling price"
+                        onClick={() => setPrice(String(Math.round(Number(chosen.salePrice))))}
+                        title="Use standard selling price"
                       >
-                        Min {money(chosen.minSalePrice)}
+                        Sell {fmtRate(meta.lengthUnit, chosen.salePrice)}
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      className={`rounded-full border px-2 py-0.5 transition-colors cursor-pointer ${
-                        price === String(Math.round(Number(chosen.salePrice)))
-                          ? "border-emerald-500 bg-emerald-50 text-emerald-800 font-medium"
-                          : "border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
-                      }`}
-                      onClick={() => {
-                        setPrice(String(Math.round(Number(chosen.salePrice))));
-                      }}
-                      title="Use standard selling price"
-                    >
-                      Selling {money(chosen.salePrice)}
-                    </button>
+                    </div>
                   </div>
-                </div>
+                ) : null}
               </div>
 
               {(SHOW_CUT_HINTS || !(pieces.data && need && plan && plan.kind !== "CLOSED" && !scrap)) && (
@@ -717,7 +748,7 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
         {/* Always Visible Sticky Footer */}
         <div className="shrink-0 border-t border-slate-200 bg-slate-50/95 px-5 py-3 sm:px-6 flex items-center justify-between gap-3">
           <div className="text-sm text-slate-500">
-            {subtotal > 0 ? (
+            {!isCustomerMode && subtotal > 0 ? (
               <>Amount <b className="text-lg font-bold text-slate-900">{money(subtotal / 100)}</b></>
             ) : (
               <span>Ready to add to cart</span>

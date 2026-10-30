@@ -10,15 +10,17 @@ import { CreditScoreBadge } from "@/components/CreditScoreBadge";
 import { PartyPicker } from "@/components/PartyPicker";
 import { ProductBrowser } from "@/components/ProductBrowser";
 import { Alert, PageHeader } from "@/components/ui";
+import { useCustomerMode } from "@/components/CustomerModeContext";
 import { useApi } from "@/lib/useApi";
 
 export function TransactionBuilder({ mode }: { mode: CartMode }) {
   const cart = useCart();
+  const { isCustomerMode } = useCustomerMode();
   const me = useMe();
   const isSale = mode === "sale";
   const label = isSale ? "customer" : "supplier";
   const party = cart.party?.mode === mode ? cart.party : null;
-  const isWalkIn = party?.id === "walk-in";
+  const isWalkIn = party?.id === "walk-in" || isCustomerMode;
   // Customers can be created by any role; suppliers not by sales_staff.
   const canAddParty = useCan("party.create") && (isSale || me?.user.role !== "sales_staff");
   const parties = useApi<{ parties: Party[] }>(`/parties?role=${label}`);
@@ -104,6 +106,7 @@ export function TransactionBuilder({ mode }: { mode: CartMode }) {
         />
       </div>
 
+      {!isCustomerMode && (
       <section className="card grid gap-2 p-3 sm:p-4 sm:grid-cols-[auto_1fr_auto] sm:items-center">
         <div className="flex items-center justify-between sm:block">
           <label className="text-sm font-semibold text-slate-900" htmlFor="transaction-party">
@@ -167,6 +170,7 @@ export function TransactionBuilder({ mode }: { mode: CartMode }) {
         </div>
         {parties.error && <div className="sm:col-span-3"><Alert message={parties.error} /></div>}
       </section>
+      )}
 
       <Suspense fallback={<div className="card p-4 text-sm text-slate-500">Loading catalog…</div>}>
         <ProductBrowser mode={mode} />

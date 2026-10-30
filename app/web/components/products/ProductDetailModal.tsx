@@ -13,6 +13,7 @@ import { VendorPricingModal } from "@/components/vendor/VendorPricingModal";
 import type { Movement, StockProduct, StockVariation } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
 import { useLengthView } from "@/lib/lengthView";
+import { useCustomerMode } from "@/components/CustomerModeContext";
 
 function RollStrip({ product }: { product: StockProduct }) {
   useLengthView();
@@ -60,6 +61,8 @@ export const MOVEMENT_LABEL: Record<Movement["type"], string> = {
 };
 
 export function ProductDetailModal({
+  // hooks
+
   product,
   initialVariationId,
   onClose,
@@ -71,6 +74,7 @@ export function ProductDetailModal({
   onEdit?: () => void;
 }) {
   useLengthView();
+  const { isCustomerMode } = useCustomerMode();
   const router = useRouter();
   const canViewCost = useCan("inventory.configure");
   const canEdit = useCan("product.write");
@@ -184,7 +188,7 @@ export function ProductDetailModal({
                 {varLabel}
               </span>,
             )}
-            {row("Selling Price", fmtSellRate(product.measure?.lengthUnit, v.minSalePrice, v.salePrice, "Sell: "))}
+            {!isCustomerMode && row("Selling Price", fmtSellRate(product.measure?.lengthUnit, v.minSalePrice, v.salePrice, "Sell: "))}
             {canViewCost && row("Purchasing Price", Number(v.purchaseCost) > 0 ? fmtRate(product.measure?.lengthUnit, v.purchaseCost) : "—")}
             {product.productType !== "measured" && row(
               "Stock on Hand",
@@ -193,9 +197,9 @@ export function ProductDetailModal({
                 {v.state !== "ok" ? " (Low!)" : ""}
               </span>,
             )}
-            {row("Minimum Stock Level", v.lowStockThreshold)}
-            {row("Unit", product.unit)}
-            {row("Type", product.productType === "measured" ? "Measured" : variable ? "Variable" : "Simple")}
+            {!isCustomerMode && row("Minimum Stock Level", v.lowStockThreshold)}
+
+
             {row(
               "Sales activity",
               <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${

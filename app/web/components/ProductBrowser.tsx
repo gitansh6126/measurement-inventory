@@ -18,6 +18,7 @@ import { errorText, useApi } from "@/lib/useApi";
 import { useCatalogNav, ALL_CATEGORIES } from "@/lib/useCatalogNav";
 import { fmtRate, fmtSellRate } from "@/lib/measure";
 import { useLengthView } from "@/lib/lengthView";
+import { useCustomerMode } from "@/components/CustomerModeContext";
 
 const STOCK_CHIPS: { value: CatalogStock; label: string }[] = [
   { value: "all", label: "All" },
@@ -39,7 +40,8 @@ function normalizeCategory(category: string | null) {
   return category;
 }
 
-function priceDisplay(product: ProductCard, mode: CartMode) {
+function priceDisplay(product: ProductCard, mode: CartMode, isCustomerMode?: boolean) {
+  if (isCustomerMode) return <div className="text-xs font-semibold text-emerald-700">In Catalog</div>;
   if (mode === "purchase") {
     const low = product.costMin ? money(product.costMin) : null;
     const high = product.costMax ? money(product.costMax) : null;
@@ -89,6 +91,7 @@ export function ProductBrowser({ mode }: { mode: CartMode }) {
 
 function ProductBrowserInner({ mode }: { mode: CartMode }) {
   useLengthView();
+  const { isCustomerMode } = useCustomerMode();
   const nav = useCatalogNav();
   const { query: searchText, setQuery: setSearchText, category } = nav;
   // Tapping a product opens the bottom drawer (V1 flow) over the category grid.

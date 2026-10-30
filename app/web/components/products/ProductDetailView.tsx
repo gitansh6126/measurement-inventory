@@ -24,6 +24,11 @@ import { variationAttributeColumns } from "@/lib/variationColumns";
 import { fmtLen, fmtLenSigned, fmtRate, fmtSellRate, metaOf, type LengthUnit } from "@/lib/measure";
 import { BundleHistory } from "@/components/measure/BundleHistory";
 import { useLengthView } from "@/lib/lengthView";
+import { useCustomerMode } from "@/components/CustomerModeContext";
+import { useCart } from "@/components/CartContext";
+import { CartIcon } from "@/components/icons";
+import { ProductDrawer } from "@/components/ProductDrawer";
+import { SaleSetsModal } from "@/components/sets/SaleSetsModal";
 
 // Single-product page (catalog browse §2.2, owner reference image 2 — Crossbee): image carousel
 // with dots, name, price, one row of option buttons per attribute; then details, measurements,
@@ -56,6 +61,11 @@ const rangeText = (vars: StockVariation[], lu?: LengthUnit | null) => {
 
 export function ProductDetailView({ productId, back }: { productId: string; back: { href: string; label: string } }) {
   useLengthView();
+  const { isCustomerMode } = useCustomerMode();
+  const cart = useCart();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [setsFor, setSetsFor] = useState<string | null>(null);
+  const [actionError, setActionError] = useState("");
   const canEdit = useCan("product.write");
   const canAdjust = useCan("stock.adjust");
   const canViewCost = useCan("inventory.configure");
@@ -157,12 +167,12 @@ export function ProductDetailView({ productId, back }: { productId: string; back
             <div className="truncate text-sm font-bold uppercase tracking-wide text-slate-900" title={product.name}>{product.name}</div>
             <div className="truncate text-xs text-slate-500">
               {/* Phones: the price sits here so the name keeps the full width. */}
-              <span className="font-bold text-slate-900 sm:hidden">{grouped ? <SetTypesPriceRange groupId={product.id} /> : chosen ? priceText(chosen, per) : rangeText(allVars, per)} · </span>
+              {!isCustomerMode && <span className="font-bold text-slate-900 sm:hidden">{grouped ? <SetTypesPriceRange groupId={product.id} /> : chosen ? priceText(chosen, per) : rangeText(allVars, per)} · </span>}
               {variable ? (chosen ? `${variationLabel(chosen, product.attributes)} · ${chosen.shortName}` : "Select options") : (product.category?.name ?? "Uncategorized")}
             </div>
           </div>
           <div className="hidden shrink-0 text-right sm:block">
-            <div className="text-sm font-bold text-slate-900">{grouped ? <SetTypesPriceRange groupId={product.id} /> : chosen ? priceText(chosen, per) : rangeText(allVars, per)}</div>
+            {!isCustomerMode && <div className="text-sm font-bold text-slate-900">{grouped ? <SetTypesPriceRange groupId={product.id} /> : chosen ? priceText(chosen, per) : rangeText(allVars, per)}</div>}
             {chosen && <div><StockBadge quantity={chosen.quantity} state={chosen.state} unit={stockUnit} /></div>}
           </div>
           <button
@@ -173,7 +183,7 @@ export function ProductDetailView({ productId, back }: { productId: string; back
           >
             {variable ? "Options ↑" : "Top ↑"}
           </button>
-          {canManageStock && (
+          {!isCustomerMode && canManageStock && (
             <Link href={stockHref} tabIndex={compact ? 0 : -1} className="btn-primary hidden shrink-0 px-2 py-1 text-xs sm:inline-flex">
               Manage stock
             </Link>
@@ -186,6 +196,7 @@ export function ProductDetailView({ productId, back }: { productId: string; back
         title={product.name}
         subtitle={[product.category?.name ?? "Uncategorized", variable ? `${allVars.length} variations` : grouped ? "Grouped product (set)" : "Simple product"].join(" · ")}
         actions={
+          !isCustomerMode ? (
           <div className="flex flex-wrap items-center gap-2">
             {canViewVendor && (
               <button
@@ -209,6 +220,7 @@ export function ProductDetailView({ productId, back }: { productId: string; back
             {canManageStock && <Link href={stockHref} className="btn-secondary">Manage stock & prices</Link>}
             {canEdit && <Link href={`/products/${product.id}/edit?returnTo=detail`} className="btn-primary">Edit product</Link>}
           </div>
+          ) : undefined
         }
       />
 
@@ -249,23 +261,24 @@ export function ProductDetailView({ productId, back }: { productId: string; back
             {variable && chosen && <div className="mt-1 text-sm text-slate-500">{variationLabel(chosen, product.attributes)} · <span className="font-mono text-xs">{chosen.shortName}</span></div>}
           </div>
           <div ref={heroRef} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-slate-200 pb-4">
-            <div className="text-2xl font-bold text-slate-900">
-              <span className="text-base font-medium text-slate-500">Price: </span>
-              {/* 0041: a grouped product has no own price; the range over its set types. */}
-              {grouped ? <SetTypesPriceRange groupId={product.id} /> : chosen ? priceText(chosen, per) : rangeText(allVars, per)}
-            </div>
+            {!isCustomerMode && (
+              <div className="text-2xl font-bold text-slate-900">
+                <span className="text-base font-medium text-slate-500">Price: </span>
+                {/* 0041: a grouped product has no own price; the range over its set types. */}
+                {grouped ? <SetTypesPriceRange groupId={product.id} /> : chosen ? priceText(chosen, per) : rangeText(allVars, per)}
+              </div>
+            )}
             {chosen && <StockBadge quantity={chosen.quantity} state={chosen.state} unit={stockUnit} />}
-            {!chosen && variable && <span className="text-sm text-amber-700">Select options to see price and stock</span>}
+            {!chosen && variable && !isCustomerMode && <span className="text-sm text-amber-700">Select options to see price and stock</span>}
+            {!chosen && variable && isCustomerMode && <span className="text-sm text-slate-500">Select options to add to cart</span>}
           </div>
-          {grouped && product.grouped && (
-            <p className="text-sm text-slate-600">
-              Set of <b>{product.grouped.main?.name}</b>
-              {product.grouped.byproducts.map((b) => ` + ${b.name}${b.required ? "" : " (optional)"}`).join("")}
-            </p>
-          )}
 
           {variable && (
-            <OptionButtons attributes={product.attributes} active={allVars} picks={pick} onChange={(name, value) =>
+            <OptionButtons
+              attributes={product.attributes}
+              active={allVars}
+              picks={pick}
+              onChange={(name, value) =>
                 setPick((p) => {
                   // Tapping the picked value again clears it.
                   const next = { ...p };
@@ -273,7 +286,60 @@ export function ProductDetailView({ productId, back }: { productId: string; back
                   else next[name] = value;
                   return next;
                 })
-              } />
+              }
+            />
+          )}
+
+          {actionError && <Alert message={actionError} />}
+
+          {/* Add to Cart button */}
+          <div className="flex flex-wrap items-center gap-3">
+            {grouped ? (
+              <button
+                type="button"
+                className="btn-primary flex items-center gap-2 py-2 px-5 text-sm cursor-pointer"
+                onClick={() => setSetsFor(product.id)}
+                disabled={product.quantity <= 0}
+              >
+                <CartIcon className="h-4 w-4" />
+                <span>{product.quantity > 0 ? "Choose sets" : "No sets in stock"}</span>
+              </button>
+            ) : isMeasured ? (
+              <button
+                type="button"
+                className="btn-primary flex items-center gap-2 py-2 px-5 text-sm cursor-pointer"
+                onClick={() => setDrawerOpen(true)}
+              >
+                <CartIcon className="h-4 w-4" />
+                <span>{chosen ? "Add to Cart" : "Choose length"}</span>
+              </button>
+            ) : variable ? (
+              <button
+                type="button"
+                className="btn-primary flex items-center gap-2 py-2 px-5 text-sm cursor-pointer"
+                onClick={() => setDrawerOpen(true)}
+              >
+                <CartIcon className="h-4 w-4" />
+                <span>{chosen ? (chosen.quantity <= 0 ? "Out of Stock" : "Add to Cart") : "Choose options"}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn-primary flex items-center gap-2 py-2 px-5 text-sm cursor-pointer"
+                onClick={() => setDrawerOpen(true)}
+                disabled={product.quantity <= 0}
+              >
+                <CartIcon className="h-4 w-4" />
+                <span>{product.quantity <= 0 ? "Out of Stock" : "Add to Cart"}</span>
+              </button>
+            )}
+          </div>
+
+          {grouped && product.grouped && (
+            <p className="text-sm text-slate-600">
+              Set of <b>{product.grouped.main?.name}</b>
+              {product.grouped.byproducts.map((b) => ` + ${b.name}${b.required ? "" : " (optional)"}`).join("")}
+            </p>
           )}
 
         </div>
@@ -309,8 +375,8 @@ export function ProductDetailView({ productId, back }: { productId: string; back
               </span>,
             ),
           )}
-          {row("Type", product.productType === "measured" ? "Measured" : grouped ? "Grouped (set)" : variable ? "Variable" : "Simple")}
-          {row("Unit", product.unit)}
+
+
           {/* Grouped (set) products never show a short name or SKU (owner, 2026-10-22). */}
           {chosen && !grouped && row("Short name", <span className="font-mono text-xs">{chosen.shortName}</span>)}
           {chosen?.officialSku && !grouped && row("SKU", <span className="font-mono text-xs">{chosen.officialSku}</span>)}
@@ -329,34 +395,36 @@ export function ProductDetailView({ productId, back }: { productId: string; back
         )}
 
         <section className="card p-4">
-          <h3 className="mb-2 font-semibold text-slate-900">Stock & prices</h3>
-          {grouped && <SetTypePrices groupId={product.id} row={row} />}
+          <h3 className="mb-2 font-semibold text-slate-900">{isCustomerMode ? "Stock availability" : "Stock & prices"}</h3>
+          {grouped && <SetTypePrices groupId={product.id} row={row} hidePrices={isCustomerMode} />}
           {chosen && !grouped && (
             <>
               {row(grouped ? "Sets in stock" : (chosen.inSets ?? 0) > 0 ? "Free stock" : "Stock on hand", <StockBadge quantity={chosen.quantity} state={chosen.state} unit={stockUnit} />)}
               {!grouped && (chosen.inSets ?? 0) > 0 && row("In sets", `${qty(chosen.inSets!)} ${product.unit}`)}
               {/* V3.1: per-warehouse stock (absent while warehousing is off). */}
               {!grouped && chosen.byWarehouse && row("In warehouses", chosen.byWarehouse.some((w) => w.quantity !== 0) ? <WarehouseStockChips rows={chosen.byWarehouse} /> : "—")}
-              {row("Minimum stock", chosen.lowStockThreshold)}
-              {row("Selling price", fmtSellRate(per, chosen.minSalePrice, chosen.salePrice, "Sell: "))}
-              {canViewCost && row("Purchasing price", Number(chosen.purchaseCost) > 0 ? fmtRate(per, chosen.purchaseCost) : "—")}
+              {!isCustomerMode && row("Minimum stock", chosen.lowStockThreshold)}
+              {!isCustomerMode && row("Selling price", fmtSellRate(per, chosen.minSalePrice, chosen.salePrice, "Sell: "))}
+              {!isCustomerMode && canViewCost && row("Purchasing price", Number(chosen.purchaseCost) > 0 ? fmtRate(per, chosen.purchaseCost) : "—")}
             </>
           )}
           {variable && row("Total stock", `${qty(product.quantity)} ${product.unit}`)}
-          {variable && (low > 0 || out > 0) && row("Low / out", `${low} low · ${out} out`)}
-          <div className="mt-2 grid gap-2 border-t border-slate-100 pt-2">
-            {canManageStock && <Link href={stockHref} className="btn-secondary w-full text-xs">Change stock or prices on Stock In</Link>}
-            <button
-              type="button"
-              onClick={() => {
-                setHistoryPage(1);
-                setStockHistoryOpen(true);
-              }}
-              className="btn-secondary w-full text-xs"
-            >
-              View stock history
-            </button>
-          </div>
+          {variable && !isCustomerMode && (low > 0 || out > 0) && row("Low / out", `${low} low · ${out} out`)}
+          {!isCustomerMode && (
+            <div className="mt-2 grid gap-2 border-t border-slate-100 pt-2">
+              {canManageStock && <Link href={stockHref} className="btn-secondary w-full text-xs">Change stock or prices on Stock In</Link>}
+              <button
+                type="button"
+                onClick={() => {
+                  setHistoryPage(1);
+                  setStockHistoryOpen(true);
+                }}
+                className="btn-secondary w-full text-xs"
+              >
+                View stock history
+              </button>
+            </div>
+          )}
         </section>
       </div>
 
@@ -388,7 +456,7 @@ export function ProductDetailView({ productId, back }: { productId: string; back
                     <span className="font-mono">{v.shortName}</span>
                     <StockBadge quantity={v.quantity} state={v.state} />
                   </div>
-                  <div className="text-sm font-semibold text-brand-700">{priceText(v, per)}</div>
+                  {!isCustomerMode && <div className="text-sm font-semibold text-brand-700">{priceText(v, per)}</div>}
                 </div>
               </button>
             )}
@@ -403,9 +471,9 @@ export function ProductDetailView({ productId, back }: { productId: string; back
               { id: "short", header: "Short name", cell: (v) => <span className="font-mono text-xs">{v.shortName}</span> },
               { id: "stock", header: "Stock", cell: (v) => <StockBadge quantity={v.quantity} state={v.state} unit={product.unit} /> },
               ...(product.variations.some((v) => v.byWarehouse) ? [{ id: "warehouses", header: "In warehouses", cell: (v: StockVariation) => <WarehouseStockChips rows={v.byWarehouse} /> }] : []),
-              { id: "min", header: "Min stock", align: "right", cell: (v) => v.lowStockThreshold },
-              { id: "price", header: "Selling price", align: "right", cell: (v) => priceText(v, per) },
-              ...(canViewCost ? [{ id: "cost", header: "Cost", align: "right" as const, cell: (v: StockVariation) => (Number(v.purchaseCost) > 0 ? fmtRate(per, v.purchaseCost) : "—") }] : []),
+              ...(!isCustomerMode ? [{ id: "min", header: "Min stock", align: "right" as const, cell: (v: StockVariation) => v.lowStockThreshold }] : []),
+              ...(!isCustomerMode ? [{ id: "price", header: "Selling price", align: "right" as const, cell: (v: StockVariation) => priceText(v, per) }] : []),
+              ...(!isCustomerMode && canViewCost ? [{ id: "cost", header: "Cost", align: "right" as const, cell: (v: StockVariation) => (Number(v.purchaseCost) > 0 ? fmtRate(per, v.purchaseCost) : "—") }] : []),
             ]}
           />
         </section>
@@ -433,6 +501,7 @@ export function ProductDetailView({ productId, back }: { productId: string; back
       {grouped && <SetsPanel product={product} onChanged={reload} />}
 
       {/* Stock history section with button to open details */}
+      {!isCustomerMode && (
       <section className="card flex flex-wrap items-center justify-between gap-3 p-4">
         <div>
           <h3 className="font-semibold text-slate-900">Stock history</h3>
@@ -451,9 +520,10 @@ export function ProductDetailView({ productId, back }: { productId: string; back
           Open stock history
         </button>
       </section>
+      )}
 
       {/* Stock History Modal with fixed header table */}
-      {stockHistoryOpen && (
+      {!isCustomerMode && stockHistoryOpen && (
         <Modal
           open
           wide
@@ -584,7 +654,36 @@ export function ProductDetailView({ productId, back }: { productId: string; back
         </Modal>
       )}
 
-      {vendorModalOpen && (
+      {drawerOpen && (
+        <ProductDrawer
+          product={product}
+          mode={cart.mode === "purchase" ? "purchase" : "sale"}
+          initialPick={pick}
+          initialVariationId={chosen?.id}
+          onClose={() => setDrawerOpen(false)}
+        />
+      )}
+
+      {setsFor && (
+        <SaleSetsModal
+          productId={setsFor}
+          excludeSetIds={cart.lines.flatMap((l) => (l.saleSets ?? []).map((s) => s.setId))}
+          orderId={cart.order?.id}
+          onClose={() => setSetsFor(null)}
+          onConfirm={(lines) => {
+            for (const line of lines) {
+              const err = cart.add("sale", line);
+              if (err) {
+                setActionError(err);
+                break;
+              }
+            }
+            setSetsFor(null);
+          }}
+        />
+      )}
+
+      {!isCustomerMode && vendorModalOpen && (
         <VendorPricingModal
           productId={product.id}
           variationId={chosen?.id}
@@ -597,7 +696,7 @@ export function ProductDetailView({ productId, back }: { productId: string; back
 }
 
 /** 0041 grouped product: stock, prices and minimum stock per set type (it has no own price). */
-function SetTypePrices({ groupId, row }: { groupId: string; row: (label: string, value: React.ReactNode) => React.ReactNode }) {
+function SetTypePrices({ groupId, row, hidePrices }: { groupId: string; row: (label: string, value: React.ReactNode) => React.ReactNode; hidePrices?: boolean }) {
   const { data } = useSetTypes(groupId);
   if (!data) return <p className="text-sm text-slate-500">Loading sets…</p>;
   if (!data.types.length) return <p className="text-sm text-slate-500">No standard sets and no sets in stock.</p>;
@@ -612,9 +711,11 @@ function SetTypePrices({ groupId, row }: { groupId: string; row: (label: string,
               {t.count} set{t.count === 1 ? "" : "s"}
             </span>
           </div>
-          <div className="mt-0.5 text-slate-500">
-            {fmtSellRate(null, t.minSalePrice, t.salePrice, "Sell: ")} · min stock {t.lowStockThreshold}
-          </div>
+          {!hidePrices && (
+            <div className="mt-0.5 text-slate-500">
+              {fmtSellRate(null, t.minSalePrice, t.salePrice, "Sell: ")} · min stock {t.lowStockThreshold}
+            </div>
+          )}
         </div>
       ))}
     </div>

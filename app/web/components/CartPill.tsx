@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { lineKey, useCart } from "@/components/CartContext";
+import { useCustomerMode } from "@/components/CustomerModeContext";
 import { CartSidebar } from "@/components/CartSidebar";
 import { SidebarIcon, TrashIcon } from "@/components/icons";
 import { ProductThumb } from "@/components/ProductThumb";
@@ -10,6 +11,7 @@ import { money } from "@/lib/format";
 /** Floating "N Items in Sale Cart ₹total" pill (GAS updateCartCounts). Desktop only: phones use the Cart tab in BottomNav. */
 export function CartPill() {
   const cart = useCart();
+  const { isCustomerMode } = useCustomerMode();
   const hasItems = Boolean(cart.count && cart.mode);
   const href = cart.mode === "sale" ? "/sales/checkout" : "/purchases/checkout";
   // V2 (plan §3.3): live shortage count; never blocks going to checkout.
@@ -61,7 +63,8 @@ export function CartPill() {
 
           {/* Main Cart Pill */}
           <Link
-            href={href}
+            href={isCustomerMode ? "#" : href}
+            onClick={(e) => { if (isCustomerMode) { e.preventDefault(); cart.openDrawer(); } }}
             className="group/pill flex items-center gap-3 rounded-full bg-slate-900 py-2 pl-2 pr-4 text-white shadow-2xl border border-slate-800 transition-all duration-200 hover:bg-slate-800 hover:-translate-y-0.5 hover:shadow-brand-500/10 hover:border-slate-700 active:translate-y-0 active:scale-[0.98] motion-reduce:transition-none motion-reduce:transform-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 cursor-pointer select-none"
             aria-label={`Open ${cart.mode} cart with ${cart.count} items`}
           >
@@ -75,7 +78,7 @@ export function CartPill() {
                 {cart.count} item{cart.count > 1 ? "s" : ""} in {cart.mode === "sale" ? "Sale" : "Purchase"} Cart
                 {short > 0 && <span className="ml-1 font-semibold text-amber-300">· {short} short</span>}
               </div>
-              <div className="font-bold text-sky-300">{money(cart.totalPaise / 100)}</div>
+              <div className="font-bold text-sky-300">{isCustomerMode ? "View Cart" : money(cart.totalPaise / 100)}</div>
             </div>
             <span className="ml-1 text-lg inline-block transition-transform duration-200 group-hover/pill:translate-x-1 motion-reduce:transform-none" aria-hidden>›</span>
           </Link>

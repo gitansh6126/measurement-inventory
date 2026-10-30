@@ -14,6 +14,7 @@ import { useCan } from "@/components/MeContext";
 import { VendorPricingModal } from "@/components/vendor/VendorPricingModal";
 import { SupplierRateList } from "@/components/vendor/SupplierRateList";
 import { WarehouseStockChips } from "@/components/cart/TakeFromPopup";
+import { useCustomerMode } from "@/components/CustomerModeContext";
 
 // Bottom drawer (V1 layout): GAS 06 attribute pills + GAS 07 quantity/price + main v2 ProductBrowser
 // variation details. Only active variations can be chosen. The cart opens it
@@ -23,9 +24,12 @@ export function ProductDrawer(props: {
   mode: CartMode;
   onClose: () => void;
   edit?: { index: number; line: CartLine };
+  initialPick?: Record<string, string>;
+  initialVariationId?: string;
 }) {
   if (props.product.productType === "measured") {
-    return <MeasuredDrawer {...props} />;
+    const { initialPick, initialVariationId, ...measuredProps } = props;
+    return <MeasuredDrawer {...measuredProps} />;
   }
   return <CountedProductDrawer {...props} />;
 }
@@ -35,14 +39,19 @@ function CountedProductDrawer({
   mode,
   onClose: close,
   edit,
+  initialPick,
+  initialVariationId,
 }: {
   product: StockProduct;
   mode: CartMode;
   onClose: () => void;
   /** Editing an existing cart line (GAS editCartItem). */
   edit?: { index: number; line: CartLine };
+  initialPick?: Record<string, string>;
+  initialVariationId?: string;
 }) {
   const cart = useCart();
+  const { isCustomerMode } = useCustomerMode();
   const canViewVendor = useCan("vendor_pricing.view");
   const canManageVendor = useCan("vendor_pricing.manage");
   const isSale = mode === "sale";
@@ -57,10 +66,20 @@ function CountedProductDrawer({
   );
 
   const variable = product.productType === "variable";
-  const initial = edit ? active.find((v) => v.id === edit.line.variationId) : active.length === 1 ? active[0] : undefined;
+  const initial = edit
+    ? active.find((v) => v.id === edit.line.variationId)
+    : initialVariationId
+      ? active.find((v) => v.id === initialVariationId)
+      : active.length === 1
+        ? active[0]
+        : undefined;
   const [tab, setTab] = useState<"form" | "stock">("form");
   const [filter, setFilter] = useState("");
-  const [pick, setPick] = useState<Record<string, string>>(initial ? { ...initial.attributes } : {});
+  const [pick, setPick] = useState<Record<string, string>>(() => {
+    if (initial) return { ...initial.attributes };
+    if (initialPick && Object.keys(initialPick).length > 0) return { ...initialPick };
+    return {};
+  });
   const [qtyVal, setQtyVal] = useState(edit?.line.quantity ?? 1);
   const [price, setPrice] = useState<string>(edit ? String(Number(edit.line.price)) : "");
   const [error, setError] = useState("");
@@ -95,8 +114,12 @@ function CountedProductDrawer({
   // No price prefill (owner, 2026-10-20): the price is typed or picked from a price chip.
   // A new variation starts empty so another variation's price is never carried over.
   useEffect(() => {
-    if (!edit) setPrice("");
-  }, [chosen?.id, edit]);
+    if (isCustomerMode && chosen) {
+      setPrice(String(chosen.salePrice || 0));
+    } else if (!edit) {
+      setPrice("");
+    }
+  }, [chosen?.id, edit, isCustomerMode, chosen?.salePrice]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -228,7 +251,7 @@ function CountedProductDrawer({
                         {a.name}{a.unit ? ` (${a.unit})` : ""}
                       </th>
                     ))}
-                    <th className="bg-slate-50 text-right">{isSale ? "Selling Price" : "Supplier Rate / Cost"}</th>
+                    {!isCustomerMode && <th className="bg-slate-50 text-right">{isSale ? "Selling Price" : "Supplier Rate / Cost"}</th>}
                     <th className="bg-slate-50 text-right">In Stock</th>
                     {inCartOf && <th className="bg-slate-50 text-right">In cart · Left</th>}
                     <th className="bg-slate-50 text-center">Action</th>
@@ -436,6 +459,7 @@ function CountedProductDrawer({
                   </button>
                 </div>
               </div>
+              {!isCustomerMode ? (
               <div>
                 <label className="label" htmlFor="drawer-price">{isSale ? "Selling price ₹ / unit" : "Purchase cost ₹ / unit"}</label>
                 <input
@@ -484,6 +508,11 @@ function CountedProductDrawer({
                   </div>
                 )}
               </div>
+              ) : (
+                <div className="flex items-center text-xs text-slate-500">
+                  <span>Price will be finalized with staff upon handover.</span>
+                </div>
+              )}
             </div>
 
             {isPurchase && canViewVendor && chosen && (
@@ -547,7 +576,7 @@ function CountedProductDrawer({
             // line can be checked before it goes into the cart (RMS Tech reference).
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 text-sm text-slate-500" aria-live="polite">
-                {subtotal > 0 ? (
+                {!isCustomerMode && subtotal > 0 ? (
                   <>
                     <div className="text-xs">{isSale ? "Line total" : "Line cost"}</div>
                     <b className="block text-lg leading-tight text-slate-900">{money(subtotal / 100)}</b>
@@ -555,6 +584,8 @@ function CountedProductDrawer({
                       {money(Number(price))} × {qty(qtyVal)}
                     </div>
                   </>
+                ) : isCustomerMode ? (
+                  <span className="text-xs text-slate-500">Ready to add to cart</span>
                 ) : (
                   <span className="text-xs">{isSale ? "Enter a selling price" : "Enter a cost"} to see the total</span>
                 )}

@@ -33,6 +33,7 @@ import { useTableColumns } from "@/lib/useTableColumns";
 import { useViewMode } from "@/lib/useViewMode";
 import { fmtLen, fmtRate, fmtSellRate, ratePerOf, stockLengthOf, type LengthUnit, type MeasureMeta } from "@/lib/measure";
 import { useLengthView } from "@/lib/lengthView";
+import { useCustomerMode } from "@/components/CustomerModeContext";
 import { LengthViewToggle } from "@/components/measure/LengthViewToggle";
 import { scrollToFocus } from "@/lib/scrollToFocus";
 
@@ -78,6 +79,7 @@ const range = (vals: number[], unit?: LengthUnit | null) => {
 
 function ProductsPage() {
   useLengthView();
+  const { isCustomerMode } = useCustomerMode();
   const router = useRouter();
   const params = useSearchParams();
   const canEdit = useCan("product.write");
@@ -117,7 +119,7 @@ function ProductsPage() {
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<{ loaded: number; total: number } | null>(null);
   // Category column is off by default (the By Category layout already groups by it).
-  const columns = PRODUCT_SCREEN_COLUMNS.filter((column) => !column.cost || canViewCost);
+  const columns = PRODUCT_SCREEN_COLUMNS.filter((column) => (!column.cost || canViewCost) && (!isCustomerMode || (column.id !== "salePrice" && column.id !== "minSalePrice")));
   const cols = useTableColumns("products.columns", columns, ["category", "sku", "type", "minSalePrice"]);
   const [view, setView] = useViewMode("products", "grid");
 
@@ -316,7 +318,7 @@ function ProductsPage() {
   const iconBtn = "flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-900";
   // V3.1: grouped products expand too (into set types, like variations).
   const variableRows = rows.filter((p) => p.productType === "variable" || p.productType === "measured" || p.productType === "grouped");
-  const visibleColumns = cols.shown();
+  const visibleColumns = cols.shown().filter((id) => !isCustomerMode || (id !== "salePrice" && id !== "minSalePrice"));
   const expandAll = (expanded: boolean) =>
     setOpen(expanded ? new Set(variableRows.map((p) => p.id)) : new Set());
   const stockCell = (quantity: number, threshold: number, unit: string, bold = false, len?: MeasureMeta) => (
@@ -832,7 +834,7 @@ function ProductsPage() {
               // A product with variations shows no price on its card; each variation has its own.
               const hasVariations = p.productType === "variable" || p.productType === "measured" || p.productType === "grouped";
               const onlyVar = p.variations.find((v) => v.active) ?? p.variations[0];
-              const sale = hasVariations ? null : fmtSellRate(p.measure?.lengthUnit, onlyVar?.minSalePrice, onlyVar?.salePrice, "Sell: ");
+              const sale = hasVariations || isCustomerMode ? null : fmtSellRate(p.measure?.lengthUnit, onlyVar?.minSalePrice, onlyVar?.salePrice, "Sell: ");
               return (
                 <ProductTile
                   key={p.id}

@@ -292,5 +292,38 @@ export function authRoutes(env: Env) {
     res.json({ ok: true });
   });
 
+  const verifyPasswordBody = z.object({
+    password: z.string().min(1).max(200),
+  });
+
+  r.post("/verify-password", requireAuth, async (req, res) => {
+    const { password } = verifyPasswordBody.parse(req.body);
+    const auth = req.auth!;
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: auth.userId } });
+    const ok = await verifyPassword(password, user.passwordHash);
+    if (!ok) {
+      // Allow any active manager or admin of the same company to unlock
+      const privilegedUsers = await prisma.user.findMany({
+        where: {
+          companyId: auth.companyId,
+          role: { in: ["admin", "sales_manager"] },
+          active: true,
+          id: { not: auth.userId },
+        },
+      });
+      let staffOk = false;
+      for (const staff of privilegedUsers) {
+        if (await verifyPassword(password, staff.passwordHash)) {
+          staffOk = true;
+          break;
+        }
+      }
+      if (!staffOk) {
+        throw new AppError(400, "WRONG_PASSWORD", "Incorrect password");
+      }
+    }
+    res.json({ ok: true });
+  });
+
   return r;
 }

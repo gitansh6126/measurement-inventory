@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { isSetLine, linePaise, useCart } from "@/components/CartContext";
+import { useCustomerMode } from "@/components/CustomerModeContext";
 import { SetDetailsList } from "@/components/sets/SetContents";
 import { CloseIcon, TrashIcon } from "@/components/icons";
 import { ProductThumb } from "@/components/ProductThumb";
@@ -14,6 +15,7 @@ import { CreditScoreBadge } from "@/components/CreditScoreBadge";
 
 export function CartSidebar() {
   const cart = useCart();
+  const { isCustomerMode, openExitModal } = useCustomerMode();
 
   useEffect(() => {
     if (!cart.drawerOpen) return;

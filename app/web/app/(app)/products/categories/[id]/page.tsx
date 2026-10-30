@@ -20,6 +20,7 @@ import type { Category, CategoryHead, CategoryStatsList, Product, StockProduct }
 import { errorText, useApi } from "@/lib/useApi";
 import { useViewMode } from "@/lib/useViewMode";
 import { useDebounced } from "@/lib/useDebounced";
+import { useCustomerMode } from "@/components/CustomerModeContext";
 import { scrollToFocus } from "@/lib/scrollToFocus";
 
 /** V3.1 (0038): how a product is in the category — whole, some variations, or a set via its parts. */
@@ -30,6 +31,7 @@ const hasVariations = (p: Product) => p.productType === "variable" || p.productT
 // and "+ Add Product" → Add Existing Product / Add New Product (preselected category).
 export default function CategoryDetailPage() {
   const id = String(useParams().id);
+  const { isCustomerMode } = useCustomerMode();
   const router = useRouter();
   const searchParams = useSearchParams();
   const focus = searchParams.get("focus");
@@ -226,9 +228,9 @@ export default function CategoryDetailPage() {
                     highlight={focus === p.id}
                     meta={<ProductKind type={p.productType} count={p.variations.length} fallback={p.variations[0]?.shortName} />}
                     badge={s && <StockBadge quantity={s.quantity} state={s.state} unit={p.unit} />}
-                    price={!hasVariations(p) && priceRange(p)}
+                    price={!hasVariations(p) && !isCustomerMode && priceRange(p)}
                     footer={scopeLine(p)}
-                    actions={actions(p)}
+                    actions={isCustomerMode ? null : actions(p)}
                   />
                 );
               })}
@@ -242,7 +244,7 @@ export default function CategoryDetailPage() {
                   <th>Selling Price</th>
                   <th>Minimum Selling Price</th>
                   <th>Stock</th>
-                  {canWrite && <th className="text-right">Actions</th>}
+                  {!isCustomerMode && canWrite && <th className="text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody>
