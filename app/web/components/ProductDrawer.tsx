@@ -24,9 +24,12 @@ export function ProductDrawer(props: {
   mode: CartMode;
   onClose: () => void;
   edit?: { index: number; line: CartLine };
+  initialPick?: Record<string, string>;
+  initialVariationId?: string;
 }) {
   if (props.product.productType === "measured") {
-    return <MeasuredDrawer {...props} />;
+    const { initialPick, initialVariationId, ...measuredProps } = props;
+    return <MeasuredDrawer {...measuredProps} />;
   }
   return <CountedProductDrawer {...props} />;
 }
@@ -36,12 +39,16 @@ function CountedProductDrawer({
   mode,
   onClose: close,
   edit,
+  initialPick,
+  initialVariationId,
 }: {
   product: StockProduct;
   mode: CartMode;
   onClose: () => void;
   /** Editing an existing cart line (GAS editCartItem). */
   edit?: { index: number; line: CartLine };
+  initialPick?: Record<string, string>;
+  initialVariationId?: string;
 }) {
   const cart = useCart();
   const canViewVendor = useCan("vendor_pricing.view");
@@ -58,10 +65,22 @@ function CountedProductDrawer({
   );
 
   const variable = product.productType === "variable";
-  const initial = edit ? active.find((v) => v.id === edit.line.variationId) : active.length === 1 ? active[0] : undefined;
+  const initial = edit
+    ? active.find((v) => v.id === edit.line.variationId)
+    : initialVariationId
+      ? active.find((v) => v.id === initialVariationId)
+      : active.length === 1
+        ? active[0]
+        : undefined;
   const [tab, setTab] = useState<"form" | "stock">("form");
   const [filter, setFilter] = useState("");
-  const [pick, setPick] = useState<Record<string, string>>(initial ? { ...initial.attributes } : {});
+  const [stockTabFilterIds, setStockTabFilterIds] = useState<string[] | null>(null);
+  const [stockTabFilters, setStockTabFilters] = useState<Record<string, string>>({});
+  const [pick, setPick] = useState<Record<string, string>>(() => {
+    if (initial) return { ...initial.attributes };
+    if (initialPick && Object.keys(initialPick).length > 0) return { ...initialPick };
+    return {};
+  });
   const [qtyVal, setQtyVal] = useState(edit?.line.quantity ?? 1);
   const [price, setPrice] = useState<string>(edit ? String(Number(edit.line.price)) : "");
   const [error, setError] = useState("");
@@ -122,9 +141,13 @@ function CountedProductDrawer({
   const subtotal = priceOk ? qtyVal * paise(price) : 0;
 
   const displayedVariations = useMemo(() => {
+    let list = product.variations;
+    if (stockTabFilterIds) {
+      list = list.filter((v) => stockTabFilterIds.includes(v.id));
+    }
     const term = filter.trim().toLowerCase();
-    if (!term) return product.variations;
-    return product.variations.filter((v) => {
+    if (!term) return list;
+    return list.filter((v) => {
       if (v.shortName.toLowerCase().includes(term)) return true;
       if (v.officialSku?.toLowerCase().includes(term)) return true;
       return Object.entries(v.attributes).some(
@@ -209,6 +232,25 @@ function CountedProductDrawer({
         {/* Tab Content */}
         {tab === "stock" ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5">
+            {variable && product.variations.length > 1 && (
+              <div className="mb-2.5 shrink-0">
+                <VariationTabs
+                  attributes={product.attributes}
+                  variations={product.variations}
+                  selectedFilters={stockTabFilters}
+                  selectedVariationId={chosen?.id}
+                  onFilterChange={(filteredIds, filters, singleId) => {
+                    setStockTabFilterIds(filteredIds);
+                    setStockTabFilters(filters);
+                    if (singleId) {
+                      const match = product.variations.find((v) => v.id === singleId);
+                      if (match) setPick({ ...match.attributes });
+                    }
+                  }}
+                  scrollTargetPrefix="pdrawer-var"
+                />
+              </div>
+            )}
             {product.variations.length > 5 && (
               <div className="mb-2 shrink-0">
                 <SearchInput
@@ -240,6 +282,7 @@ function CountedProductDrawer({
                     const isSelected = chosen?.id === v.id;
                     return (
                       <tr
+                        id={`pdrawer-var-${v.id}`}
                         key={v.id}
                         onClick={() => {
                           if (!v.active) return;
@@ -247,7 +290,7 @@ function CountedProductDrawer({
                           setError("");
                         }}
                         className={`transition-colors duration-150 ${v.active ? "cursor-pointer hover:bg-brand-50/50" : "opacity-40 cursor-not-allowed"} ${
-                          isSelected ? "bg-brand-50 font-medium" : ""
+                          isSelected ? "bg-brand-50 font-medium ring-1 ring-brand-400" : ""
                         }`}
                       >
                         {!variable && <td className="whitespace-nowrap text-slate-800">{product.name}</td>}
