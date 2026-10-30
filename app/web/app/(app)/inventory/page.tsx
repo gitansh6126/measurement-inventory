@@ -14,6 +14,7 @@ import { useCan } from "@/components/MeContext";
 import { StockBadge, stockState } from "@/components/StockBadge";
 import { ProductKind, ProductTile } from "@/components/products/ProductTile";
 import { StockEditDrawer } from "@/components/products/StockEditDrawer";
+import { VariationTabs } from "@/components/products/VariationTabs";
 import { MeasuredStock, MeasuredStockPanel } from "@/components/measure/MeasuredStock";
 import { AddRollsModal } from "@/components/measure/RollActions";
 import { AddSetsModal } from "@/components/sets/SetsPanel";
@@ -194,6 +195,9 @@ function StockIn() {
   const [reordering, setReordering] = useState("");
   const [draggedVariation, setDraggedVariation] = useState<{ productId: string; variationId: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<{ productId: string; variationId: string; position: "before" | "after" } | null>(null);
+  const [varFilterByProduct, setVarFilterByProduct] = useState<
+    Record<string, { ids: string[] | null; filters: Record<string, string>; singleId: string | null }>
+  >({});
 
   // V3.1 (0038, VC8): under a category on some variations only, rows list just those variations;
   // `fullById` keeps every variation for reordering.
@@ -1699,7 +1703,22 @@ function StockIn() {
                       {isOpen && (
                         <tr>
                           <td colSpan={colCount} className="bg-slate-50/70 !p-0">
-                            <div className="child-panel">
+                            <div className="child-panel space-y-2.5">
+                              {p.variations.length > 1 && (
+                                <VariationTabs
+                                  attributes={p.attributes}
+                                  variations={p.variations}
+                                  selectedFilters={varFilterByProduct[p.id]?.filters}
+                                  selectedVariationId={varFilterByProduct[p.id]?.singleId}
+                                  onFilterChange={(filteredIds, filters, singleId) => {
+                                    setVarFilterByProduct((prev) => ({
+                                      ...prev,
+                                      [p.id]: { ids: filteredIds, filters, singleId },
+                                    }));
+                                  }}
+                                  scrollTargetPrefix={`stockin-var-${p.id}`}
+                                />
+                              )}
                               <table className="table rounded-md bg-white">
                                 <thead>
                                   <tr>
@@ -1716,23 +1735,30 @@ function StockIn() {
                                     }
                                   }}
                                 >
-                                  {shownVariations(p).map((v, index, ordered) => {
-                                    const isSelected = draggedVariation?.variationId === v.id;
-                                    const isDropTarget = dropTarget?.productId === p.id && dropTarget?.variationId === v.id && !isSelected;
-                                    const indicatorClass = isDropTarget
-                                      ? dropTarget.position === "before"
-                                        ? "drop-indicator-top"
-                                        : "drop-indicator-bottom"
-                                      : "";
-                                    const rowClass = [
-                                      isSelected ? "row-dragging bg-light border shadow-sm" : "",
-                                      indicatorClass,
-                                    ].filter(Boolean).join(" ");
+                                  {(() => {
+                                    const pFilter = varFilterByProduct[p.id];
+                                    const allShown = shownVariations(p);
+                                    const filtered = pFilter?.ids ? allShown.filter((v) => pFilter.ids!.includes(v.id)) : allShown;
+                                    return filtered.map((v, index, ordered) => {
+                                      const isSelected = draggedVariation?.variationId === v.id;
+                                      const isDropTarget = dropTarget?.productId === p.id && dropTarget?.variationId === v.id && !isSelected;
+                                      const isVarPicked = pFilter?.singleId === v.id;
+                                      const indicatorClass = isDropTarget
+                                        ? dropTarget.position === "before"
+                                          ? "drop-indicator-top"
+                                          : "drop-indicator-bottom"
+                                        : "";
+                                      const rowClass = [
+                                        isSelected ? "row-dragging bg-light border shadow-sm" : "",
+                                        isVarPicked ? "bg-brand-50/70 ring-1 ring-brand-400 font-medium" : "",
+                                        indicatorClass,
+                                      ].filter(Boolean).join(" ");
 
-                                    return (
-                                      <tr
-                                        key={v.id}
-                                        className={rowClass}
+                                      return (
+                                        <tr
+                                          id={`stockin-var-${p.id}-${v.id}`}
+                                          key={v.id}
+                                          className={rowClass}
                                         onDragOver={(event) => {
                                           if (!draggedVariation || draggedVariation.productId !== p.id) return;
                                           if (draggedVariation.variationId === v.id) {
