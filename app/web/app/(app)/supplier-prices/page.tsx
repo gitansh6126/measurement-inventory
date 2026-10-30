@@ -747,6 +747,21 @@ function BySupplierView({
                         {isExpanded && (
                           <tr>
                             <td colSpan={7} className="bg-slate-50/70 p-4 border-y border-slate-200">
+                              <div className="mb-3">
+                                <VariationTabs
+                                  attributes={p.attributes}
+                                  variations={p.variations}
+                                  selectedFilters={varFiltersByProduct[p.id]?.filters}
+                                  selectedVariationId={varFiltersByProduct[p.id]?.singleId}
+                                  onFilterChange={(filteredIds, filters, singleId) => {
+                                    setVarFiltersByProduct((prev) => ({
+                                      ...prev,
+                                      [p.id]: { ids: filteredIds, filters, singleId },
+                                    }));
+                                  }}
+                                  scrollTargetPrefix={`supp-var-${p.id}`}
+                                />
+                              </div>
                               <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-sm">
                                 <table className="table table-stack">
                                   <thead>
@@ -765,19 +780,26 @@ function BySupplierView({
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {p.variations.map((v) => {
+                                    {(varFiltersByProduct[p.id]?.ids
+                                      ? p.variations.filter((v) => varFiltersByProduct[p.id]!.ids!.includes(v.id))
+                                      : p.variations
+                                    ).map((v) => {
                                       const entered = newPrices[v.id] ?? "";
                                       const isSaving = savingRows[v.id] ?? false;
                                       const active = statusOverrides[v.id] ?? v.rate?.active ?? true;
+                                      const isSelected = varFiltersByProduct[p.id]?.singleId === v.id;
 
                                       return (
                                         <tr
+                                          id={`supp-var-${p.id}-${v.id}`}
                                           key={v.id}
-                                          className={
+                                          className={`${
+                                            isSelected ? "bg-brand-50/80 font-medium ring-1 ring-brand-400" : ""
+                                          } ${
                                             !v.active
                                               ? "opacity-50 bg-slate-50/60"
                                               : "hover:bg-slate-50/50"
-                                          }
+                                          }`}
                                         >
                                           {attrColumns.map((col) => (
                                             <td key={col.name} className="font-medium text-slate-800">
