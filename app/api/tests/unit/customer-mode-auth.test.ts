@@ -79,7 +79,7 @@ describe("Customer Mode data scrubbing", () => {
       },
     };
 
-    const scrubbed = customerModeScrub(rawProduct);
+    const scrubbed = customerModeScrub(rawProduct) as any;
 
     // 1. Commercial prices stripped
     expect(scrubbed).not.toHaveProperty("purchaseCost");

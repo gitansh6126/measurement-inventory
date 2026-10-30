@@ -6,6 +6,7 @@ import { CollapseIcon, ExpandIcon } from "@/components/icons";
 import { ProductThumb } from "@/components/ProductThumb";
 import { StockBadge } from "@/components/StockBadge";
 import { SearchInput } from "@/components/ui";
+import { VariationTabs } from "@/components/products/VariationTabs";
 import { variationLabel } from "@/lib/format";
 import { fmtLen, metaOf } from "@/lib/measure";
 import type { StockProduct, StockVariation } from "@/lib/types";
@@ -53,6 +54,9 @@ export function StockEditDrawer({
   useLengthView();
   const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState("");
+  const [varFilteredIds, setVarFilteredIds] = useState<string[] | null>(null);
+  const [varFilters, setVarFilters] = useState<Record<string, string>>({});
+  const [selectedVarId, setSelectedVarId] = useState<string | null>(null);
   const grouped = product.productType === "grouped";
   const variable = product.productType === "variable";
   // Measured rows: variation name + standard roll, totals as lengths (owner design 2026-10-16).
@@ -63,14 +67,18 @@ export function StockEditDrawer({
   const total = active.reduce((s, v) => s + v.quantity, 0);
 
   const rows = useMemo(() => {
+    let list = active;
+    if (varFilteredIds) {
+      list = list.filter((v) => varFilteredIds.includes(v.id));
+    }
     const term = filter.trim().toLowerCase();
-    if (!term) return active;
-    return active.filter((v) =>
+    if (!term) return list;
+    return list.filter((v) =>
       v.shortName.toLowerCase().includes(term) ||
       v.officialSku?.toLowerCase().includes(term) ||
       Object.entries(v.attributes).some(([k, val]) => k.toLowerCase().includes(term) || val.toLowerCase().includes(term))
     );
-  }, [active, filter]);
+  }, [active, filter, varFilteredIds]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -129,6 +137,22 @@ export function StockEditDrawer({
             <div className="min-h-0 flex-1 overflow-auto">{extra}</div>
           ) : (
             <>
+              {active.length > 1 && (
+                <div className="mb-2.5 shrink-0">
+                  <VariationTabs
+                    attributes={product.attributes}
+                    variations={active}
+                    selectedFilters={varFilters}
+                    selectedVariationId={selectedVarId}
+                    onFilterChange={(filteredIds, filters, singleId) => {
+                      setVarFilteredIds(filteredIds);
+                      setVarFilters(filters);
+                      setSelectedVarId(singleId);
+                    }}
+                    scrollTargetPrefix="drawer-var"
+                  />
+                </div>
+              )}
               {active.length > 5 && (
                 <div className="mb-2 shrink-0">
                   <SearchInput value={filter} onChange={setFilter} placeholder="Filter by attribute or SKU…" />
@@ -145,7 +169,11 @@ export function StockEditDrawer({
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {rows.map((v) => (
-                      <tr key={v.id}>
+                      <tr
+                        id={`drawer-var-${v.id}`}
+                        key={v.id}
+                        className={selectedVarId === v.id ? "bg-brand-50/70 font-medium ring-1 ring-brand-400" : ""}
+                      >
                         {(variable || measured) && (
                           <td className="w-14">
                             <ProductThumb src={v.imageUrl ?? product.imageUrl ?? null} name={`${product.name} (${variationLabel(v, product.attributes)})`} className="h-10 w-10 rounded text-[6px]" />

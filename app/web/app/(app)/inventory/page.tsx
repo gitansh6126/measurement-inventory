@@ -1818,7 +1818,8 @@ function StockIn() {
                                       {rowCells(subCols, { ...idCellMap(v), ...editCellMap(p, v) })}
                                     </tr>
                                   );
-                                })}
+                                });
+                              })()}
                                 </tbody>
                               </table>
                             </div>

@@ -18,6 +18,7 @@ import { ProductKind, ProductTile } from "@/components/products/ProductTile";
 import { isLowStock } from "@/components/StockBadge";
 import { ProductDetailModal } from "@/components/products/ProductDetailModal";
 import { ProductModal } from "@/components/products/ProductModal";
+import { VariationTabs } from "@/components/products/VariationTabs";
 import { VendorPricingModal } from "@/components/vendor/VendorPricingModal";
 import { VariationOrderCell } from "@/components/VariationOrderCell";
 import { Alert, EmptyState, PageHeader, SearchInput, Segmented, StatCell, StatStrip, TableSkeleton, Toolbar } from "@/components/ui";
