@@ -33,12 +33,12 @@ export function CategoryRail({
 }) {
   const items: { key: string; name: string; image: string | null; count: number; low: number; out: number }[] = data
     ? [
-        ...(includeAll
-          ? [{ key: ALL, name: "All", image: null, count: data.all.productCount, low: data.all.lowCount, out: data.all.outCount }]
+        ...(includeAll && data.all
+          ? [{ key: ALL, name: "All", image: null, count: data.all.productCount ?? 0, low: data.all.lowCount ?? 0, out: data.all.outCount ?? 0 }]
           : []),
-        ...data.categories.map((c) => ({ key: c.id, name: c.name, image: c.coverImageUrl, count: c.productCount, low: c.lowCount, out: c.outCount })),
-        ...(includeUncategorized && data.uncategorized.productCount > 0
-          ? [{ key: NONE, name: "Uncategorized", image: null, count: data.uncategorized.productCount, low: data.uncategorized.lowCount, out: data.uncategorized.outCount }]
+        ...data.categories.map((c) => ({ key: c.id, name: c.name, image: c.coverImageUrl, count: c.productCount ?? 0, low: c.lowCount ?? 0, out: c.outCount ?? 0 })),
+        ...(includeUncategorized && ((data.uncategorized?.productCount ?? 0) > 0)
+          ? [{ key: NONE, name: "Uncategorized", image: null, count: data.uncategorized?.productCount ?? 0, low: data.uncategorized?.lowCount ?? 0, out: data.uncategorized?.outCount ?? 0 }]
           : []),
       ]
     : [];
