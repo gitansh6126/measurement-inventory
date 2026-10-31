@@ -16,6 +16,7 @@ import {
 import { Restricted } from "@/components/Restricted";
 import { Alert, Modal, PageHeader, StatCell, StatStrip } from "@/components/ui";
 import { DemoDataManager } from "@/components/DemoDataManager";
+import { ServerBackupStatus } from "@/components/ServerBackupStatus";
 import { errorText, useApi } from "@/lib/useApi";
 
 interface SummaryData {
@@ -193,6 +194,7 @@ function BackupManager() {
         subtitle="Complete inventory backup packaging inventory data and media into a single downloadable ZIP"
       />
 
+      <ServerBackupStatus />
       {summary && (
         <StatStrip cols={5}>
           <StatCell

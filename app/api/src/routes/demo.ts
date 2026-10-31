@@ -155,28 +155,20 @@ export function demoRoutes(env: Env) {
       });
     }
 
-    // 3. Run demo seed against the running API server (or transient listener in test mode)
-    const port = env.PORT;
+    // 3. Run the demo seed through THIS app on a short-lived loopback listener. Never probe
+    // env.PORT: another process may listen there (a developer's demo server while tests run, or
+    // another environment) and would receive this company's seed requests.
     const origin = env.allowedOrigins[0] || env.PUBLIC_APP_URL || "http://localhost:3510";
-    let seedClient;
-    let transientServer: ReturnType<typeof req.app.listen> | null = null;
-    try {
-      await fetch(`http://127.0.0.1:${port}/api/version`, { signal: AbortSignal.timeout(1000) });
-      seedClient = client(`http://127.0.0.1:${port}`, origin);
-    } catch {
-      transientServer = req.app.listen(0, "127.0.0.1");
-      await new Promise((resolve) => transientServer!.once("listening", resolve));
-      const { port: p } = transientServer.address() as AddressInfo;
-      seedClient = client(`http://127.0.0.1:${p}`, origin);
-    }
+    const transientServer: ReturnType<typeof req.app.listen> = req.app.listen(0, "127.0.0.1");
+    await new Promise((resolve) => transientServer.once("listening", resolve));
+    const { port: p } = transientServer.address() as AddressInfo;
+    const seedClient = client(`http://127.0.0.1:${p}`, origin);
 
     let counts;
     try {
       counts = await seedThroughApi(seedClient);
     } finally {
-      if (transientServer) {
-        transientServer.close();
-      }
+      transientServer.close();
     }
 
     await audit(prisma, {

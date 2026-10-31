@@ -48,13 +48,18 @@ describe("inventory list in SQL", () => {
     await post(manager, "/api/sales", { lines: [{ variationId: c.v, quantity: 3, price: 1 }], allowNegative: true });
     await manager.patch(`/api/inventory/variations/${a.v}`).set("Origin", ORIGIN).send({ lowStockThreshold: 20 });
 
-    const page1 = (await manager.get("/api/inventory?page=1&pageSize=2")).body;
+    // Default order is high moving: 30-day sales first, then name (Charlie has the only sale).
+    const byDefault = (await manager.get("/api/inventory")).body.products.map((p: { name: string }) => p.name);
+    expect(byDefault).toEqual(["Charlie", "Alpha", "Bravo", "Delta"]);
+
+    // Paging and filters, in name order.
+    const page1 = (await manager.get("/api/inventory?page=1&pageSize=2&sort=name")).body;
     expect(page1.products.map((p: { name: string }) => p.name)).toEqual(["Alpha", "Bravo"]);
     expect(page1).toMatchObject({ total: 4, page: 1, pageSize: 2 });
     expect(page1.summary).toMatchObject({ products: 4, low: 3, out: 2, negative: 1, variationsNegative: 1, tabs: { all: 4, low: 3, out: 2, negative: 1 } });
-    expect((await manager.get("/api/inventory?page=2&pageSize=2")).body.products.map((p: { name: string }) => p.name)).toEqual(["Charlie", "Delta"]);
+    expect((await manager.get("/api/inventory?page=2&pageSize=2&sort=name")).body.products.map((p: { name: string }) => p.name)).toEqual(["Charlie", "Delta"]);
 
-    const names = async (state: string) => (await manager.get(`/api/inventory?state=${state}`)).body.products.map((p: { name: string }) => p.name);
+    const names = async (state: string) => (await manager.get(`/api/inventory?state=${state}&sort=name`)).body.products.map((p: { name: string }) => p.name);
     expect(await names("low")).toEqual(["Alpha", "Bravo", "Charlie"]);
     expect(await names("out")).toEqual(["Bravo", "Charlie"]);
     expect(await names("negative")).toEqual(["Charlie"]);

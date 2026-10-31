@@ -90,6 +90,9 @@ try {
     Write-Host "[!] Program files were edited on this PC; saved to $patch and replaced by the release." -ForegroundColor Yellow
   }
 
+  # The watchdog must not restart the app while it is stopped for the update.
+  New-Item -ItemType Directory -Force $RunDir | Out-Null
+  "$target $((Get-Date).ToString('o'))" | Set-Content -Encoding utf8 $MaintenanceFile
   Step "2/6 Stopping the app"
   & "$PSScriptRoot\stop.ps1" -Env all
 
@@ -168,5 +171,6 @@ try {
   Write-Host "  Backups made before the update: $(($backups.Values | ForEach-Object { $_.FullName }) -join ', ')"
   Write-Host "  History: $(Join-Path $DataRoot 'version-history.txt')"
 } finally {
+  Remove-Item $MaintenanceFile -Force -ErrorAction SilentlyContinue
   Stop-Transcript | Out-Null
 }

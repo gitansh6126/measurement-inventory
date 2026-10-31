@@ -23,6 +23,7 @@ import {
 } from "@/components/icons";
 import { useCart } from "@/components/CartContext";
 import { useCan, useMe } from "@/components/MeContext";
+import { ServerBackupStatus } from "@/components/ServerBackupStatus";
 import { useWarehouses } from "@/lib/useWarehouses";
 import { useApi } from "@/lib/useApi";
 import { qty } from "@/lib/format";
@@ -58,6 +59,7 @@ export default function HomePage() {
   const canViewVendorPrices = useCan("vendor_pricing.view");
   const canManageWarehouse = useCan("warehouse.manage");
   const canManageUsers = useCan("user.manage");
+  const canManageBackup = useCan("backup.manage");
   const canConfigureSettings = useCan("company.settings");
 
   // Live operational data queries
@@ -115,6 +117,8 @@ export default function HomePage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-7 pb-12">
+      {canManageBackup && <ServerBackupStatus alertOnly />}
+
       {/* 1. TOP HEADER & 2 PRIMARY ACTION BUTTONS (NEW SALE & NEW PURCHASE) */}
       <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-850 to-slate-900 p-6 text-white shadow-xl sm:p-8">
         <div className="absolute right-0 top-0 -mr-16 -mt-16 h-72 w-72 rounded-full bg-brand-500/10 blur-3xl pointer-events-none" />

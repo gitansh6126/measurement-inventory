@@ -17,6 +17,8 @@ $RunDir = Join-Path $DataRoot "run"
 $LogDir = Join-Path $DataRoot "logs"
 $BackupRoot = Join-Path $DataRoot "backups"
 $StorageRoot = Join-Path $DataRoot "storage"
+# While this file exists (update.ps1), the watchdog leaves the app alone. Older than 3 hours = stale.
+$MaintenanceFile = Join-Path $RunDir "maintenance.txt"
 $AppTitle = "RS Inventory"
 # The release this folder is on: VERSION file (kept in step with the git tag v<VERSION>).
 $AppVersion = try { (Get-Content (Join-Path $V3Root "VERSION") -TotalCount 1).Trim() } catch { "dev" }
@@ -114,6 +116,33 @@ function Start-Postgres {
 }
 
 function Get-PgUrl([string]$DatabaseUrl) { return ($DatabaseUrl -split '\?')[0] }
+
+# Optional monitoring ping (MONITOR_*_URL in the env file, e.g. a free healthchecks.io check):
+# <url> = all fine, <url>/fail = problem; the body is a short status text with no shop data.
+# Blank URL = off. Never throws: monitoring must not break a backup or the watchdog.
+function Send-Ping([string]$Url, [switch]$Fail, [string]$Body = "") {
+  if (-not $Url) { return }
+  $target = if ($Fail) { $Url.TrimEnd("/") + "/fail" } else { $Url }
+  try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest -UseBasicParsing -Method Post -Uri $target -Body $Body -TimeoutSec 10 | Out-Null
+  } catch { Write-Host "[!] Monitoring ping to $target failed: $($_.Exception.Message)" -ForegroundColor Yellow }
+}
+
+# Deletes files in the logs folder not written for $KeepDays days. A log the app is still
+# writing has a recent LastWriteTime, so it is never deleted.
+function Remove-OldLogs([int]$KeepDays = 30) {
+  if ($KeepDays -lt 1 -or -not (Test-Path $LogDir)) { return }
+  Get-ChildItem $LogDir -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$KeepDays) } |
+    ForEach-Object { try { Remove-Item -LiteralPath $_.FullName -Force } catch { } }
+}
+
+# Free space (GB) on the drive that holds the data folder (database backups, images, logs).
+function Get-DataDriveFreeGB {
+  $root = [IO.Path]::GetPathRoot([IO.Path]::GetFullPath($DataRoot))
+  try { return [math]::Round((New-Object IO.DriveInfo $root).AvailableFreeSpace / 1GB, 1) } catch { return $null }
+}
 
 function Test-PortInUse([int]$Port) {
   return [bool](Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)

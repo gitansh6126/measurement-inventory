@@ -10,6 +10,7 @@ import { setTypeKey } from "../lib/set-types.js";
 import { requirePermission } from "../lib/auth.js";
 import { AppError } from "../lib/errors.js";
 import { recalculateAllProductActivity } from "../lib/product-activity.js";
+import { readServerBackupStatus } from "../lib/server-backup-status.js";
 import type { Env } from "../env.js";
 
 // Backup format versions: "1.0" = V1 (no voids/drafts/supplier prices, no V2 columns);
@@ -301,6 +302,16 @@ export function backupRoutes(env: Env) {
       stockMovementsCount,
       imagesCount,
     });
+  });
+
+  // Nightly server backup + weekly restore test of this PC (local server only).
+  r.get("/server-status", async (_req, res) => {
+    res.json(
+      await readServerBackupStatus(
+        { backup: env.BACKUP_STATUS_FILE, restoreTest: env.RESTORE_TEST_STATUS_FILE },
+        env.APP_ENV === "CLIENT_READY"
+      )
+    );
   });
 
   // Export Complete Inventory Backup as ZIP (or JSON if ?format=json)

@@ -3,6 +3,7 @@
 #   powershell -ExecutionPolicy Bypass -File restore-test.ps1 [-Env client] [-From <backup folder>]
 # Without -From it uses the newest local backup. Needs RESTORE_DB_URL in the env file (a
 # dedicated database whose name contains "restore" or "test", owned by the same role).
+# The result also goes to MONITOR_RESTORE_TEST_PING_URL (<url>/fail when FAIL), when set.
 param(
   [ValidateSet("client", "demo")][string]$Env = "client",
   [string]$From
@@ -20,6 +21,7 @@ function Log([string]$Text) { Write-Host "[restore-test:$Env] $Text" }
 function Set-Status([string]$Text) {
   "$((Get-Date).ToString('o')) $Text" | Set-Content -Encoding utf8 (Join-Path $RunDir "$Env-restore-test-status.txt")
   Log $Text
+  Send-Ping $cfg.MONITOR_RESTORE_TEST_PING_URL -Fail:($Text -like "FAIL*") -Body "$AppTitle restore test ($Env) on ${env:COMPUTERNAME}: $Text"
 }
 
 $scratchUrl = Get-PgUrl $cfg.RESTORE_DB_URL

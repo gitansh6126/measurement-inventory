@@ -42,6 +42,35 @@ foreach ($port in 3210, 4210, 3310, 4310) {
   Warn "Port $port is in use by '$name' (fine if $AppTitle is already running)"
 }
 
+# Shop-PC habits that keep the app reachable and the data safe. Notes only: they never block setup.
+# (README.md "Keep the shop PC running"). powercfg prints AC then DC as the last two hex values.
+function Get-AcPowerIndex([string]$Sub, [string]$Setting) {
+  $hex = @(powercfg /query SCHEME_CURRENT $Sub $Setting 2>$null | ForEach-Object { [regex]::Matches("$_", '0x[0-9a-fA-F]{8}') } | ForEach-Object { $_.Value })
+  if ($hex.Count -lt 2) { return $null }
+  return [Convert]::ToInt64($hex[-2], 16)
+}
+$sleep = Get-AcPowerIndex "SUB_SLEEP" "STANDBYIDLE"
+if ($sleep) { Warn ("PC sleeps after {0} min on mains power: phones then cannot open the app. Settings > System > Power: Sleep = Never" -f [math]::Round($sleep / 60)) }
+elseif ($null -ne $sleep) { Ok "PC never sleeps on mains power" }
+$hib = Get-AcPowerIndex "SUB_SLEEP" "HIBERNATEIDLE"
+if ($hib) { Warn ("PC hibernates after {0} min on mains power. Set hibernate to Never" -f [math]::Round($hib / 60)) }
+$fast = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power" -Name HiberbootEnabled -ErrorAction SilentlyContinue).HiberbootEnabled
+if ($fast -eq 1) { Warn "Windows Fast Startup is on: 'Shut down' then keeps old state. Control Panel > Power Options > Choose what the power buttons do > untick 'Turn on fast startup'" }
+foreach ($ip in @(Get-LanAddresses)) {
+  $origin = (Get-NetIPAddress -IPAddress $ip -ErrorAction SilentlyContinue | Select-Object -First 1).PrefixOrigin
+  if ("$origin" -eq "Dhcp") { Warn "LAN address $ip comes from the router (DHCP) and can change: reserve it for this PC in the router, or open the app by name http://$($env:COMPUTERNAME.ToLower()):3210" }
+}
+$clientEnv = Get-EnvFile "client"
+if (Test-Path $clientEnv) {
+  $c = $null
+  try { $c = Read-EnvFile $clientEnv } catch { }
+  if ($c -and -not $c.BACKUP_COPY_DIR) { Warn "BACKUP_COPY_DIR is blank in $clientEnv : backups exist only on this PC's disk" }
+  if ($c -and -not $c.MONITOR_PING_URL) { Warn "MONITOR_PING_URL is blank: nobody is alerted when the app or this PC is down (README.md 'Monitoring')" }
+}
+if (-not (Get-ScheduledTask -TaskName "$TaskPrefix - Watchdog" -ErrorAction SilentlyContinue)) {
+  Warn "No watchdog task: a crashed app stays down. Run local-server\install-autostart.ps1 in an Administrator PowerShell"
+}
+
 $free = (Get-PSDrive ($LocalServer.Substring(0, 1))).Free / 1GB
 if ($free -lt 3) { Bad ("Only {0:N1} GB free on drive {1}:" -f $free, $LocalServer.Substring(0, 1)) "Free at least 3 GB" } else { Ok ("{0:N0} GB free on drive {1}:" -f $free, $LocalServer.Substring(0, 1)) }
 
