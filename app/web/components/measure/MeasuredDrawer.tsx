@@ -19,6 +19,7 @@ import { CollapseIcon, ExpandIcon } from "@/components/icons";
 import { SupplierRateList } from "@/components/vendor/SupplierRateList";
 import { WarehouseStockChips } from "@/components/cart/TakeFromPopup";
 import { OptionButtons } from "@/components/cart/OptionButtons";
+import { VariationTabs } from "@/components/products/VariationTabs";
 import { useLengthView } from "@/lib/lengthView";
 import { useCustomerMode } from "@/components/CustomerModeContext";
 
@@ -99,9 +100,11 @@ export function MeasuredDrawer({
     if (active.length === 1) return active[0].id;
     return null;
   });
-  const variationId = optionAttrs.length
-    ? active.find((v) => optionAttrs.every((a) => (v.attributes[a.name] ?? "") === (pick[a.name] ?? "")))?.id ?? null
-    : flatId;
+  const variationId = flatId && active.some((v) => v.id === flatId)
+    ? flatId
+    : optionAttrs.length
+      ? active.find((v) => optionAttrs.every((a) => (v.attributes[a.name] ?? "") === (pick[a.name] ?? "")))?.id ?? flatId ?? null
+      : flatId;
   const setVariationId = (id: string) => {
     const v = active.find((x) => x.id === id);
     if (v) setPick({ ...v.attributes });
@@ -118,7 +121,34 @@ export function MeasuredDrawer({
 
   const sug = chosen ? suggestions.get(chosen.id) : undefined;
 
+  useEffect(() => {
+    if (initialVariationId) {
+      const v = active.find((x) => x.id === initialVariationId);
+      if (v) {
+        setPick({ ...v.attributes });
+        setFlatId(v.id);
+      }
+    }
+  }, [initialVariationId, active]);
+
   const defaultRoll = chosen?.defaultRollLength ?? product.measure?.defaultRollLength ?? NaN;
+  const isFt = meta.lengthUnit === "ft_in";
+  const standardPresets = useMemo(() => {
+    const list: number[] = [];
+    if (Number.isFinite(defaultRoll) && defaultRoll > 0) list.push(defaultRoll);
+    const presets = isFt ? [60, 120, 240, 360, 600, 1200] : [5, 10, 20, 25, 50, 100, 200];
+    for (const p of presets) {
+      if (!list.includes(p)) list.push(p);
+    }
+    return list.sort((a, b) => a - b);
+  }, [defaultRoll, isFt]);
+
+  const [lengthMode, setLengthMode] = useState<"standard" | "custom">(() => {
+    if (edit && Number.isFinite(edit.line.quantity) && !standardPresets.includes(edit.line.quantity)) {
+      return "custom";
+    }
+    return "standard";
+  });
   const [rolls, setRolls] = useState<CartRoll[]>(() => edit?.line.measure?.rolls?.map((r) => ({ ...r })) ?? []);
   useEffect(() => {
     if (!isSale && chosen && !rolls.length) setRolls([{ length: defaultRoll }]);
@@ -315,6 +345,35 @@ export function MeasuredDrawer({
 
         {/* Scrollable Body Container */}
         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 sm:px-6">
+          {/* Variation navigation tabs */}
+          {active.length > 1 && (
+            <div className="mb-4">
+              <div className="label mb-1.5">Select Variation</div>
+              <VariationTabs
+                attributes={product.attributes}
+                variations={active}
+                selectedVariationId={variationId}
+                onFilterChange={(filteredIds, filters, singleId) => {
+                  if (singleId) {
+                    setVariationId(singleId);
+                    setPieceId(null);
+                    setError("");
+                  } else if (filters && Object.keys(filters).length > 0) {
+                    setPick(filters);
+                    const match = active.find((v) => optionAttrs.every((a) => (v.attributes[a.name] ?? "") === (filters[a.name] ?? "")));
+                    setFlatId(match?.id ?? null);
+                    setPieceId(null);
+                    setError("");
+                  } else {
+                    setFlatId(null);
+                    setPick({});
+                    setPieceId(null);
+                  }
+                }}
+              />
+            </div>
+          )}
+
           <div className="mb-4">
             <div className="flex items-center justify-between gap-2">
               <div className="label">Variation</div>
@@ -480,10 +539,139 @@ export function MeasuredDrawer({
 
           {chosen && isSale && (
             <>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="sm:col-span-2">
-                  <LengthField id="sale-length" base={meta.lengthUnit} decimals={meta.decimals} value={Number.isFinite(length) ? length : null} onChange={setLength} autoFocus={!edit} {...lenPref} />
+              {/* Standard vs Custom length selection */}
+              <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3.5">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-700">Length Selection:</span>
+                    <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 shadow-2xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLengthMode("standard");
+                          if (!Number.isFinite(length) || length <= 0) {
+                            if (Number.isFinite(defaultRoll) && defaultRoll > 0) setLength(defaultRoll);
+                            else if (standardPresets.length > 0) setLength(standardPresets[0]);
+                          }
+                        }}
+                        className={`rounded-md px-3 py-1 text-xs font-semibold transition-all cursor-pointer ${
+                          lengthMode === "standard"
+                            ? "bg-brand-600 text-white shadow-xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        Standard Lengths & Rolls
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLengthMode("custom")}
+                        className={`rounded-md px-3 py-1 text-xs font-semibold transition-all cursor-pointer ${
+                          lengthMode === "custom"
+                            ? "bg-brand-600 text-white shadow-xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        Custom Length
+                      </button>
+                    </div>
+                  </div>
+                  {Number.isFinite(length) && length > 0 && (
+                    <span className="text-xs text-slate-600">
+                      Selected: <strong className="font-bold text-slate-900">{L(length)}</strong>
+                    </span>
+                  )}
                 </div>
+
+                {lengthMode === "standard" ? (
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {Number.isFinite(defaultRoll) && defaultRoll > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setLength(defaultRoll)}
+                          className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                            length === defaultRoll
+                              ? "border-brand-600 bg-brand-600 text-white shadow-xs"
+                              : "border-brand-300 bg-brand-50 text-brand-800 hover:bg-brand-100"
+                          }`}
+                        >
+                          <span className={length === defaultRoll ? "bg-white/20 text-white rounded px-1 text-[10px]" : "bg-brand-200/80 text-brand-900 rounded px-1 text-[10px]"}>
+                            Std {rollWord(meta)}
+                          </span>
+                          <span>{L(defaultRoll)}</span>
+                          {length === defaultRoll && <span>✓</span>}
+                        </button>
+                      )}
+                      {standardPresets.filter((p) => p !== defaultRoll).map((p) => {
+                        const isSel = length === p;
+                        return (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setLength(p)}
+                            className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all cursor-pointer ${
+                              isSel
+                                ? "border-brand-600 bg-brand-600 text-white shadow-xs font-semibold"
+                                : "border-slate-300 bg-white text-slate-700 hover:border-brand-500 hover:text-brand-600 hover:bg-brand-50/40"
+                            }`}
+                          >
+                            {L(p)}
+                            {isSel && <span className="ml-1 text-[10px]">✓</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
+                      <span>Pick a standard roll or preset length, or switch to custom length.</span>
+                      <button
+                        type="button"
+                        onClick={() => setLengthMode("custom")}
+                        className="text-brand-600 font-semibold hover:underline cursor-pointer"
+                      >
+                        Enter custom cut length →
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <p className="text-xs text-slate-500 mb-2">
+                      Enter any exact custom length required by the customer below:
+                    </p>
+                    <div className="max-w-md">
+                      <LengthField
+                        id="sale-length-custom"
+                        base={meta.lengthUnit}
+                        decimals={meta.decimals}
+                        label="Custom Cut Length"
+                        value={Number.isFinite(length) ? length : null}
+                        onChange={setLength}
+                        autoFocus={!edit}
+                        {...lenPref}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                {lengthMode === "standard" && (
+                  <div className="sm:col-span-2">
+                    <LengthField
+                      id="sale-length"
+                      base={meta.lengthUnit}
+                      decimals={meta.decimals}
+                      value={Number.isFinite(length) ? length : null}
+                      onChange={(val) => {
+                        setLength(val);
+                        if (!standardPresets.includes(val)) {
+                          setLengthMode("custom");
+                        }
+                      }}
+                      autoFocus={!edit}
+                      {...lenPref}
+                    />
+                  </div>
+                )}
                 {!isCustomerMode ? (
                   <div>
                     <RateField id="sale-rate" label={`Rate ₹ / ${rUnit}`} unit={meta.lengthUnit} value={price} onChange={(x) => { setPrice(x); }} {...ratePref} />

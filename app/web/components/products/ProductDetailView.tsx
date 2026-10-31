@@ -70,6 +70,7 @@ export function ProductDetailView({ productId, back }: { productId: string; back
   const per = product?.measure?.lengthUnit;
 
   const [pick, setPick] = useState<Record<string, string>>({});
+  const [selectedVarId, setSelectedVarId] = useState<string | null>(null);
   const [slide, setSlide] = useState(0);
   const [view, setView] = useViewMode("product.variations", "grid");
   const [tableFilteredIds, setTableFilteredIds] = useState<string[] | null>(null);
@@ -91,14 +92,23 @@ export function ProductDetailView({ productId, back }: { productId: string; back
   // Nothing is picked up front (owner 2026-10-27); a single-variation product shows that one.
   useEffect(() => {
     if (!product) return;
-    setPick(product.variations.length === 1 ? { ...product.variations[0].attributes } : {});
+    if (product.variations.length === 1) {
+      setSelectedVarId(product.variations[0].id);
+      setPick({ ...product.variations[0].attributes });
+    } else {
+      setSelectedVarId(null);
+      setPick({});
+    }
   }, [product?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const allVars = useMemo(() => product?.variations ?? [], [product]);
   const isGroup = product?.productType === "variable" || product?.productType === "measured";
   const chosen: StockVariation | undefined = product
     ? isGroup
-      ? product.variations.find((v) => product.attributes.every((a) => (v.attributes[a.name] ?? "") === (pick[a.name] ?? "")))
+      ? (selectedVarId ? product.variations.find((v) => v.id === selectedVarId) : undefined) ??
+        (product.attributes.length > 0 && Object.keys(pick).length > 0 && product.attributes.every((a) => (pick[a.name] ?? "") !== "")
+          ? product.variations.find((v) => product.attributes.every((a) => (v.attributes[a.name] ?? "") === (pick[a.name] ?? "")))
+          : undefined)
       : product.variations[0]
     : undefined;
 
@@ -137,6 +147,7 @@ export function ProductDetailView({ productId, back }: { productId: string; back
   const low = allVars.filter((v) => v.state === "low").length;
   const out = allVars.filter((v) => v.state === "out" || v.state === "negative").length;
   const selectVariation = (v: StockVariation) => {
+    setSelectedVarId(v.id);
     setPick({ ...v.attributes });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -281,15 +292,18 @@ export function ProductDetailView({ productId, back }: { productId: string; back
               attributes={product.attributes}
               active={allVars}
               picks={pick}
-              onChange={(name, value) =>
+              onChange={(name, value) => {
+                setSelectedVarId(null);
                 setPick((p) => {
                   // Tapping the picked value again clears it.
                   const next = { ...p };
                   if (next[name] === value) delete next[name];
                   else next[name] = value;
+                  const match = product.variations.find((v) => product.attributes.every((a) => (v.attributes[a.name] ?? "") === (next[a.name] ?? "")));
+                  if (match) setSelectedVarId(match.id);
                   return next;
-                })
-              }
+                });
+              }}
             />
           )}
 
@@ -453,8 +467,15 @@ export function ProductDetailView({ productId, back }: { productId: string; back
                 setTableFilteredIds(filteredIds);
                 setTableFilters(filters);
                 if (singleId) {
+                  setSelectedVarId(singleId);
                   const match = product.variations.find((v) => v.id === singleId);
                   if (match) setPick({ ...match.attributes });
+                } else if (filters && Object.keys(filters).length > 0) {
+                  setPick(filters);
+                  const match = product.variations.find((v) => product.attributes.every((a) => (v.attributes[a.name] ?? "") === (filters[a.name] ?? "")));
+                  setSelectedVarId(match?.id ?? null);
+                } else {
+                  setSelectedVarId(null);
                 }
               }}
             />

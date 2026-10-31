@@ -13,6 +13,7 @@ import { useApi } from "@/lib/useApi";
 import { useEntryUnits } from "@/lib/useEntryUnits";
 import { useWarehouses } from "@/lib/useWarehouses";
 import { partValue, variationText } from "./SetSheet";
+import { setTypeName, useSetTypes } from "./SetTypes";
 import { formatContentItem } from "./SetContents";
 import { fmtLen, fmtSellRate } from "@/lib/measure";
 import { useLengthView } from "@/lib/lengthView";
@@ -108,6 +109,19 @@ export function SaleSetsModal({
   const { data, error: loadError } = useApi<{ product: Product }>(`/products/${productId}`);
   const setsRes = useApi<{ sets: GroupSet[]; typePrices?: Record<string, { salePrice: string; minSalePrice?: string }> }>(`/sets?groupId=${productId}&status=IN_STOCK`);
   const heldRes = useApi<{ sets: GroupSet[] }>(orderId ? `/sets?groupId=${productId}&status=HELD` : null);
+  const setTypesRes = useSetTypes(productId);
+  const standardSets = useMemo(() => setTypesRes.data?.types.filter((t) => t.standard) ?? [], [setTypesRes.data]);
+
+  const standardLengthsFor = (byproductId: string) => {
+    const lengths = new Set<number>();
+    for (const s of standardSets) {
+      const p = s.parts.find((x) => x.byproductId === byproductId);
+      if (p && Number.isFinite(p.length) && p.length! > 0) {
+        lengths.add(p.length!);
+      }
+    }
+    return [...lengths].sort((a, b) => a - b);
+  };
   const product = data?.product ?? null;
   const info = product?.grouped ?? null;
   const wh = useWarehouses();
@@ -606,6 +620,54 @@ export function SaleSetsModal({
             <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,18rem)]">
               {/* What the customer wants */}
               <div className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+                {standardSets.length > 0 && (
+                  <div className="p-3 bg-sky-50/50">
+                    <div className="mb-2 flex items-center justify-between">
+                      <div className="text-xs font-bold uppercase tracking-wider text-sky-950 flex items-center gap-1.5">
+                        <span>Standard Sets</span>
+                        <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-800">
+                          {standardSets.length} presets
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-sky-700">Click a preset to apply standard combination & lengths</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {standardSets.map((t) => {
+                        const isMatch = complete && t.typeKey === wantedTypeKey;
+                        return (
+                          <button
+                            key={t.typeKey}
+                            type="button"
+                            onClick={() => {
+                              setWant(Object.fromEntries(byproducts.map((b) => {
+                                const p = t.parts.find((x) => x.byproductId === b.id);
+                                return [b.id, p ? { variationId: p.variationId, length: p.length } : null];
+                              })));
+                              resetPlanChoices();
+                              setError("");
+                            }}
+                            className={`rounded-lg border p-2 text-left text-xs transition-all cursor-pointer ${
+                              isMatch
+                                ? "border-brand-600 bg-brand-50/80 ring-1 ring-brand-500 font-semibold text-brand-900 shadow-xs"
+                                : "border-slate-200 bg-white text-slate-800 hover:border-brand-400 hover:bg-slate-50"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1 mb-0.5">
+                              <span className="font-bold truncate">{t.name || setTypeName(t)}</span>
+                              {isMatch && <span className="text-brand-600 text-[10px] font-bold">✓</span>}
+                            </div>
+                            <div className="text-[10px] text-slate-500 truncate">{setTypeName(t)}</div>
+                            {Number(t.salePrice) > 0 && (
+                              <div className="mt-1 font-semibold text-emerald-700">
+                                ₹{Number(t.salePrice).toLocaleString("en-IN")}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center gap-3 px-3 py-2 text-sm">
                   <span className="w-36 shrink-0 text-slate-500">{info.main?.name ?? "Main"}</span>
                   <span className="text-slate-700">Always included</span>
@@ -636,19 +698,47 @@ export function SaleSetsModal({
                           ))}
                         </div>
                         {b.productType === "measured" && w && (
-                          <LengthField
-                            compact
-                            base={b.lengthUnit ?? "m"}
-                            decimals={b.decimals ?? 3}
-                            label={`${b.name} length`}
-                            value={w.length}
-                            preferredUnit={units.lengthUnit(b.lengthUnit ?? "m")}
-                            onUnitChange={(u) => units.setLengthUnit(b.lengthUnit ?? "m", u)}
-                            onChange={(length) => {
-                              setWant((x) => ({ ...x, [b.id]: { variationId: x[b.id]?.variationId ?? "", length: Number.isFinite(length) ? length : null } }));
-                              setError("");
-                            }}
-                          />
+                          <div className="space-y-1.5 mt-1">
+                            {standardLengthsFor(b.id).length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                                <span className="text-slate-500 text-[11px] font-medium">Standard length:</span>
+                                {standardLengthsFor(b.id).map((len) => {
+                                  const isSel = w.length === len;
+                                  return (
+                                    <button
+                                      key={len}
+                                      type="button"
+                                      onClick={() => {
+                                        setWant((x) => ({ ...x, [b.id]: { variationId: x[b.id]?.variationId ?? "", length: len } }));
+                                        setError("");
+                                      }}
+                                      className={`rounded border px-2 py-0.5 text-xs font-medium cursor-pointer transition ${
+                                        isSel
+                                          ? "border-brand-600 bg-brand-600 text-white shadow-xs"
+                                          : "border-slate-300 bg-white text-slate-700 hover:border-brand-500 hover:text-brand-600"
+                                      }`}
+                                    >
+                                      {fmtLen(len, { lengthUnit: b.lengthUnit ?? "m", decimals: b.decimals ?? 3 })}
+                                      {isSel && <span className="ml-1 text-[10px]">✓</span>}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            <LengthField
+                              compact
+                              base={b.lengthUnit ?? "m"}
+                              decimals={b.decimals ?? 3}
+                              label={`${b.name} length (custom)`}
+                              value={w.length}
+                              preferredUnit={units.lengthUnit(b.lengthUnit ?? "m")}
+                              onUnitChange={(u) => units.setLengthUnit(b.lengthUnit ?? "m", u)}
+                              onChange={(length) => {
+                                setWant((x) => ({ ...x, [b.id]: { variationId: x[b.id]?.variationId ?? "", length: Number.isFinite(length) ? length : null } }));
+                                setError("");
+                              }}
+                            />
+                          </div>
                         )}
                       </div>
                     </div>

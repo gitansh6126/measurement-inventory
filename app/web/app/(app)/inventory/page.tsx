@@ -1300,7 +1300,7 @@ function StockIn() {
                   {c.name} ({c.productCount})
                 </option>
               ))}
-              <option value="none">No category ({cats.data?.uncategorized.productCount ?? 0})</option>
+              <option value="none">No category ({cats.data?.uncategorized?.productCount ?? 0})</option>
             </select>
           </SidebarField>
         </SidebarSection>

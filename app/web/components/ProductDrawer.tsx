@@ -29,8 +29,7 @@ export function ProductDrawer(props: {
   initialVariationId?: string;
 }) {
   if (props.product.productType === "measured") {
-    const { initialPick, initialVariationId, ...measuredProps } = props;
-    return <MeasuredDrawer {...measuredProps} />;
+    return <MeasuredDrawer {...props} />;
   }
   return <CountedProductDrawer {...props} />;
 }

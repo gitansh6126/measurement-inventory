@@ -145,34 +145,24 @@ function AppShell({ me, version, children }: { me: Me; version: VersionInfo | nu
     return () => window.removeEventListener("rs:warehouses-changed", read);
   }, [me, pathname]);
 
-  // Customer Mode route restriction: customer can only browse products, categories, or new sale cart
+  const isAllowed =
+    pathname === "/products" ||
+    pathname.startsWith("/products/") ||
+    pathname === "/sales/new" ||
+    pathname === "/sales/checkout";
+
+  // Customer Mode route protection: bounce non-customer URLs to /products
   useEffect(() => {
-    if (!isCustomerMode) return;
-    const allowed = (p: string) =>
-      p === "/products" ||
-      p.startsWith("/products/") ||
-      p === "/sales/new" ||
-      p === "/sales/checkout";
-    if (!allowed(pathname)) {
+    if (isCustomerMode && !isAllowed) {
       router.replace("/products");
     }
-  }, [isCustomerMode, pathname, router]);
+  }, [isCustomerMode, isAllowed, router]);
 
   async function logout() {
     await api("/auth/logout", { method: "POST" }).catch(() => undefined);
     queryClient.clear();
     router.replace("/login");
   }
-
-  // Customer Mode route protection: bounce non-customer URLs to /products
-  useEffect(() => {
-    if (!isCustomerMode) return;
-    const allowedPrefixes = ["/products", "/sales/new"];
-    const isAllowed = allowedPrefixes.some((p) => pathname === p || pathname.startsWith(p + "/"));
-    if (!isAllowed) {
-      router.replace("/products");
-    }
-  }, [isCustomerMode, pathname, router]);
 
   // Lengths show in metres on purchase / supplier screens, in feet elsewhere (lib/lengthView).
   const lengthScope = /^\/(purchases|suppliers|supplier-prices)(\/|$)/.test(pathname) ? "purchase" : "stock";
@@ -403,7 +393,15 @@ function AppShell({ me, version, children }: { me: Me; version: VersionInfo | nu
         {menuOpen && <div className="no-print fixed inset-0 z-30 bg-slate-900/40 lg:hidden" onClick={() => setMenuOpen(false)} />}
 
         <div className="min-w-0 flex-1">
-          <main className="w-full px-4 pb-24 pt-4 sm:px-6">{children}</main>
+          <main className="w-full px-4 pb-24 pt-4 sm:px-6">
+            {isCustomerMode && !isAllowed ? (
+              <div className="flex min-h-[60vh] items-center justify-center text-sm text-slate-500">
+                Opening catalog…
+              </div>
+            ) : (
+              children
+            )}
+          </main>
         </div>
       </div>
       {!pathname.endsWith("/checkout") && <CartPill />}

@@ -44,15 +44,15 @@ export function ProductRail({ selected, onSelect, onProductsLoaded, mode, onMode
     if (!cats.data) return [];
     return [
       ...cats.data.categories
-        .filter((c) => c.productCount > 0)
-        .map((c) => ({ id: c.id, name: c.name, count: c.productCount })),
-      ...(cats.data.uncategorized.productCount > 0
-        ? [{ id: NONE, name: "Uncategorized", count: cats.data.uncategorized.productCount }]
+        .filter((c) => (c.productCount ?? 0) > 0)
+        .map((c) => ({ id: c.id, name: c.name, count: c.productCount ?? 0 })),
+      ...((cats.data.uncategorized?.productCount ?? 0) > 0
+        ? [{ id: NONE, name: "Uncategorized", count: cats.data.uncategorized?.productCount ?? 0 }]
         : []),
     ];
   }, [cats.data]);
 
-  const totalProducts = cats.data?.all.productCount ?? 0;
+  const totalProducts = cats.data?.all?.productCount ?? 0;
 
   // Load products based on search and category
   const q = search.trim();

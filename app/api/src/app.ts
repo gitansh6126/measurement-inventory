@@ -45,7 +45,6 @@ export function createApp(env: Env) {
 
   const CUSTOMER_MODE_BLOCKED_PATHS = [
     "/api/users",
-    "/api/warehouses",
     "/api/transfers",
     "/api/parties",
     "/api/sales",

@@ -1,3 +1,4 @@
+import { AppError } from "../lib/errors.js";
 import { Router, type Request } from "express";
 import { prisma, WRITE_TX } from "../db.js";
 import { requirePermission } from "../lib/auth.js";
@@ -10,8 +11,18 @@ const ctx = (req: Request) => ({ companyId: req.auth!.companyId, actorId: req.au
 export function warehouseRoutes() {
   const r = Router();
 
+  r.use((req, res, next) => {
+    if (req.method !== "GET" && req.auth?.isCustomerMode) {
+      return next(new AppError(403, "CUSTOMER_MODE_RESTRICTED", "Warehouse modifications are not allowed in customer mode"));
+    }
+    next();
+  });
+
   // Every role sees warehouses (pickers, per-warehouse stock); `enabled` = WH-0 switch.
   r.get("/", requirePermission("catalog.view"), async (req, res) => {
+    if (req.auth?.isCustomerMode) {
+      return res.json({ enabled: false, warehouses: [] });
+    }
     const companyId = req.auth!.companyId;
     const [enabled, warehouses] = await Promise.all([isWarehousingOn(prisma, companyId), listWarehouses(prisma, companyId)]);
     res.json({ enabled, warehouses });

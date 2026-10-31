@@ -153,10 +153,15 @@ export function categoryRoutes() {
       })),
       uncategorizedCount: uncategorized,
       totalCount: all,
-      ...(st && !isCust
+      ...(st
         ? {
             uncategorized: { productCount: uncategorized, ...stockOf(null) },
-            all: { productCount: all, lowCount: st.all.lowCount, outCount: st.all.outCount, negativeCount: st.all.negativeCount },
+            all: {
+              productCount: all,
+              lowCount: isCust ? 0 : st.all.lowCount,
+              outCount: isCust ? 0 : st.all.outCount,
+              negativeCount: isCust ? 0 : st.all.negativeCount,
+            },
           }
         : {}),
     });
