@@ -109,6 +109,9 @@ $env:NEXT_TELEMETRY_DISABLED = "1"
 # The version shown in the app is the release this folder is on (node --env-file never overrides
 # a variable that is already set, so this wins over RELEASE_VERSION in the env file).
 if ($AppVersion -ne "dev") { $env:RELEASE_VERSION = $AppVersion }
+# Nightly backup / weekly restore test results, shown on the Backup page and the dashboard.
+$env:BACKUP_STATUS_FILE = Join-Path $RunDir "$Env-backup-status.txt"
+$env:RESTORE_TEST_STATUS_FILE = Join-Path $RunDir "$Env-restore-test-status.txt"
 
 $gitInfo = Get-GitMetadata
 if ($gitInfo) {

@@ -7,7 +7,7 @@
 # 2. runs setup.ps1 (databases, settings files, packages, build, demo data, shortcuts)
 # 3. when V2 is found on this PC: offers to copy the shop's V2 data into V3.1
 #    (upgrade-from-v2.ps1; V2 is only read). Otherwise asks for the first admin.
-# 4. registers auto-start + nightly backup (install-autostart.ps1)
+# 4. registers nightly backup, weekly restore test and the watchdog (install-autostart.ps1)
 # 5. opens the shop network for phones / PCs (allow-network.ps1, one Windows "Yes" prompt)
 # Safe to run again: every step skips what is already done.
 param(
@@ -113,7 +113,7 @@ if ($fromV2) {
 
 if ($SkipAutostart) { Step "4/5 Auto-start skipped" }
 else {
-  Step "4/5 Nightly backup + weekly restore test (auto-start stays with V2 during the test)"
+  Step "4/5 Nightly backup, weekly restore test, watchdog (auto-start at sign-in stays with V2 during the test)"
   & "$PSScriptRoot\install-autostart.ps1"
 }
 

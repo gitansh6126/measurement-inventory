@@ -101,6 +101,50 @@ developer. Nothing typed in the app is lost: the app is stopped during the whole
 Setup reuses the existing databases (`rs_v31_client`, `rs_v31_demo_local`) if they are still
 there; the restore then replaces the company with the ZIP's data.
 
+## Keep the shop PC running
+
+The **watchdog** (scheduled task "RS Inventory - Watchdog", every 5 minutes, set up by
+`SETUP-FIRST-TIME.bat` / `local-server\install-autostart.ps1`) brings the app back by itself when
+it crashed or the PC restarted (Windows Update, power cut), also when nobody signed in to
+Windows. It only restarts what was running: after **Stop** the app stays stopped. During an
+update it waits. Its notes: `C:\RS-Inventory-Data\logs\watchdog-<month>.log`. If setup did not
+run as Administrator, the watchdog only works while someone is signed in: run
+`local-server\install-autostart.ps1` once in an **Administrator** PowerShell.
+
+One-time settings on the shop PC (`local-server\check.ps1` reports each one):
+
+| Setting | Why |
+|---|---|
+| Settings > System > Power: **Sleep = Never** (on mains power) | A sleeping PC cannot serve the phones. |
+| Control Panel > Power Options > power buttons: **untick "Turn on fast startup"** | Shut down then really restarts Windows and PostgreSQL. |
+| Router: **reserve this PC's IP address** (DHCP reservation) | Phone bookmarks keep working. Or use `http://<pc-name>:3210`. |
+| A small **UPS** for the PC and the router | A power cut during a save can damage the database. |
+| Windows Update **active hours** = shop hours | No restart in the middle of a sale. |
+| Shop Wi-Fi with a password; customers on a separate **guest** Wi-Fi | The app uses plain http inside the shop; guests must not be on that network. |
+| `BACKUP_COPY_DIR` on a USB drive or another disk | The backup survives a dead disk. |
+
+The Backup & Restore page shows the last nightly backup and weekly restore test. The admin
+dashboard shows a red box when the backup failed or is more than a day old.
+
+## Monitoring (alerts on your phone, free)
+
+1. Make a free account at https://healthchecks.io and create three checks:
+   - **Shop app**: period 5 minutes, grace 15 minutes.
+   - **Nightly backup**: period 1 day, grace 2 hours.
+   - **Restore test**: period 7 days, grace 1 day.
+   Add your e-mail, Telegram or WhatsApp under *Integrations*.
+2. Copy each check's ping URL into `C:\RS-Inventory-Data\client.env`:
+   ```
+   MONITOR_PING_URL=https://hc-ping.com/<uuid of Shop app>
+   MONITOR_BACKUP_PING_URL=https://hc-ping.com/<uuid of Nightly backup>
+   MONITOR_RESTORE_TEST_PING_URL=https://hc-ping.com/<uuid of Restore test>
+   ```
+3. Nothing to restart: the watchdog and the backup read the file each time.
+
+You get a message when the app or the PC is down, a restart failed, the data drive has less
+than 5 GB free, or a backup / restore test failed or did not run. Only a short status line is
+sent (app version, PC name, free disk), never shop data. Blank URLs = no monitoring.
+
 ## Problems
 
 | Problem | Fix |
@@ -108,7 +152,7 @@ there; the restore then replaces the company with the ZIP's data.
 | Phone cannot open `:3210` | Same Wi-Fi? Start **Shop** again and click **Yes** (adds the firewall rule). |
 | App "did not start" | The window shows the last log lines; all logs are in `C:\RS-Inventory-Data\logs\`. |
 | Update says it cannot reach GitHub | Check the internet and try again; nothing was changed. |
-| Backup FAILED | Set `BACKUP_COPY_DIR` (install step 4). |
+| Backup FAILED | Set `BACKUP_COPY_DIR` (install step 4). The reason is on the Backup & Restore page. |
 | Something else | Run `local-server\check.ps1` (right-click -> Run with PowerShell) and send the result. |
 
 Never forward ports 3210 / 4210 / 3310 / 4310 on the router.
@@ -119,4 +163,5 @@ Never forward ports 3210 / 4210 / 3310 / 4310 on the router.
   (`C:\RS-Inventory-V2`, read only).
 - `local-server\TEST-APP.bat`: read-only smoke test of the running app.
 - `local-server\install-autostart.ps1 -StartAtLogon`: starts the shop app at Windows sign-in.
+- `local-server\watchdog.ps1`: one watchdog round by hand (what the 5-minute task runs).
 - `dev\`: developer launchers (hot reload, UI prototype); not for the shop.
