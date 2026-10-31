@@ -1,4 +1,4 @@
-# Read-only smoke test of the running app (local-server\TEST-APP.bat). Nothing is saved.
+# Read-only smoke test of the running app (archive\local-server\TEST-APP.bat). Nothing is saved.
 #   powershell -ExecutionPolicy Bypass -File smoke.ps1 [-Env client|demo] [-Sheets <folder>]
 # Signs in with the email / password typed here, opens every list, product, order and
 # shortage / backorder report, and runs the import CHECK on every sheet in -Sheets

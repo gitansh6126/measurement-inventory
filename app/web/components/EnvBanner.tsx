@@ -16,6 +16,20 @@ const STYLE: Record<VersionInfo["environment"], string> = {
   TEST: "bg-[repeating-linear-gradient(-45deg,#f59e0b_0_14px,#fbbf24_14px_28px)] font-semibold text-amber-950",
 };
 
+/**
+ * The local server's SWITCH_APP_URL is http://localhost:<other port>, which only works on the shop
+ * PC itself. A phone on the shop Wi-Fi gets the same port on the address it opened this page with.
+ */
+function onThisHost(url: string): string {
+  try {
+    const u = new URL(url);
+    if (["localhost", "127.0.0.1", "[::1]"].includes(u.hostname)) u.hostname = window.location.hostname;
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 /** Always-visible environment identity (v1/ENVIRONMENTS.md). */
 export function EnvBanner() {
   const [info, setInfo] = useState<VersionInfo | null>(null);
@@ -31,6 +45,7 @@ export function EnvBanner() {
   if (!info) return <div className={`${base} bg-slate-100`} aria-hidden />;
 
   const deployed = new Date(info.deploymentTimestamp).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+  const switchUrl = info.switchUrl ? onThisHost(info.switchUrl) : null;
   return (
     <div className={`${base} ${STYLE[info.environment]}`} role="status">
       <strong>{LABEL[info.environment]}</strong>
@@ -63,9 +78,9 @@ export function EnvBanner() {
           Demo Data Tools →
         </a>
       )}
-      {info.switchUrl && (
+      {switchUrl && (
         // Opens the other environment; it has its own sign-in, data and session.
-        <a href={info.switchUrl} className={`${info.environment === "DEMO" ? "ml-2" : "ml-auto"} rounded bg-white/80 px-2 py-0.5 font-semibold text-slate-900 shadow-sm hover:bg-white`}>
+        <a href={switchUrl} className={`${info.environment === "DEMO" ? "ml-2" : "ml-auto"} rounded bg-white/80 px-2 py-0.5 font-semibold text-slate-900 shadow-sm hover:bg-white`}>
           {info.environment === "CLIENT_READY" ? "Switch to Demo company →" : "Switch to Real company →"}
         </a>
       )}

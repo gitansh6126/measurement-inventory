@@ -21,7 +21,7 @@ measurement-inventory\           <- the only inventory repo (GitHub: gitansh6126
                                     shop PC: C:\RS-Inventory
   VERSION                        <- the release (3.1.1 now); must equal the tag (CI checks it)
   README.md                      <- shop install / update guide
-  SETUP-FIRST-TIME.bat  START-SHOP.bat  START-DEMO.bat  STOP.bat  UPDATE.bat  BACKUP-NOW.bat
+  SETUP-FIRST-TIME.bat  START-SHOP.bat (real + demo)  STOP.bat  UPDATE.bat
   app\                           <- the application (pnpm workspace)
     api\                         <- Express + Prisma API
       prisma\schema.prisma       <- database schema
@@ -30,7 +30,7 @@ measurement-inventory\           <- the only inventory repo (GitHub: gitansh6126
     web\                         <- Next.js front end
     shared\                      <- types / rules used by api and web
   local-server\                  <- Windows scripts: setup, start, stop, build, backup, update
-  dev\                           <- developer launchers (hot reload, UI prototype)
+  archive\                       <- launchers off the shop desktop (demo only, backup now, dev\ tools)
   docs\                          <- plans, decisions, CI-CD.md, this file
   .github\workflows\ci.yml       <- guard + test + release
 

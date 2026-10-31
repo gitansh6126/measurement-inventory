@@ -108,12 +108,12 @@ try {
 if ($fromV2) {
   Step "3/5 Copy the shop's data from V2"
   & "$PSScriptRoot\upgrade-from-v2.ps1" -V2Folder $V2Folder
-  if ($LASTEXITCODE -ne 0) { throw "Copying the V2 data failed (see above). Fix it, then run UPGRADE-FROM-V2.bat." }
-} else { Step "3/5 V2 data copy skipped (run UPGRADE-FROM-V2.bat any time later)" }
+  if ($LASTEXITCODE -ne 0) { throw "Copying the V2 data failed (see above). Fix it, then run archive\local-server\UPGRADE-FROM-V2.bat." }
+} else { Step "3/5 V2 data copy skipped (run archive\local-server\UPGRADE-FROM-V2.bat any time later)" }
 
 if ($SkipAutostart) { Step "4/5 Auto-start skipped" }
 else {
-  Step "4/5 Nightly backup, weekly restore test, watchdog (auto-start at sign-in stays with V2 during the test)"
+  Step "4/5 Nightly backup, weekly restore test, watchdog (the app itself starts at sign-in from the Startup shortcut)"
   & "$PSScriptRoot\install-autostart.ps1"
 }
 
@@ -131,8 +131,9 @@ Write-Host ""
 Write-Host "=====================================================================" -ForegroundColor Green
 Write-Host "  INSTALL FINISHED" -ForegroundColor Green
 Write-Host "=====================================================================" -ForegroundColor Green
-Write-Host "  Start the app:  desktop '$AppTitle - Shop' / START-SHOP.bat  (http://localhost:3210)"
-Write-Host "  Demo company:   desktop '$AppTitle - Demo' / START-DEMO.bat  (http://localhost:3310)"
+Write-Host "  Start the app:  desktop '$AppTitle - Start Shop' / START-SHOP.bat (real company :3210 + demo :3310)"
+Write-Host "  Auto start:     at every Windows sign-in (Startup folder shortcut)"
+Write-Host "  Stop:           desktop '$AppTitle - Stop Server' / STOP.bat"
 Write-Host "  New version:    desktop '$AppTitle - Update' / UPDATE.bat"
 Write-Host "  Restore data:   sign in as admin -> Backup & Restore -> Restore (README.md)"
 Write-Host "  Still to do:    set BACKUP_COPY_DIR in $(Get-EnvFile 'client') (README.md)"

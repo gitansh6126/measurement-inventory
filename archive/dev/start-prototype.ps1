@@ -5,7 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-. (Join-Path (Split-Path $PSScriptRoot -Parent) "local-server\common.ps1")
+. (Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) "local-server\common.ps1")
 $ProtoDir = Join-Path $V3Root "docs\ui-prototype"
 New-Item -ItemType Directory -Force $RunDir, $LogDir | Out-Null
 
