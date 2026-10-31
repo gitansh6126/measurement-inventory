@@ -11,8 +11,9 @@ import { nextDocNumber } from "./numbering.js";
 import { can, type Permission } from "./permissions.js";
 import { checkSetRows, holdOrderSets, releaseOrderSets, saleSetInput, setInput, unholdForDelivery, type SaleSetInput } from "./sets.js";
 import { lockVariations, money } from "./stock.js";
-import { isWarehousingOn, requireWarehouse, splitsInput, validateSplits, type Split } from "./warehouses.js";
+import { isWarehousingOn, requireWarehouse, requireWarehouses, splitsInput, validateSplits, type Split } from "./warehouses.js";
 import { bumpVersion, versionField } from "./versions.js";
+import { upsertRate } from "./vendor-prices.js";
 
 // Sale and purchase orders (v2/docs/orders/ORDER-LIFECYCLE-PLAN.md).
 // DRAFT → PLACED → ON_DELIVERY → COMPLETED, CANCELLED from any open state. An order never moves
@@ -205,7 +206,8 @@ async function priceLines(tx: Tx, companyId: string, kind: OrderKind, input: z.i
   // V3.1 (WH-13): saved splits need warehousing on and warehouses of this company.
   if (input.some((l) => l.splits)) {
     if (!(await isWarehousingOn(tx, companyId))) throw new AppError(400, "WAREHOUSING_OFF", "Warehousing is not set up yet");
-    for (const w of new Set(input.flatMap((l) => (l.splits ?? []).map((s) => s.warehouseId)))) await requireWarehouse(tx, companyId, w);
+    const splitWarehouseIds = input.flatMap((l) => (l.splits ?? []).map((s) => s.warehouseId));
+    await requireWarehouses(tx, companyId, splitWarehouseIds);
   }
   // Purchase-order lines bought for a customer order (its shortages, from the purchase cart): the
   // sale-order line must be one of this company's sale orders.
@@ -246,7 +248,17 @@ async function priceLines(tx: Tx, companyId: string, kind: OrderKind, input: z.i
         qtyMilli = l.saleSets.length * 1000;
         // Stored as entered (lengths in base units, not milli): delivery and the order page read it
         // back through saleSetInput, which converts again.
-        setLines.push({ lineNo: i + 1, groupId: v.groupId, json: l.saleSets.map((s) => ({ setId: s.setId, changes: s.changes.map((c) => (c.length !== undefined ? { ...c, length: c.length / 1000 } : c)) })), saleSets: l.saleSets });
+        setLines.push({
+          lineNo: i + 1,
+          groupId: v.groupId,
+          json: l.saleSets.map((s) => ({
+            setId: s.setId || null,
+            isWholeBackorder: s.isWholeBackorder,
+            combination: s.combination?.map((c) => (c.length !== undefined ? { ...c, length: c.length / 1000 } : c)),
+            changes: s.changes.map((c) => (c.length !== undefined ? { ...c, length: c.length / 1000 } : c)),
+          })),
+          saleSets: l.saleSets,
+        });
       } else {
         if (l.saleSets) throw new AppError(400, "BAD_LINE", `${v.group.name}: a purchase order expects new sets`);
         if (l.sets) {
@@ -436,6 +448,29 @@ export async function createOrder(ctx: OrderContext, body: z.infer<typeof create
         select: { id: true },
       });
       await saveOrderSets(tx, ctx, { id: o.id, number, kind: body.kind }, priced);
+      if (body.kind === "PURCHASE" && party?.id) {
+        for (const l of priced.rows) {
+          if (Number(l.price) > 0) {
+            await upsertRate(
+              tx,
+              {
+                companyId,
+                actorId,
+                requestId: body.clientRef ?? null,
+                fromPurchase: true,
+                supplierName: party.name,
+              },
+              {
+                variationId: l.variationId,
+                supplierId: party.id,
+                rate: l.price,
+                notes: `Auto-updated from Purchase Order #${number}`,
+                effectiveAt: new Date(),
+              }
+            );
+          }
+        }
+      }
       await audit(tx, {
         companyId,
         actorId,
@@ -648,6 +683,9 @@ export async function fulfillOrder(ctx: OrderContext, id: string, body: z.infer<
         if (item.fulfillMilli !== milliOf(l.quantity) - milliOf(l.fulfilledQuantity)) throw new AppError(400, "WHOLE_SETS", `${name}: deliver all its sets at once`);
         const saleSets = z.array(saleSetInput).parse(storedSets.get(l.id) ?? []);
         if (saleSets.length * 1000 !== item.fulfillMilli) throw new AppError(409, "SETS_REQUIRED", `${name}: edit the order and pick its sets again`);
+        if (saleSets.some((s) => s.isWholeBackorder || !s.setId)) {
+          throw new AppError(409, "SET_BACKORDERED", `${name}: set is on backorder — edit order and pick the set once received`);
+        }
         setsFor.set(l.id, { saleSets });
       } else {
         const typed = reqByLineId?.get(l.id)?.sets;
@@ -659,7 +697,7 @@ export async function fulfillOrder(ctx: OrderContext, id: string, body: z.infer<
       }
     }
     if (o.kind === "SALE") {
-      await unholdForDelivery(tx, companyId, id, [...setsFor.values()].flatMap((s) => (s.saleSets ?? []).map((x) => x.setId)));
+      await unholdForDelivery(tx, companyId, id, [...setsFor.values()].flatMap((s) => (s.saleSets ?? []).map((x) => x.setId).filter(Boolean)));
     }
 
     const planItems = itemsToFulfill.map((item) => ({

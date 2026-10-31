@@ -336,7 +336,7 @@ export default function ImportPage() {
           <h2 className="mb-1 text-sm font-semibold text-slate-800">2. Match the columns</h2>
           <p className="mb-3 text-xs text-slate-500">Pick the column holding each field, or &quot;Same for every row&quot; to type one value (e.g. Product name = Wire Rope). Fields left as &quot;Not used&quot; are ignored.</p>
           <div className="table-container">
-            <table className="table">
+            <table className="table table-stack">
               <thead>
                 <tr>
                   <th>Field</th>
@@ -360,7 +360,7 @@ export default function ImportPage() {
                         </div>
                         <div className="max-w-xs text-xs text-slate-500">{f.hint}</div>
                       </td>
-                      <td className="align-top">
+                      <td className="stack-full align-top">
                         <select
                           className="input"
                           aria-label={`${f.label} from`}
@@ -381,7 +381,7 @@ export default function ImportPage() {
                           ))}
                         </select>
                       </td>
-                      <td className="align-top">
+                      <td className="stack-full align-top">
                         {s && s.col === undefined && (
                           <input className="input" placeholder={f.option ? "Value for every row" : f.demo || "Value for every row"} value={s.fixed ?? ""} onChange={(e) => setSource(f.key, { ...s, fixed: e.target.value })} />
                         )}
@@ -492,7 +492,7 @@ export default function ImportPage() {
             </ul>
           )}
           <div className="table-container max-h-[60vh] overflow-auto">
-            <table className="table">
+            <table className="table table-stack">
               <thead>
                 <tr>
                   <th>Row</th>
@@ -504,7 +504,7 @@ export default function ImportPage() {
               <tbody>
                 {shown.map((r) => (
                   <tr key={r.rowNo}>
-                    <td className="text-slate-500">{r.rowNo}</td>
+                    <td className="text-slate-500"><span className="md:hidden">Row </span>{r.rowNo}</td>
                     <td>
                       <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[r.status]}`}>{STATUS_LABEL[r.status]}</span>
                     </td>

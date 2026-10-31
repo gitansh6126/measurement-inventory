@@ -59,6 +59,15 @@ export interface VersionInfo {
   releaseVersion: string;
   deploymentTimestamp: string;
   migrationVersion: string | null;
+  git?: {
+    commit: string;
+    branch: string | null;
+    tag: string | null;
+    dirty: boolean;
+    url: string | null;
+    commitUrl: string | null;
+    branchUrl: string | null;
+  } | null;
   /** Paired environment address (Client Ready ↔ Demo); null when not configured. */
   switchUrl: string | null;
 }

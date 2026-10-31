@@ -17,25 +17,43 @@ export function fiscalYearOf(date: Date): string {
   return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
 }
 
-export function formatDocNumber(kind: DocKind, fiscalYear: string, value: number): string {
-  return `${DOC_PREFIXES[kind]}/${fiscalYear}/${String(value).padStart(4, "0")}`;
+const dateParts = new Intl.DateTimeFormat("en-CA", {
+  timeZone: BUSINESS_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/** Day date key (DDMMYYYY) of an instant, evaluated in Asia/Kolkata. e.g. "30102026". */
+export function dateKeyOf(date: Date): string {
+  const p = dateParts.formatToParts(date);
+  const day = p.find((x) => x.type === "day")?.value ?? "01";
+  const month = p.find((x) => x.type === "month")?.value ?? "01";
+  const year = p.find((x) => x.type === "year")?.value ?? "2026";
+  return `${day}${month}${year}`;
+}
+
+/** Formats document number as {PREFIX}-{DDMMYYYY}-{001} */
+export function formatDocNumber(kind: DocKind, dateKey: string, value: number): string {
+  const seq = String(value).padStart(3, "0");
+  return `${DOC_PREFIXES[kind]}-${dateKey}-${seq}`;
 }
 
 /**
- * Allocates the next number atomically inside the caller's transaction. The upsert row
+ * Allocates the next day-wise number atomically inside the caller's transaction. The upsert row
  * lock serialises concurrent writers, and a rolled-back document releases nothing
  * because the counter increment rolls back with it (no gaps from failed saves).
  */
 export async function nextDocNumber(tx: Tx, companyId: string, kind: DocKind, date: Date): Promise<string> {
-  const fiscalYear = fiscalYearOf(date);
+  const dateKey = dateKeyOf(date);
   const prefix = DOC_PREFIXES[kind];
   const rows = await tx.$queryRaw<{ last_value: number }[]>`
     INSERT INTO document_counters (company_id, doc_type, fiscal_year, last_value)
-    VALUES (${companyId}, ${prefix}, ${fiscalYear}, 1)
+    VALUES (${companyId}, ${prefix}, ${dateKey}, 1)
     ON CONFLICT (company_id, doc_type, fiscal_year)
     DO UPDATE SET last_value = document_counters.last_value + 1
     RETURNING last_value`;
   const value = rows[0]?.last_value;
   if (!value) throw new Error("Document counter allocation failed");
-  return formatDocNumber(kind, fiscalYear, value);
+  return formatDocNumber(kind, dateKey, value);
 }

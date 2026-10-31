@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
+import { DemoDataManager } from "@/components/DemoDataManager";
 import { LengthField } from "@/components/measure/LengthField";
 import { Restricted } from "@/components/Restricted";
 import { Alert, PageHeader, TableSkeleton } from "@/components/ui";
 import { api } from "@/lib/api";
-import { fmtLen, type LengthUnit } from "@/lib/measure";
+import { fmtLenNative, type LengthUnit } from "@/lib/measure";
 import { errorText, useApi } from "@/lib/useApi";
 
 interface UnitSetting {
@@ -71,7 +73,7 @@ function LengthSettingsCard({ initial, onSaved }: { initial: LengthSettings; onS
               >
                 {[0, 1, 2, 3].map((d) => (
                   <option key={d} value={d}>
-                    {d} {d ? `(${fmtLen(12.345, { lengthUnit: unit, decimals: d })})` : ""}
+                    {d} {d ? `(${fmtLenNative(12.345, { lengthUnit: unit, decimals: d })})` : ""}
                   </option>
                 ))}
               </select>
@@ -115,6 +117,22 @@ function Settings() {
           negative balance automatically. This policy is fixed and cannot be changed in Settings.
         </p>
       </section>
+      <section className="card p-5 bg-gradient-to-r from-slate-50 to-indigo-50/40 border-indigo-100 flex items-center justify-between">
+        <div>
+          <h2 className="font-semibold text-slate-900">System Business Logic &amp; Formulas</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            View visual workflows for bundle stock allocation, in-place chain shortening, and 30-day velocity order.
+          </p>
+        </div>
+        <Link href="/rules" className="btn-secondary text-xs shrink-0 ml-4">
+          View Logic &rarr;
+        </Link>
+      </section>
+      <DemoDataManager
+        compact
+        title="Demo &amp; Testing Data"
+        subtitle="Reset data to clean/empty state or apply sample demo data directly inside the app"
+      />
     </div>
   );
 }

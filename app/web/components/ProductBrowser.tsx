@@ -16,7 +16,8 @@ import { money } from "@/lib/format";
 import type { CatalogPage, CatalogSort, CatalogStock, CategoryStatsList, ProductCard, StockProduct } from "@/lib/types";
 import { errorText, useApi } from "@/lib/useApi";
 import { useCatalogNav, ALL_CATEGORIES } from "@/lib/useCatalogNav";
-import { perRate } from "@/lib/measure";
+import { fmtRate, fmtSellRate } from "@/lib/measure";
+import { useLengthView } from "@/lib/lengthView";
 
 const STOCK_CHIPS: { value: CatalogStock; label: string }[] = [
   { value: "all", label: "All" },
@@ -25,6 +26,7 @@ const STOCK_CHIPS: { value: CatalogStock; label: string }[] = [
 ];
 
 const SORT_OPTIONS: { value: CatalogSort; label: string }[] = [
+  { value: "high_moving", label: "High Moving" },
   { value: "name", label: "Name" },
   { value: "price_asc", label: "Price ↑" },
   { value: "price_desc", label: "Price ↓" },
@@ -41,15 +43,14 @@ function priceDisplay(product: ProductCard, mode: CartMode) {
   if (mode === "purchase") {
     const low = product.costMin ? money(product.costMin) : null;
     const high = product.costMax ? money(product.costMax) : null;
-    const costText = low && high ? `${low === high ? low : `${low} – ${high}`}${perRate(product.lengthUnit)}` : low ?? high ?? "—";
+    const costText = product.costMin && product.costMax ? (low === high ? fmtRate(product.lengthUnit, product.costMin) : fmtRate(product.lengthUnit, product.costMin, product.costMax)) : low ?? high ?? "—";
     return (
       <div className="text-sm font-semibold text-slate-700">
         <span className="text-xs font-normal text-slate-500 mr-1" title="Purchase cost">Cost:</span>
         {costText}
         {product.vendor && (
           <div className="text-xs font-normal text-sky-700" title="Active supplier rates (Vendor pricing)">
-            Vendor: {product.vendor.min === product.vendor.max ? money(product.vendor.min) : `${money(product.vendor.min)} – ${money(product.vendor.max)}`}
-            {perRate(product.lengthUnit)}
+            Vendor: {product.vendor.min === product.vendor.max ? fmtRate(product.lengthUnit, product.vendor.min) : fmtRate(product.lengthUnit, product.vendor.min, product.vendor.max)}
             <span className="text-slate-500"> · {product.vendor.suppliers} supplier{product.vendor.suppliers === 1 ? "" : "s"}</span>
           </div>
         )}
@@ -58,21 +59,16 @@ function priceDisplay(product: ProductCard, mode: CartMode) {
   }
 
   const hasMin = Number(product.minSalePrice) > 0;
-  const minText = hasMin && product.minSalePrice ? money(product.minSalePrice) : "—";
-  const low = product.priceMin ? money(product.priceMin) : null;
-  const high = product.priceMax ? money(product.priceMax) : null;
-  const saleText = low && high ? `${low === high ? low : `${low} – ${high}`}${perRate(product.lengthUnit)}` : low ?? high ?? "—";
+  const minPrice = hasMin ? product.minSalePrice : product.priceMin;
+  const salePrice = product.priceMax ?? product.priceMin;
+  const displayText = fmtSellRate(product.lengthUnit, minPrice, salePrice, "Sell: ");
 
   return (
     <div
-      className="text-xs sm:text-sm font-semibold"
-      title={`Min Selling Price: ${minText} – Selling Price: ${saleText}`}
+      className="text-xs sm:text-sm font-semibold text-brand-700"
+      title={displayText}
     >
-      <span className="text-slate-500 font-medium">Min: </span>
-      <span className={hasMin ? "text-slate-800" : "text-slate-400 font-normal"}>{minText}</span>
-      <span className="mx-1 text-slate-400 font-normal">–</span>
-      <span className="text-slate-500 font-medium">Selling: </span>
-      <span className="text-brand-700">{saleText}</span>
+      {displayText}
     </div>
   );
 }
@@ -92,6 +88,7 @@ export function ProductBrowser({ mode }: { mode: CartMode }) {
 }
 
 function ProductBrowserInner({ mode }: { mode: CartMode }) {
+  useLengthView();
   const nav = useCatalogNav();
   const { query: searchText, setQuery: setSearchText, category } = nav;
   // Tapping a product opens the bottom drawer (V1 flow) over the category grid.
@@ -100,7 +97,7 @@ function ProductBrowserInner({ mode }: { mode: CartMode }) {
   const [openError, setOpenError] = useState("");
   const [setsFor, setSetsFor] = useState<string | null>(null);
   const cart = useCart();
-  const [sort, setSort] = useState<CatalogSort>("name");
+  const [sort, setSort] = useState<CatalogSort>("high_moving");
   const [state, setState] = useState<CatalogStock>("all");
   const [pageSize, setPageSize] = useState(48);
   const [search, setSearch] = useState(searchText);
@@ -157,14 +154,13 @@ function ProductBrowserInner({ mode }: { mode: CartMode }) {
       title="Products"
       count={catalog.data ? `${catalog.data.total} items` : undefined}
       toolbar={
-        <div className="flex w-full flex-wrap items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <SearchInput value={search} onChange={onSearch} placeholder="Search products…" className="flex-1" />
-            <select className="input w-auto" value={sort} onChange={(e) => setSort(e.target.value as CatalogSort)} aria-label="Sort products">
+        // Phones: search on its own full-width row, then sort and the stock chips.
+        <div className="grid w-full min-w-0 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-between">
+          <SearchInput value={search} onChange={onSearch} placeholder="Search products…" className="sm:flex-1" />
+          <div className="flex min-w-0 items-center gap-2">
+            <select className="input w-auto shrink-0" value={sort} onChange={(e) => setSort(e.target.value as CatalogSort)} aria-label="Sort products">
               {SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
-          </div>
-          <div className="flex items-center gap-2">
             <Chips value={state} onChange={setState} options={STOCK_CHIPS.map((option) => ({ value: option.value, label: option.label }))} label="Stock filter" />
           </div>
         </div>

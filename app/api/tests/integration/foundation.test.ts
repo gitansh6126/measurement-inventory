@@ -10,20 +10,43 @@ describe("system", () => {
   it("exposes liveness, readiness and environment identity", async () => {
     expect((await request(app()).get("/api/health")).body).toEqual({ status: "ok" });
     expect((await request(app()).get("/api/health/ready")).body).toEqual({ status: "ready" });
-    const v = await request(app()).get("/api/version");
-    expect(v.body).toEqual({
-      environment: "TEST",
-      releaseVersion: "0.0.0-test",
-      deploymentTimestamp: "2026-10-13T00:00:00+05:30",
-      // D24: no paired environment configured in TEST.
-      switchUrl: null,
-      // The newest checked-in migration (the suite applies all of them from empty).
-      migrationVersion: readdirSync(resolve(import.meta.dirname, "../../prisma/migrations"), { withFileTypes: true })
-        .filter((d) => d.isDirectory())
-        .map((d) => d.name)
-        .sort()
-        .at(-1),
-    });
+    // git: set by local-server\start.ps1 from the checkout (GIT_*); none in TEST.
+    const gitVars = ["GIT_COMMIT", "GIT_BRANCH", "GIT_TAG", "GIT_DIRTY", "GIT_URL"] as const;
+    const saved = Object.fromEntries(gitVars.map((k) => [k, process.env[k]]));
+    for (const k of gitVars) delete process.env[k];
+    try {
+      const v = await request(app()).get("/api/version");
+      expect(v.body).toEqual({
+        environment: "TEST",
+        releaseVersion: "0.0.0-test",
+        deploymentTimestamp: "2026-10-13T00:00:00+05:30",
+        // D24: no paired environment configured in TEST.
+        switchUrl: null,
+        git: null,
+        // The newest checked-in migration (the suite applies all of them from empty).
+        migrationVersion: readdirSync(resolve(import.meta.dirname, "../../prisma/migrations"), { withFileTypes: true })
+          .filter((d) => d.isDirectory())
+          .map((d) => d.name)
+          .sort()
+          .at(-1),
+      });
+
+      Object.assign(process.env, { GIT_COMMIT: "abc1234", GIT_BRANCH: "main", GIT_TAG: "v3.1.2", GIT_DIRTY: "false", GIT_URL: "https://github.com/o/r" });
+      expect((await request(app()).get("/api/version")).body.git).toEqual({
+        commit: "abc1234",
+        branch: "main",
+        tag: "v3.1.2",
+        dirty: false,
+        url: "https://github.com/o/r",
+        commitUrl: "https://github.com/o/r/commit/abc1234",
+        branchUrl: "https://github.com/o/r/tree/main",
+      });
+    } finally {
+      for (const k of gitVars) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+    }
   });
 
   it("returns JSON errors with a request id and never leaks internals", async () => {
@@ -225,9 +248,9 @@ describe("document numbering", () => {
     const co = await makeCompany();
     const date = new Date("2026-10-13T12:00:00+05:30");
     const numbers = await Promise.all(
-      Array.from({ length: 20 }, () => prisma.$transaction((tx) => nextDocNumber(tx, co.id, "sale", date))),
+      Array.from({ length: 20 }, () => prisma.$transaction((tx) => nextDocNumber(tx, co.id, "sale", date), { timeout: 15000, maxWait: 10000 })),
     );
-    const expected = Array.from({ length: 20 }, (_, i) => `SAL/2026-27/${String(i + 1).padStart(4, "0")}`);
+    const expected = Array.from({ length: 20 }, (_, i) => `SAL-13102026-${String(i + 1).padStart(3, "0")}`);
     expect([...numbers].sort()).toEqual(expected);
   });
 
@@ -240,14 +263,14 @@ describe("document numbering", () => {
         throw new Error("rollback");
       }),
     ).rejects.toThrow("rollback");
-    expect(await prisma.$transaction((tx) => nextDocNumber(tx, co.id, "purchase", date))).toBe("PUR/2026-27/0001");
+    expect(await prisma.$transaction((tx) => nextDocNumber(tx, co.id, "purchase", date))).toBe("PUR-13102026-001");
   });
 
-  it("keeps separate sequences per type and financial year", async () => {
+  it("keeps separate sequences per type and day", async () => {
     const co = await makeCompany();
     const sale = (d: string) => prisma.$transaction((tx) => nextDocNumber(tx, co.id, "sale", new Date(d)));
-    expect(await sale("2027-03-31T12:00:00+05:30")).toBe("SAL/2026-27/0001");
-    expect(await sale("2027-04-01T09:00:00+05:30")).toBe("SAL/2027-28/0001");
-    expect(await prisma.$transaction((tx) => nextDocNumber(tx, co.id, "purchase", new Date("2027-04-01T09:00:00+05:30")))).toBe("PUR/2027-28/0001");
+    expect(await sale("2027-03-31T12:00:00+05:30")).toBe("SAL-31032027-001");
+    expect(await sale("2027-04-01T09:00:00+05:30")).toBe("SAL-01042027-001");
+    expect(await prisma.$transaction((tx) => nextDocNumber(tx, co.id, "purchase", new Date("2027-04-01T09:00:00+05:30")))).toBe("PUR-01042027-001");
   });
 });

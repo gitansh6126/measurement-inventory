@@ -3,6 +3,7 @@
 # Writes BACKUP_DIR\<env>\<stamp>\ (db.dump, storage.zip, migration.txt, SHA256SUMS) and a
 # second copy to BACKUP_COPY_DIR. CLIENT_READY exits with code 2 (FAILED) without that copy:
 # a backup on the same disk as the database does not survive a disk failure or theft.
+# The result also goes to MONITOR_BACKUP_PING_URL (<url>/fail when FAILED), when set.
 param([ValidateSet("client", "demo")][string]$Env = "client")
 . "$PSScriptRoot\common.ps1"
 
@@ -18,6 +19,7 @@ Start-Transcript -Append -Path (Join-Path $LogDir "backup-$Env.log") | Out-Null
 function Set-Status([string]$Text) {
   "$((Get-Date).ToString('o')) $Text" | Set-Content -Encoding utf8 (Join-Path $RunDir "$Env-backup-status.txt")
   Write-Host "[backup:$Env] $Text"
+  Send-Ping $cfg.MONITOR_BACKUP_PING_URL -Fail:($Text -like "FAILED*") -Body "$AppTitle backup ($Env) on ${env:COMPUTERNAME}: $Text"
 }
 
 # Keeps folders newer than $keepDays, and always the newest 3.
@@ -29,6 +31,7 @@ function Remove-OldBackups([string]$Dir) {
 }
 
 try {
+  Remove-OldLogs $(if ($cfg.LOG_KEEP_DAYS) { [int]$cfg.LOG_KEEP_DAYS } else { 30 })
   Start-Postgres
   Write-Host "[backup:$Env] dumping database to $dest"
   # --no-owner/--no-acl so the dump restores into a differently named role (restore test).

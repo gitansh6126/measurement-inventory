@@ -177,7 +177,12 @@ describe("V1 archive into V2 (pre-hosting compatibility gate)", () => {
     const newVar = (await prisma.productVariation.findFirstOrThrow({ where: { companyId: target.id } })).id;
     const next = (await post(tAdmin, "/api/sales", { lines: [{ variationId: newVar, quantity: 1, price: 90 }] })).body.id;
     const nextNumber = (await tAdmin.get(`/api/sales/${next}`)).body.document.number as string;
-    expect(Number(nextNumber.slice(-4))).toBe(Number(before.slice(-4)) + 1);
+    // Date-based numbers (SAL-DDMMYYYY-001): same kind and day, sequence one higher.
+    const parts = (n: string) => /^(.*-)(\d+)$/.exec(n)!.slice(1) as [string, string];
+    const [beforePrefix, beforeSeq] = parts(before);
+    const [nextPrefix, nextSeq] = parts(nextNumber);
+    expect(nextPrefix).toBe(beforePrefix);
+    expect(Number(nextSeq)).toBe(Number(beforeSeq) + 1);
     expect(await prisma.auditEvent.count({ where: { companyId: target.id, action: "BACKUP_MIGRATION_V1_TO_V2" } })).toBe(1);
   });
 });

@@ -54,6 +54,10 @@ const schema = z.object({
     (value) => (typeof value === "string" && value.trim() ? value.trim() : undefined),
     z.string().email().max(200).optional()
   ),
+  // Status files of the local server's nightly backup and weekly restore test (set by
+  // local-server\start.ps1). Unset on hosted installs: the Backup page then shows no status.
+  BACKUP_STATUS_FILE: z.string().trim().min(1).optional(),
+  RESTORE_TEST_STATUS_FILE: z.string().trim().min(1).optional(),
   // The other environment's address (Client Ready ↔ Demo) for the top-bar switch button.
   // Blank = no button. Only a link: the two environments never share data or sessions.
   SWITCH_APP_URL: z.preprocess((v) => (typeof v === "string" && v.trim() && !v.startsWith("CHANGE_ME") ? v.trim() : undefined), z.string().url().optional()),

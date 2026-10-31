@@ -35,6 +35,7 @@ export interface CartParty {
   mode: CartMode;
   id: string;
   name: string;
+  creditScore?: number | null;
 }
 
 /** One roll on a measured purchase line (W12). Length in base units. */
@@ -113,6 +114,8 @@ export interface SaleSetPick {
   version?: number;
   /** Display only. */
   code?: string;
+  isWholeBackorder?: boolean;
+  combination?: { byproductId: string; variationId: string; length?: number }[];
   /**
    * backorder: no free stock has the new part now — the set can only be held on a customer order,
    * and the part is fitted at delivery from the bundle / stock bought for it.
@@ -121,7 +124,7 @@ export interface SaleSetPick {
 }
 
 /** V3.1: a grouped sale line with a by-product on backorder (customer order only). */
-export const hasSetBackorder = (l: Pick<CartLine, "saleSets">) => !!l.saleSets?.some((p) => p.changes?.some((c) => c.backorder));
+export const hasSetBackorder = (l: Pick<CartLine, "saleSets">) => !!l.saleSets?.some((p) => p.isWholeBackorder || p.changes?.some((c) => c.backorder));
 
 /** V3.1: a line of whole sets (purchase: sets entered; sale: sets picked). */
 export const isSetLine = (l: Pick<CartLine, "sets" | "saleSets">) => !!(l.sets || l.saleSets);
@@ -152,6 +155,12 @@ export interface CartEditing {
   notes?: string | null;
   paymentMode?: string | null;
   amountPaid?: string | null;
+  /**
+   * V3.2 sale edit: each set sold on the document, by id, with the price per set it was sold at.
+   * Those sets can be picked again (they come back in stock when the revision is saved) and keep
+   * that price; part changes reprice from it (D12).
+   */
+  soldSets?: Record<string, string>;
 }
 
 interface CartState {

@@ -92,7 +92,7 @@ export function productRoutes() {
       prisma.productGroup.findMany({
         where,
         include: groupInclude,
-        orderBy: [{ name: "asc" }, { id: "asc" }],
+        orderBy: [{ lastSaleAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }, { name: "asc" }, { id: "asc" }],
         skip: (q.page - 1) * q.pageSize,
         take: q.pageSize,
       }),
@@ -200,6 +200,7 @@ export function productRoutes() {
             : {}),
           imageUrl: body.imageUrl !== undefined ? body.imageUrl : (body.gallery !== undefined ? (body.gallery.length > 0 ? body.gallery[0] : null) : undefined),
           gallery: body.gallery !== undefined ? body.gallery : undefined,
+          specs: body.specs as unknown as Prisma.InputJsonValue | undefined,
           categoryId: body.categoryId,
           active: body.active,
           // A Simple product's base follows its Short Name.
@@ -336,7 +337,7 @@ export function productRoutes() {
       await assertOwnImages(tx, companyId, [body.imageUrl]);
       const after = await tx.productVariation.update({
         where: { id: before.id },
-        data: { shortName, officialSku, description: body.description, imageUrl: body.imageUrl, active: body.active, defaultRollLength: body.defaultRollLength, updatedById: actorId, ...bumpVersion },
+        data: { shortName, officialSku, description: body.description, imageUrl: body.imageUrl, specs: body.specs as unknown as Prisma.InputJsonValue | undefined, active: body.active, defaultRollLength: body.defaultRollLength, updatedById: actorId, ...bumpVersion },
       });
       // V3.1 (0038): this variation's own categories of other heads.
       const categoriesBefore = g.variationCategoryLinks.filter((l) => l.variationId === before.id).map((l) => l.category.id);

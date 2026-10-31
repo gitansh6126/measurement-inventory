@@ -68,6 +68,7 @@ model Company {
   groupSets           GroupSet[]
   groupSetParts       GroupSetPart[]
   groupSetPartChanges GroupSetPartChange[]
+  groupSetTypes       GroupSetType[]
   warehouses          Warehouse[]
   stockTransfers      StockTransfer[]
   stockTransferVoids  StockTransferVoid[]
@@ -295,6 +296,8 @@ model ProductGroup {
   // Ordered AttributeDef[] (see @rs-v31/shared). Declared values are kept even when no
   // variation uses them; they are not rebuilt from child rows.
   attributeDefinitions Json        @default("[]") @map("attribute_definitions")
+  // 0044: technical specifications, ordered [{ name, value }].
+  specs                Json        @default("[]")
   // Measured products only (V2 plan §2; null otherwise, checked in 0020).
   lengthUnit           LengthUnit? @map("length_unit")
   // Label of a physical piece: "Roll", "Reel", "Drum".
@@ -324,6 +327,7 @@ model ProductGroup {
   byproducts     GroupByproduct[] @relation("GroupByproductGroup")
   byproductOf    GroupByproduct[] @relation("GroupByproductProduct")
   sets           GroupSet[]
+  setTypes       GroupSetType[]
   // V3.1 (0033): categories of heads other than Product Type.
   categoryLinks  ProductCategory[]
   // V3.1 (0038): categories of other heads on chosen variations only.
@@ -355,6 +359,8 @@ model ProductVariation {
   attributeKey      String       @map("attribute_key")
   description       String?
   imageUrl          String?      @map("image_url")
+  // 0044: this variation's own technical specifications, ordered [{ name, value }].
+  specs             Json         @default("[]")
   // Commercial configuration is owned by Inventory/Purchases, not the product form (BR-08a).
   salePrice         Decimal      @default(0) @map("sale_price") @db.Decimal(14, 2)
   minSalePrice      Decimal      @default(0) @map("min_sale_price") @db.Decimal(14, 2)
@@ -439,6 +445,8 @@ model StockMovement {
   @@index([variationId, occurredAt])
   @@index([companyId, occurredAt])
   @@index([transferId])
+  @@index([saleId])
+  @@index([purchaseId])
   @@index([variationId, warehouseId])
   @@map("stock_movements")
 }
@@ -578,6 +586,9 @@ model Party {
   altPhone        String?   @map("alt_phone")
   shippingAddress String?   @map("shipping_address")
   creditScore     Int       @default(0) @map("credit_score")
+  // Customer category: pick an existing one or type a new one (0039).
+  category        String?
+  notes           String?
   active          Boolean   @default(true)
   version         Int       @default(1)
   createdAt       DateTime  @default(now()) @map("created_at")
@@ -593,6 +604,7 @@ model Party {
   pieces       MeasurementPiece[]
 
   @@index([companyId, type])
+  @@index([companyId, category])
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "parties_name_trgm_idx")
   @@index([phone(ops: raw("gin_trgm_ops"))], type: Gin, map: "parties_phone_trgm_idx")
   @@map("parties")
@@ -1210,6 +1222,8 @@ model GroupByproduct {
   group       ProductGroup @relation("GroupByproductGroup", fields: [groupId], references: [id], onDelete: Restrict)
   productId   String       @map("product_id")
   product     ProductGroup @relation("GroupByproductProduct", fields: [productId], references: [id], onDelete: Restrict)
+  // Tells repeats of one product apart, e.g. two chains: "Load chain" / "Hand chain" (0040).
+  label       String?
   required    Boolean      @default(true)
   sortOrder   Int          @default(0) @map("sort_order")
   active      Boolean      @default(true)
@@ -1218,9 +1232,39 @@ model GroupByproduct {
 
   parts GroupSetPart[]
 
-  @@unique([groupId, productId])
+  @@index([groupId])
   @@index([productId])
   @@map("group_byproducts")
+}
+
+// Price, minimum selling price and minimum stock of one set type: the sets of a grouped product
+// with the same parts (0041); a standard set is one defined on the product form. typeKey is built from the parts (lib\sets.ts setTypeKey).
+model GroupSetType {
+  id                String       @id @default(cuid())
+  companyId         String       @map("company_id")
+  company           Company      @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  groupId           String       @map("group_id")
+  group             ProductGroup @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  typeKey           String       @map("type_key")
+  // A standard set (defined on the product form): its name and parts
+  // [{ byproductId, variationId, length? (milli) }]; Stock In and purchases build sets from it.
+  standard          Boolean      @default(false)
+  name              String?
+  parts             Json         @default("[]")
+  // 0044: a standard set's technical specifications [{ name, value }] and its own image.
+  specs             Json         @default("[]")
+  imageUrl          String?      @map("image_url")
+  salePrice         Decimal      @default(0) @map("sale_price") @db.Decimal(14, 2)
+  minSalePrice      Decimal      @default(0) @map("min_sale_price") @db.Decimal(14, 2)
+  lowStockThreshold Int          @default(0) @map("low_stock_threshold")
+  sortOrder         Int          @default(0) @map("sort_order")
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @default(now()) @updatedAt @map("updated_at")
+  updatedById       String?      @map("updated_by")
+
+  @@unique([companyId, groupId, typeKey])
+  @@index([groupId])
+  @@map("group_set_types")
 }
 
 // One physical set; code fixed for life (D17).
@@ -1284,6 +1328,7 @@ model GroupSetPart {
 
   @@index([setId])
   @@index([variationId, status])
+  @@index([companyId, status, variationId])
   @@map("group_set_parts")
 }
 

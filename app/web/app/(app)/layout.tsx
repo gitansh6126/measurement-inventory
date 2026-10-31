@@ -2,14 +2,18 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { BottomNav } from "@/components/BottomNav";
 import { CartProvider } from "@/components/CartContext";
 import { CartPill } from "@/components/CartPill";
-import { ArrowInIcon, BookIcon, BoxesIcon, CartIcon, DatabaseIcon, InvoiceIcon, LayersIcon, OrderIcon, PackageIcon, ShiftIcon, TruckIcon, UsersIcon, WarehouseIcon } from "@/components/icons";
+import { DisplayPanel } from "@/components/DisplayPanel";
+import { ArrowInIcon, BookIcon, BoxesIcon, BuildingIcon, CartIcon, CloseIcon, CogIcon, DatabaseIcon, HomeIcon, InvoiceIcon, LayersIcon, LogOutIcon, OrderIcon, PackageIcon, QuoteIcon, ShiftIcon, SlidersIcon, TagIcon, TruckIcon, UsersIcon, WarehouseIcon } from "@/components/icons";
 import { MeContext } from "@/components/MeContext";
+import { TableStackLabels } from "@/components/TableStackLabels";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { ApiError, api, type Me } from "@/lib/api";
+import { ApiError, api, type Me, type VersionInfo } from "@/lib/api";
 import { queryClient } from "@/lib/useApi";
+import { LengthScopeProvider } from "@/lib/lengthView";
 
 // App shell from marble 2110 (app/(app)/layout.tsx): icon sidebar that widens on hover/focus,
 // slim top bar, slide-in menu on small screens. Menu = main v2 navigation limited to V1 (D23).
@@ -17,6 +21,12 @@ import { queryClient } from "@/lib/useApi";
 type NavItem = { href: string; label: string; icon: ReactNode; permission?: string; exact?: boolean; warehousing?: boolean };
 const ic = "h-[18px] w-[18px]";
 const NAV: { section: string; items: NavItem[] }[] = [
+  {
+    section: "Main",
+    items: [
+      { href: "/", label: "Home", icon: <HomeIcon className={ic} />, exact: true },
+    ],
+  },
   {
     section: "Inventory",
     items: [
@@ -37,34 +47,22 @@ const NAV: { section: string; items: NavItem[] }[] = [
     section: "Purchase",
     items: [
       { href: "/purchases/new", label: "New Purchase", icon: <TruckIcon className={ic} />, permission: "purchase.create" },
-      { href: "/purchases/orders", label: "Purchase Orders", icon: <OrderIcon className={ic} />, permission: "purchase.view" },
+      { href: "/purchases/orders", label: "Purchase Orders", icon: <QuoteIcon className={ic} />, permission: "purchase.view" },
       { href: "/purchases", label: "Purchase History", icon: <BookIcon className={ic} />, permission: "purchase.view", exact: true },
-      { href: "/supplier-prices", label: "Supplier Prices", icon: <TruckIcon className={ic} />, permission: "vendor_pricing.view" },
+      { href: "/supplier-prices", label: "Supplier Prices", icon: <TagIcon className={ic} />, permission: "vendor_pricing.view" },
     ],
   },
   {
     section: "Customers",
     items: [
-      { href: "/customers", label: "Customers", icon: <InvoiceIcon className={ic} />, permission: "sale.view" },
+      { href: "/customers", label: "Customers", icon: <UsersIcon className={ic} />, permission: "sale.view" },
     ],
   },
   {
     section: "Suppliers",
     items: [
-      { href: "/suppliers", label: "Suppliers", icon: <BookIcon className={ic} />, permission: "purchase.view" },
+      { href: "/suppliers", label: "Suppliers", icon: <BuildingIcon className={ic} />, permission: "purchase.view" },
     ],
-  },
-  {
-    section: "Admin",
-    items: [
-      { href: "/users", label: "Users", icon: <UsersIcon className={ic} />, permission: "user.manage" },
-      { href: "/backup", label: "Backup & Restore", icon: <DatabaseIcon className={ic} />, permission: "user.manage" },
-      { href: "/settings", label: "Settings", icon: <DatabaseIcon className={ic} />, permission: "company.settings" },
-    ],
-  },
-  {
-    section: "Help",
-    items: [{ href: "/glossary", label: "Glossary", icon: <BookIcon className={ic} /> }],
   },
   {
     section: "Stock Tools",
@@ -74,20 +72,40 @@ const NAV: { section: string; items: NavItem[] }[] = [
       { href: "/warehouses", label: "Warehouses", icon: <WarehouseIcon className={ic} />, permission: "warehouse.manage" },
     ],
   },
+  {
+    section: "Admin",
+    items: [
+      { href: "/users", label: "Users", icon: <UsersIcon className={ic} />, permission: "user.manage" },
+      { href: "/backup", label: "Backup & Restore", icon: <DatabaseIcon className={ic} />, permission: "user.manage" },
+      { href: "/demo-data", label: "Demo Data", icon: <LayersIcon className={ic} />, permission: "company.settings" },
+      { href: "/settings", label: "Settings", icon: <CogIcon className={ic} />, permission: "company.settings" },
+    ],
+  },
+  {
+    section: "Help",
+    items: [
+      { href: "/rules", label: "Business Logic", icon: <SlidersIcon className={ic} /> },
+      { href: "/glossary", label: "Glossary", icon: <BookIcon className={ic} /> },
+    ],
+  },
 ];
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [me, setMe] = useState<Me | null>(null);
+  const [version, setVersion] = useState<VersionInfo | null>(null);
   const [error, setError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [displayOpen, setDisplayOpen] = useState(false);
+  const closeDisplay = useCallback(() => setDisplayOpen(false), []);
 
   useEffect(() => {
     api<Me>("/auth/me").then(setMe, (err) => {
       if (err instanceof ApiError && err.status === 401) router.replace("/login");
       else setError("Could not load your account. Check the connection and reload.");
     });
+    api<VersionInfo>("/version").then(setVersion, () => undefined);
   }, [router]);
 
   useEffect(() => setMenuOpen(false), [pathname]);
@@ -113,6 +131,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   if (error) return <main className="p-6 text-sm text-rose-600">{error}</main>;
   if (!me) return <div className="flex min-h-[60vh] items-center justify-center text-sm text-slate-500">Loading…</div>;
 
+  // Lengths show in metres on purchase / supplier screens, in feet elsewhere (lib/lengthView).
+  const lengthScope = /^\/(purchases|suppliers|supplier-prices)(\/|$)/.test(pathname) ? "purchase" : "stock";
   // Checkout belongs to "New Sale/Purchase"; a document page (/sales/<id>) to its history.
   // Otherwise the most specific prefix wins, so /products/categories does not light up Products.
   const path = pathname.replace(/\/checkout$/, "/new");
@@ -127,71 +147,165 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <QueryClientProvider client={queryClient}>
     <MeContext.Provider value={me}>
       <CartProvider>
-        <div className="min-h-[calc(100vh-28px)] lg:flex">
+      <LengthScopeProvider scope={lengthScope}>
+        <div className="min-h-screen lg:flex">
           {/* Reserves the collapsed sidebar width on large screens; the sidebar is fixed and widens over the page. */}
           <div className="no-print hidden w-16 shrink-0 lg:block" aria-hidden />
           <aside
-            className={`group/nav no-print fixed bottom-0 left-0 top-7 z-40 flex w-60 flex-col overflow-hidden bg-slate-900 text-slate-300 transition-[width,transform,box-shadow] duration-200 ease-out lg:w-16 lg:translate-x-0 lg:hover:w-60 lg:hover:shadow-2xl lg:hover:delay-100 lg:has-[:focus-visible]:w-60 lg:has-[:focus-visible]:shadow-2xl ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
+            className={`group/nav no-print fixed bottom-0 left-0 top-0 z-40 flex w-60 flex-col overflow-hidden bg-slate-900 text-slate-300 transition-[width,transform,box-shadow] duration-200 ease-out lg:w-16 lg:translate-x-0 lg:hover:w-60 lg:hover:shadow-2xl lg:hover:delay-100 lg:has-[:focus-visible]:w-60 lg:has-[:focus-visible]:shadow-2xl ${menuOpen ? "translate-x-0" : "-translate-x-full"}`}
           >
-            <div className="flex items-center gap-2.5 px-4 py-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">RS</span>
-              <div className="whitespace-nowrap transition-opacity lg:opacity-0 lg:group-hover/nav:opacity-100 lg:group-hover/nav:delay-100 lg:group-has-[:focus-visible]/nav:opacity-100">
-                <div className="text-sm font-bold tracking-wide text-white">RS MACHINERY</div>
-                <div className="text-[11px] text-slate-400">Inventory</div>
+            <div className="flex items-center justify-between px-3.5 py-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-sm font-bold text-white shadow-sm">RS</span>
+                <div className="whitespace-nowrap transition-opacity lg:opacity-0 lg:group-hover/nav:opacity-100 lg:group-hover/nav:delay-100 lg:group-has-[:focus-visible]/nav:opacity-100">
+                  <div className="text-sm font-bold tracking-wide text-white">RS MACHINERY</div>
+                  <div className="text-[11px] text-slate-400">Inventory</div>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setMenuOpen(false)}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden"
+                aria-label="Close menu"
+              >
+                <CloseIcon className="h-4 w-4" />
+              </button>
             </div>
-            <nav aria-label="Main" className="scroll-dark flex-1 overflow-y-auto overflow-x-hidden px-2 pb-4">
+            <nav aria-label="Main" className="sidebar-scroll flex-1 overflow-y-auto overflow-x-hidden px-2 py-1 space-y-2">
               {sections.map((g, i) => (
-                <div key={g.section} className={i ? "mt-2" : "mt-1"}>
-                  <div className="relative h-5 px-3">
-                    <span className="whitespace-nowrap text-[10px] font-semibold uppercase leading-5 tracking-wider text-slate-500 transition-opacity lg:opacity-0 lg:group-hover/nav:opacity-100 lg:group-has-[:focus-visible]/nav:opacity-100">
+                <div key={g.section} className={i ? "mt-1.5" : "mt-0.5"}>
+                  <div className="relative py-1 flex items-center justify-start lg:justify-center lg:group-hover/nav:justify-start lg:group-has-[:focus-visible]/nav:justify-start px-2">
+                    <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-wider text-slate-500 inline lg:hidden lg:group-hover/nav:inline lg:group-has-[:focus-visible]/nav:inline px-1">
                       {g.section}
                     </span>
-                    <span className="absolute inset-x-3 top-1/2 hidden border-t border-slate-700 transition-opacity lg:block lg:group-hover/nav:opacity-0 lg:group-has-[:focus-visible]/nav:opacity-0" />
+                    <span className="w-6 border-t border-slate-800 hidden lg:block lg:group-hover/nav:hidden lg:group-has-[:focus-visible]/nav:hidden" />
                   </div>
                   {g.items.map((it) => {
                     const active = it.href === activeHref;
                     return (
-                      <Link
-                        key={it.href}
-                        href={it.href}
-                        title={it.label}
-                        aria-current={active ? "page" : undefined}
-                        className={`flex items-center gap-3 rounded-md px-3 py-[7px] text-sm transition-colors lg:px-[15px] ${active ? "bg-brand-600 font-medium text-white" : "hover:bg-slate-800 hover:text-white"}`}
-                      >
-                        <span className={`shrink-0 ${active ? "text-white" : "text-slate-500"}`}>{it.icon}</span>
-                        <span className="whitespace-nowrap transition-opacity lg:opacity-0 lg:group-hover/nav:opacity-100 lg:group-hover/nav:delay-100 lg:group-has-[:focus-visible]/nav:opacity-100">{it.label}</span>
-                      </Link>
+                      <div key={it.href} className="relative group/item flex items-center justify-start lg:justify-center my-0.5">
+                        <Link
+                          href={it.href}
+                          title={it.label}
+                          aria-current={active ? "page" : undefined}
+                          className={`flex items-center gap-3 w-full h-9 rounded-xl text-sm transition-all ${
+                            active
+                              ? "bg-brand-600 font-medium text-white shadow-sm shadow-brand-950/40"
+                              : "text-slate-400 hover:bg-slate-800/80 hover:text-white"
+                          } px-2.5 lg:px-0 justify-start lg:justify-center lg:group-hover/nav:justify-start lg:group-hover/nav:px-2.5 lg:group-has-[:focus-visible]/nav:justify-start lg:group-has-[:focus-visible]/nav:px-2.5`}
+                        >
+                          <span className={`flex h-9 w-9 shrink-0 items-center justify-center ${active ? "text-white" : "text-slate-400 group-hover/item:text-slate-200"}`}>{it.icon}</span>
+                          <span className="whitespace-nowrap transition-opacity inline-block lg:hidden lg:group-hover/nav:inline-block lg:group-hover/nav:delay-100 lg:group-has-[:focus-visible]/nav:inline-block">{it.label}</span>
+                        </Link>
+                        {/* Instant Tooltip in collapsed desktop mode */}
+                        <div className="pointer-events-none absolute left-14 z-50 hidden rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white shadow-xl border border-slate-700 whitespace-nowrap lg:group-hover/item:block lg:group-hover/nav:hidden">
+                          {it.label}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
               ))}
             </nav>
+            {/* Display preferences & account / logout / switch company */}
+            <div className="border-t border-slate-800/80 px-2 py-2 shrink-0 space-y-1">
+              <div className="relative group/item flex items-center justify-start lg:justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setDisplayOpen((o) => !o);
+                  }}
+                  title="Display"
+                  aria-expanded={displayOpen}
+                  className={`flex items-center gap-3 w-full h-9 rounded-xl text-sm transition-all ${
+                    displayOpen ? "bg-slate-800 text-white" : "text-slate-400 hover:bg-slate-800/80 hover:text-white"
+                  } px-2.5 lg:px-0 justify-start lg:justify-center lg:group-hover/nav:justify-start lg:group-hover/nav:px-2.5 lg:group-has-[:focus-visible]/nav:justify-start lg:group-has-[:focus-visible]/nav:px-2.5`}
+                >
+                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center ${displayOpen ? "text-white" : "text-slate-400 group-hover/item:text-slate-200"}`}><SlidersIcon className={ic} /></span>
+                  <span className="whitespace-nowrap transition-opacity inline-block lg:hidden lg:group-hover/nav:inline-block lg:group-hover/nav:delay-100 lg:group-has-[:focus-visible]/nav:inline-block">Display</span>
+                </button>
+                <div className="pointer-events-none absolute left-14 z-50 hidden rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white shadow-xl border border-slate-700 whitespace-nowrap lg:group-hover/item:block lg:group-hover/nav:hidden">
+                  Display
+                </div>
+              </div>
+
+              {/* Switch Demo/Real company (if switchUrl provided) */}
+              {version?.switchUrl && (
+                <div className="relative group/item flex items-center justify-start lg:justify-center">
+                  <a
+                    href={version.switchUrl}
+                    title={version.environment === "CLIENT_READY" ? "Switch to Demo company" : "Switch to Real company"}
+                    className="flex items-center gap-3 w-full h-9 rounded-xl text-sm transition-all text-amber-400 hover:bg-slate-800/80 hover:text-amber-300 px-2.5 lg:px-0 justify-start lg:justify-center lg:group-hover/nav:justify-start lg:group-hover/nav:px-2.5 lg:group-has-[:focus-visible]/nav:justify-start lg:group-has-[:focus-visible]/nav:px-2.5"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center text-amber-400">
+                      <ShiftIcon className={ic} />
+                    </span>
+                    <span className="whitespace-nowrap transition-opacity inline-block lg:hidden lg:group-hover/nav:inline-block lg:group-hover/nav:delay-100 lg:group-has-[:focus-visible]/nav:inline-block text-xs font-medium">
+                      {version.environment === "CLIENT_READY" ? "Switch to Demo" : "Switch to Real"}
+                    </span>
+                  </a>
+                  <div className="pointer-events-none absolute left-14 z-50 hidden rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white shadow-xl border border-slate-700 whitespace-nowrap lg:group-hover/item:block lg:group-hover/nav:hidden">
+                    {version.environment === "CLIENT_READY" ? "Switch to Demo company" : "Switch to Real company"}
+                  </div>
+                </div>
+              )}
+
+              {/* User profile (who is logged in) */}
+              <div className="relative group/item flex items-center justify-start lg:justify-center pt-1 border-t border-slate-800/60">
+                <div
+                  className="flex items-center gap-3 w-full h-9 rounded-xl text-sm px-2.5 lg:px-0 justify-start lg:justify-center lg:group-hover/nav:justify-start lg:group-hover/nav:px-2.5 lg:group-has-[:focus-visible]/nav:justify-start lg:group-has-[:focus-visible]/nav:px-2.5"
+                >
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-600/30 text-xs font-bold text-brand-300">
+                    {me.user.name[0]?.toUpperCase() ?? "U"}
+                  </span>
+                  <div className="min-w-0 flex-1 whitespace-nowrap transition-opacity inline-block lg:hidden lg:group-hover/nav:inline-block lg:group-hover/nav:delay-100 lg:group-has-[:focus-visible]/nav:inline-block">
+                    <div className="truncate text-xs font-medium text-slate-200">{me.user.name}</div>
+                    <div className="text-[10px] uppercase text-slate-400 tracking-wider flex items-center gap-1.5">
+                      <span>{me.user.role.replace("_", " ")}</span>
+                      {version?.environment === "DEMO" && (
+                        <span className="rounded bg-amber-500/20 px-1 text-[9px] font-semibold text-amber-400 border border-amber-500/30">DEMO</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="pointer-events-none absolute left-14 z-50 hidden rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white shadow-xl border border-slate-700 whitespace-nowrap lg:group-hover/item:block lg:group-hover/nav:hidden">
+                  {me.user.name} ({me.user.role.replace("_", " ")})
+                </div>
+              </div>
+
+              {/* Logout button */}
+              <div className="relative group/item flex items-center justify-start lg:justify-center">
+                <button
+                  type="button"
+                  onClick={logout}
+                  title="Logout"
+                  className="flex items-center gap-3 w-full h-9 rounded-xl text-sm transition-all text-slate-400 hover:bg-rose-950/40 hover:text-rose-300 px-2.5 lg:px-0 justify-start lg:justify-center lg:group-hover/nav:justify-start lg:group-hover/nav:px-2.5 lg:group-has-[:focus-visible]/nav:justify-start lg:group-has-[:focus-visible]/nav:px-2.5"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center">
+                    <LogOutIcon className={ic} />
+                  </span>
+                  <span className="whitespace-nowrap transition-opacity inline-block lg:hidden lg:group-hover/nav:inline-block lg:group-hover/nav:delay-100 lg:group-has-[:focus-visible]/nav:inline-block text-xs font-medium">
+                    Logout
+                  </span>
+                </button>
+                <div className="pointer-events-none absolute left-14 z-50 hidden rounded-md bg-slate-800 px-2.5 py-1 text-xs font-medium text-white shadow-xl border border-slate-700 whitespace-nowrap lg:group-hover/item:block lg:group-hover/nav:hidden">
+                  Logout
+                </div>
+              </div>
+            </div>
           </aside>
+          {displayOpen && <DisplayPanel onClose={closeDisplay} />}
           {menuOpen && <div className="no-print fixed inset-0 z-30 bg-slate-900/40 lg:hidden" onClick={() => setMenuOpen(false)} />}
 
           <div className="min-w-0 flex-1">
-            <header className="no-print sticky top-7 z-30 flex h-9 items-center justify-between border-b border-slate-200 bg-white/90 px-4 text-xs backdrop-blur">
-              <button className="-ml-1 rounded p-1 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setMenuOpen(true)} aria-label="Open menu">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                  <path d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-              <div className="hidden text-slate-500 lg:block">
-                {new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-100 text-[10px] font-semibold text-brand-700">{me.user.name[0]?.toUpperCase()}</span>
-                <span className="font-medium text-slate-800">{me.user.name}</span>
-                <span className="uppercase text-slate-400">{me.user.role.replace("_", " ")}</span>
-                <span className="text-slate-300">|</span>
-                <button onClick={logout} className="font-medium text-slate-600 hover:text-brand-600">Logout</button>
-              </div>
-            </header>
-            <main className="mx-auto max-w-7xl px-4 pb-24 pt-4 sm:px-6">{children}</main>
+            <main className="w-full px-4 pb-24 pt-4 sm:px-6">{children}</main>
           </div>
         </div>
         {!pathname.endsWith("/checkout") && <CartPill />}
+        <TableStackLabels />
+        <BottomNav pathname={pathname} menuOpen={menuOpen} onMenu={() => setMenuOpen((o) => !o)} />
+      </LengthScopeProvider>
       </CartProvider>
     </MeContext.Provider>
     </QueryClientProvider>

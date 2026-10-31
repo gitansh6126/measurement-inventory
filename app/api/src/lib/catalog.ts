@@ -128,6 +128,7 @@ export async function productCards(companyId: string, role: Role, rows: readonly
         priceMin: money(r.priceMin),
         priceMax: money(r.priceMax),
         minSalePrice: money(r.minSalePrice),
+        saleCount30d: r.saleCount30d,
         ...(cost ? { costMin: money(r.costMin), costMax: money(r.costMax), stockValue: money(r.stockValue) ?? "0.00" } : {}),
         ...(vendor
           ? (() => {

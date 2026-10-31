@@ -12,9 +12,36 @@ $desktop = [Environment]::GetFolderPath("Desktop")
 $startup = [Environment]::GetFolderPath("Startup")
 $ws = New-Object -ComObject WScript.Shell
 
-# Shortcuts made by older releases; this script owns them, so they are replaced.
-$old = "Shop", "Demo", "Stop", "Update", "Backup now"
-foreach ($o in $old) { Remove-Item (Join-Path $desktop "$AppTitle - $o.lnk") -Force -ErrorAction SilentlyContinue }
+# Shortcuts made by older releases (any name); this script owns them, so they are replaced.
+$stalePatterns = @(
+  "$AppTitle*.lnk",
+  "RS Inventory*.lnk",
+  "Stop RS Inventory*.lnk",
+  "start - Shortcut.lnk"
+)
+$cleaned = 0
+foreach ($pat in $stalePatterns) {
+  Get-ChildItem -Path $desktop -Filter $pat -ErrorAction SilentlyContinue | ForEach-Object {
+    try {
+      Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+      $cleaned++
+    } catch { }
+  }
+}
+$commonDesktop = [Environment]::GetFolderPath("CommonDesktopDirectory")
+if ($commonDesktop -and (Test-Path $commonDesktop)) {
+  foreach ($pat in $stalePatterns) {
+    Get-ChildItem -Path $commonDesktop -Filter $pat -ErrorAction SilentlyContinue | ForEach-Object {
+      try {
+        Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+        $cleaned++
+      } catch { }
+    }
+  }
+}
+if ($cleaned -gt 0) {
+  Write-Host "    deleted $cleaned old/existing shortcuts from desktop" -ForegroundColor Yellow
+}
 
 function New-Link([string]$Path, [string]$Bat, [string]$BatArgs, [int]$Icon, [string]$Tip, [int]$Window = 1) {
   $target = Join-Path $V3Root $Bat

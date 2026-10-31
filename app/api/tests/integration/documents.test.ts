@@ -36,7 +36,7 @@ describe("sales", () => {
     const r = await post(staff, "/api/sales", { lines: [{ variationId: s, quantity: 3, price: "450" }, { variationId: l, quantity: 2, price: 120 }] });
     expect(r.status).toBe(201);
     const d = (await staff.get(`/api/sales/${r.body.id}`)).body.document;
-    expect(d.number).toMatch(/^SAL\/\d{4}-\d{2}\/0001$/);
+    expect(d.number).toMatch(/^SAL-\d{8}-001$/);
     expect(d).toMatchObject({ partyName: null, subtotal: "1590.00", total: "1590.00", status: "COMPLETED" });
     expect(d.lines.map((x: { shortName: string; officialSku: string | null; quantity: number; price: string; lineTotal: string }) => [x.shortName, x.officialSku, x.quantity, x.price, x.lineTotal])).toEqual([
       ["S-HK", "OFF-S", 3, "450.00", "1350.00"],
@@ -55,7 +55,7 @@ describe("sales", () => {
     expect(r.body.error.message).toBe("Insufficient stock: Hook L-HK (need 6, have 5)");
     expect([await stock(s), await stock(l)]).toEqual([5, 5]);
     const ok = await post(manager, "/api/sales", { lines: [{ variationId: s, quantity: 1, price: 1 }] });
-    expect((await manager.get(`/api/sales/${ok.body.id}`)).body.document.number).toMatch(/\/0001$/);
+    expect((await manager.get(`/api/sales/${ok.body.id}`)).body.document.number).toMatch(/-001$/);
   });
 
   it("never oversells under concurrency: 8 parallel sales of 2 against stock 10", async () => {
@@ -64,8 +64,8 @@ describe("sales", () => {
     expect(results.filter((r) => r.status === 201)).toHaveLength(5);
     expect(results.filter((r) => r.status === 409)).toHaveLength(3);
     expect(await stock(s)).toBe(0);
-    const numbers = (await prisma.sale.findMany({ where: { lines: { some: { variationId: s } } }, select: { number: true } })).map((x) => x.number.slice(-4)).sort();
-    expect(numbers).toEqual(["0001", "0002", "0003", "0004", "0005"]);
+    const numbers = (await prisma.sale.findMany({ where: { lines: { some: { variationId: s } } }, select: { number: true } })).map((x) => x.number.slice(-3)).sort();
+    expect(numbers).toEqual(["001", "002", "003", "004", "005"]);
   });
 
   it("returns the same sale for a repeated submit (double-click safe)", async () => {
@@ -118,7 +118,7 @@ describe("purchases", () => {
     expect(r.status).toBe(201);
     const d = (await manager.get(`/api/purchases/${r.body.id}`)).body.document;
     expect(d).toMatchObject({ total: "6875.00", notes: "GRN 12" });
-    expect(d.number).toMatch(/^PUR\//);
+    expect(d.number).toMatch(/^PUR-/);
     expect(await stock(s)).toBe(25);
     const v = await prisma.productVariation.findUniqueOrThrow({ where: { id: s } });
     expect([v.salePrice.toFixed(2), v.purchaseCost.toFixed(2)]).toEqual(["500.00", "300.00"]);

@@ -68,6 +68,7 @@ interface Doc {
       contents?: SetContentRow[];
       status: string;
       groupId: string;
+      version: number;
       /** Measured parts fitted in the set (cancel can release them as free cut pieces). */
       measuredParts?: SetContentRow[];
     }[];
@@ -127,8 +128,9 @@ export function DocumentView({ mode, id }: { mode: CartMode; id: string }) {
   const hasDiscount = Number(d.discount) > 0;
 
   function handleEdit() {
-    if (d.lines.some((l) => l.sets && l.sets.length > 0)) {
-      alert("Documents with sets cannot be edited. Please cancel and re-enter instead.");
+    // V3.2: a sale with sets is edited (its sets are picked again); a purchase with sets is not.
+    if (!isSale && d.lines.some((l) => l.sets && l.sets.length > 0)) {
+      alert("Purchases with sets cannot be edited. Please cancel and re-enter instead.");
       return;
     }
     if (d.lines.some((l) => l.pieces && l.pieces.length > 0)) {
@@ -140,6 +142,14 @@ export function DocumentView({ mode, id }: { mode: CartMode; id: string }) {
       if (!ok) return;
     }
     const cartLines: CartLine[] = d.lines.map((l) => ({
+      ...(l.sets?.length
+        ? {
+            // A set line: the sets sold, as they were sold (their parts are changed in the set picker).
+            saleSets: l.sets.map((st) => ({ setId: st.id, version: st.version, code: st.code })),
+            setSummaries: l.sets.map((st) => st.name),
+            setDetails: l.sets.map((st) => ({ rows: st.contents ?? [] })),
+          }
+        : {}),
       variationId: l.variationId,
       productId: l.productId || "",
       productName: l.productName,
@@ -164,6 +174,9 @@ export function DocumentView({ mode, id }: { mode: CartMode; id: string }) {
         notes: d.notes,
         paymentMode: d.payment?.mode,
         amountPaid: d.payment?.amountPaid,
+        ...(isSale && d.lines.some((l) => l.sets?.length)
+          ? { soldSets: Object.fromEntries(d.lines.flatMap((l) => (l.sets ?? []).map((st) => [st.id, l.price]))) }
+          : {}),
       },
       cartLines,
       d.partyId ? { id: d.partyId, name: d.partyName || "" } : null
@@ -312,7 +325,7 @@ export function DocumentView({ mode, id }: { mode: CartMode; id: string }) {
           </div>
           {showRevisions && d.revisions && (
             <div className="mt-3 overflow-x-auto rounded border border-sky-200 bg-white p-2">
-              <table className="w-full text-xs">
+              <table className="table-stack w-full text-xs">
                 <thead>
                   <tr className="border-b text-left text-slate-500">
                     <th className="p-1">Rev</th>
@@ -393,7 +406,7 @@ export function DocumentView({ mode, id }: { mode: CartMode; id: string }) {
       </section>
 
       <div className="card print-area overflow-x-auto lg:overflow-x-visible">
-        <table className="table">
+        <table className="table table-stack">
           <thead>
             <tr>
               <th>#</th>
@@ -411,7 +424,7 @@ export function DocumentView({ mode, id }: { mode: CartMode; id: string }) {
                 : "";
               return (
                 <tr key={l.id} className={cancelled ? "text-slate-400 line-through decoration-rose-300" : ""}>
-                  <td className="text-slate-400">{l.lineNo}</td>
+                  <td className="stack-hide text-slate-400">{l.lineNo}</td>
                   <td>
                     <div className="font-medium text-slate-900">{l.productName}</div>
                     {attrsText && <div className="text-xs text-slate-500">{attrsText}</div>}

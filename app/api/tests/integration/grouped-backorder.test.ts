@@ -84,4 +84,101 @@ describe("grouped set by-product backorder", () => {
     const part = await prisma.groupSetPart.findFirstOrThrow({ where: { setId, variationId: c8, status: "SOLD" } });
     expect(Number(part.quantity)).toBe(232);
   });
+
+  it("places whole combination backorder when 0 sets exist in stock, reports hoist and chain shortages, and allows linking PO", async () => {
+    const co = await makeCompany();
+    const admin = await signIn((await makeUser(co.id, "admin")).email);
+    const manager = await signIn((await makeUser(co.id, "sales_manager")).email);
+    const tag = co.id.slice(-4).toUpperCase();
+    const chain = await post(admin, "/api/products", {
+      productType: "measured",
+      name: "Load Chain",
+      baseShortName: `LC${tag}`,
+      attributes: [{ name: "Size", unit: "", values: ["3 mm", "8 mm"] }],
+      variations: [{ attributes: { Size: "3 mm" } }, { attributes: { Size: "8 mm" } }],
+      measure: { lengthUnit: "m", rollName: "Bundle" },
+    });
+    expect(chain.status).toBe(201);
+    const g = await post(admin, "/api/products", {
+      productType: "grouped",
+      name: "Chain Hoist",
+      shortName: `CH${tag}`,
+      main: { name: "Hoist Body", shortName: `HB${tag}`, unit: "Nos" },
+      byproducts: [{ productId: chain.body.product.id, required: true }],
+    });
+    expect(g.status).toBe(201);
+    const [linkChain] = g.body.product.grouped.byproducts;
+    const c8 = linkChain.variations[1].id as string;
+    const setV = g.body.product.variations[0].id as string;
+    const supplier = (await post(admin, "/api/parties", { type: "SUPPLIER", name: `Supplier ${tag}`, phone: "9876543210" })).body.party.id as string;
+
+    // 0 sets exist in stock! No opening sets created.
+    const wholeBackorderPick = {
+      setId: "",
+      isWholeBackorder: true,
+      combination: [{ byproductId: linkChain.id, variationId: c8, length: 15 }],
+    };
+
+    // Direct sale cannot sell a backordered set.
+    const directSale = await post(manager, "/api/sales", { lines: [{ variationId: setV, price: 9500, saleSets: [wholeBackorderPick] }] });
+    expect(directSale.body.error.code).toBe("CANNOT_SELL_BACKORDER");
+
+    // Customer order places whole-combination backorder successfully.
+    const order = await post(manager, "/api/orders", {
+      kind: "SALE",
+      status: "PLACED",
+      lines: [{ variationId: setV, price: 9500, saleSets: [wholeBackorderPick] }],
+    });
+    expect(order.status).toBe(201);
+    const oid = order.body.id as string;
+
+    // Verify 0 sets are held in group_sets for this order.
+    const heldSets = await prisma.groupSet.findMany({ where: { orderId: oid } });
+    expect(heldSets).toHaveLength(0);
+
+    // Verify shortage report reports BOTH the Hoist set and the 8mm chain.
+    const soLineId = (await manager.get(`/api/orders/${oid}`)).body.order.lines[0].id as string;
+    const reportRes = await manager.get(`/api/orders/${oid}/shortages`);
+    expect(reportRes.status).toBe(200);
+    const rows = reportRes.body.shortages;
+    expect(rows).toHaveLength(2);
+    // Row 0: Chain Hoist main shortage (1 Nos)
+    expect(rows[0]).toMatchObject({
+      forSet: null,
+      orderLineId: soLineId,
+      shortageQuantity: 1,
+      uncoveredShortageQuantity: 1,
+      status: "SHORTAGE",
+    });
+    // Row 1: Load Chain 8 mm byproduct shortage (15 m)
+    expect(rows[1]).toMatchObject({
+      forSet: "Chain Hoist",
+      variationId: c8,
+      orderLineId: soLineId,
+      shortageQuantity: 15,
+      uncoveredShortageQuantity: 15,
+      status: "SHORTAGE",
+    });
+
+    // Attempting to deliver/complete the order before sets exist fails with SET_BACKORDERED.
+    const completeAttempt = await post(manager, `/api/orders/${oid}/complete`, {});
+    expect(completeAttempt.body.error.code).toBe("SET_BACKORDERED");
+
+    // Purchase order can be linked to cover the byproduct shortage.
+    const po = await post(manager, "/api/orders", {
+      kind: "PURCHASE",
+      status: "PLACED",
+      partyId: supplier,
+      lines: [{ variationId: c8, price: 120, rolls: [{ length: 50 }], linkedOrderId: oid, linkedOrderLineId: soLineId }],
+    });
+    expect(po.status).toBe(201);
+
+    // Verify byproduct shortage now reports covered by PO.
+    const updatedRows = (await manager.get(`/api/orders/${oid}/shortages`)).body.shortages;
+    expect(updatedRows[1]).toMatchObject({
+      status: "PURCHASE_PENDING",
+      uncoveredShortageQuantity: 0,
+    });
+    expect(updatedRows[1].linkedPOs).toHaveLength(1);
+  });
 });

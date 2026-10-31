@@ -11,7 +11,7 @@ type LoginFlow = "sign-in" | "request-code" | "reset-password";
 /** Where to go after sign-in: the screen the expired session was on (same-origin paths only). */
 function nextPath(): string {
   const next = new URLSearchParams(window.location.search).get("next") ?? "";
-  return next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/login") ? next : "/products";
+  return next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/login") ? next : "/";
 }
 
 export default function LoginPage() {
@@ -100,8 +100,8 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-[calc(100vh-28px)] place-items-center p-4">
-      <form className="card grid w-full max-w-sm gap-4 p-6" method="post" onSubmit={onSubmit} aria-busy={busy}>
+    <main className="grid min-h-screen place-items-center p-4">
+      <form className="card grid w-full max-w-sm gap-4 p-6" method="post" data-enter-last="submit" onSubmit={onSubmit} aria-busy={busy}>
         <div>
           <h1 className="text-2xl font-bold text-slate-900">RS Machinery</h1>
           <p className="text-sm text-slate-500">

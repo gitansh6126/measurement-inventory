@@ -9,6 +9,7 @@ import { ACTION_LABEL, KIND_CLASS, fmtLen, fmtLenSigned, metaOf, type LengthUnit
 import type { AttributeDef, Attributes } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
 import { useWarehouses } from "@/lib/useWarehouses";
+import { useLengthView } from "@/lib/lengthView";
 
 // Stock history of a Measured product, per bundle (owner 2026-10-24): each roll is a card with
 // its timeline — Sealed → Open → cuts, sales, cancels, write-offs, shifts — and the cut pieces
@@ -259,6 +260,7 @@ export function BundleHistory({
   variations: { id: string; shortName: string; attributes: Attributes }[];
   from: string;
 }) {
+  useLengthView();
   const wh = useWarehouses();
   const [status, setStatus] = useState<Status>("active");
   const [variationId, setVariationId] = useState("");

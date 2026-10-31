@@ -5,11 +5,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { grossPaise, hasSetBackorder, isSetLine, lineKey, linePaise, paise, useCart, type CartLine, type CartMode } from "@/components/CartContext";
 import { LineFlags } from "@/components/cart/LineFlags";
-import { Combobox } from "@/components/Combobox";
 import { DraftsButton } from "@/components/DraftsDrawer";
 import { PlusIcon } from "@/components/icons";
 import { useCan, useMe } from "@/components/MeContext";
 import { PartyModal, type Party } from "@/components/PartyModal";
+import { PartyPicker } from "@/components/PartyPicker";
 import { CreditScoreBadge } from "@/components/CreditScoreBadge";
 import { ProductDrawer } from "@/components/ProductDrawer";
 import { ProductThumb } from "@/components/ProductThumb";
@@ -20,11 +20,13 @@ import { DeliveryDatePicker, PageHeader } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import { formatAttributeValue, money } from "@/lib/format";
 import { fmtLen, kindPhrase, rateLabel } from "@/lib/measure";
+import { LengthViewToggle } from "@/components/measure/LengthViewToggle";
 import type { StockProduct } from "@/lib/types";
 import { errorText, useApi } from "@/lib/useApi";
 import { useSupplierRates } from "@/lib/useSupplierRates";
 import { useWarehouses } from "@/lib/useWarehouses";
 import { SplitChips, TakeFromPopup } from "@/components/cart/TakeFromPopup";
+import { useLengthView } from "@/lib/lengthView";
 
 // GAS script_versions/07 renderSalesCart + submitSales / checkoutPOFromCart, submitted as one
 // server transaction. Customer/supplier is optional (D1): "Normal" = walk-in, "Regular" = saved party.
@@ -53,6 +55,7 @@ interface Shortage { variationId: string; name: string; shortName: string; avail
 interface PieceProblem { key: string; code: string; name: string; length: number; longest: number; unit: string }
 
 export function Checkout({ mode }: { mode: CartMode }) {
+  useLengthView();
   const router = useRouter();
   const cart = useCart();
   const me = useMe();
@@ -117,6 +120,8 @@ export function Checkout({ mode }: { mode: CartMode }) {
       belowZero: boolean;
     }[];
     hasStockWarning: boolean;
+    /** V3.2 sale with sets: sets kept, back in stock and newly sold (codes are not shown). */
+    sets?: { kept: number; backInStock: string[]; newlySold: string[]; partChanges: number };
   } | null>(null);
 
   const ordersBase = isSale ? "/sales/orders" : "/purchases/orders";
@@ -152,7 +157,7 @@ export function Checkout({ mode }: { mode: CartMode }) {
     setSelectedPartyName(party.name);
     setRegular(true);
     setPartyId(party.id);
-    cart.setParty(mode, { id: party.id, name: party.name });
+    cart.setParty(mode, { id: party.id, name: party.name, creditScore: party.creditScore });
     await parties.reload();
   }
 
@@ -547,7 +552,9 @@ export function Checkout({ mode }: { mode: CartMode }) {
                 </div>
               ) : m ? (
                 <div className="text-sm">
-                  <div className="font-semibold text-slate-900">{fmtLen(l.quantity, m)}</div>
+                  <div className="font-semibold text-slate-900">
+                    {fmtLen(l.quantity, m)} <LengthViewToggle className="ml-1" />
+                  </div>
                   {m.rolls ? (
                     <div className="text-xs text-slate-500">
                       {m.rolls.length} {(m.rollName || "roll").toLowerCase()}{m.rolls.length === 1 ? "" : "s"}: {m.rolls.map((r) => fmtLen(r.length, m)).join(" · ")}
@@ -610,11 +617,14 @@ export function Checkout({ mode }: { mode: CartMode }) {
                     This supplier’s rate {money(sug.supplierRate)} — use
                   </button>
                 )}
-                {sug.cheapest && sug.cheapest.rate !== sug.supplierRate && (
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600" title="Cheapest active supplier rate">
-                    Best rate {money(sug.cheapest.rate)} ({sug.cheapest.supplierName})
-                  </span>
-                )}
+                {sug.cheapest && sug.cheapest.rate !== sug.supplierRate && (() => {
+                  const multi = (sug.rates?.length ?? 0) > 1;
+                  return (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600" title={multi ? "Cheapest active supplier rate" : "Active supplier rate"}>
+                      {multi ? `Best rate ${money(sug.cheapest.rate)} (${sug.cheapest.supplierName})` : `${sug.cheapest.supplierName} rate ${money(sug.cheapest.rate)}`}
+                    </span>
+                  );
+                })()}
               </div>
             )}
             {!extras ? (
@@ -686,30 +696,19 @@ export function Checkout({ mode }: { mode: CartMode }) {
         {isSale && !regular && <p className="text-sm text-slate-500">Walk-in customer — no name is recorded.</p>}
         {regular && (
           <>
-            <Combobox
+            <PartyPicker
+              mode={label}
+              parties={parties.data?.parties ?? []}
               value={partyId}
               selectedLabel={selectedPartyName || undefined}
-              options={(parties.data?.parties ?? []).map((p) => ({
-                id: p.id,
-                label: p.name,
-                sublabel: [
-                  p.phone,
-                  p.city,
-                  isSale && typeof p.creditScore === "number" ? `Credit: ${p.creditScore}` : null,
-                ].filter(Boolean).join(" · ") || undefined,
-              }))}
-              onSelect={(id) => {
-                setPartyId(id);
-                const found = parties.data?.parties.find((p) => p.id === id);
+              creditScore={isSale && partyId ? parties.data?.parties.find((p) => p.id === partyId)?.creditScore : undefined}
+              canAdd={canAddParty}
+              onChange={(found) => {
+                setPartyId(found?.id ?? null);
                 setSelectedPartyName(found?.name ?? null);
-                cart.setParty(mode, found ? { id: found.id, name: found.name } : null);
+                cart.setParty(mode, found ? { id: found.id, name: found.name, creditScore: found.creditScore } : null);
               }}
-              onCreate={(name) => {
-                setPresetName(name);
-                setShowPartyModal(true);
-              }}
-              createLabel={(name) => `Add new ${label} “${name}”`}
-              placeholder={`Search ${label} name or phone…`}
+              onCreated={() => parties.reload()}
             />
             {isSale && partyId && (() => {
               const party = parties.data?.parties.find((p) => p.id === partyId);
@@ -872,7 +871,9 @@ export function Checkout({ mode }: { mode: CartMode }) {
       )}
 
       {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">{error}</p>}
-      <div className="flex items-center justify-between gap-3">
+      {/* Below lg the total and the main action stay pinned above the BottomNav tab bar (RMS Tech
+          reference: Grand Total + Order Process always on screen); desktop keeps it inline. */}
+      <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-20 -mx-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-6px_12px_-10px_rgba(15,23,42,0.25)] backdrop-blur sm:-mx-6 sm:px-6 lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
         <div>
           <div className="text-xs uppercase tracking-wide text-slate-400">Total</div>
           <div className="text-2xl font-bold text-slate-900">{money(totalPaise / 100)}</div>
@@ -896,18 +897,18 @@ export function Checkout({ mode }: { mode: CartMode }) {
             {saving ? "Saving…" : `Save changes to ${editingOrder.number}`}
           </button>
         ) : (
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto sm:flex-wrap sm:justify-end">
             <button type="button" className="btn-secondary px-4 py-3" aria-expanded={ordering} onClick={openOrderPanel}>Save as order</button>
             {hasMeasuredShortage ? (
               <button
                 type="button"
-                className="btn bg-violet-700 px-6 py-3 text-white hover:bg-violet-800"
+                className="btn flex-1 whitespace-normal bg-violet-700 px-6 py-3 text-white hover:bg-violet-800 sm:flex-none"
                 onClick={openOrderPanel}
               >
                 Save as Customer Order (Backorder)
               </button>
             ) : (
-              <button className={`btn px-6 py-3 text-white transition-all duration-150 active:scale-[0.98] motion-reduce:transform-none ${isSale ? "bg-brand-600 hover:bg-brand-700 hover:shadow-md focus-visible:ring-brand-500" : "bg-slate-900 hover:bg-slate-800 hover:shadow-md focus-visible:ring-slate-700"}`} disabled={saving} onClick={() => submit()}>
+              <button className={`btn flex-1 px-6 py-3 text-white transition-all duration-150 active:scale-[0.98] motion-reduce:transform-none sm:flex-none ${isSale ? "bg-brand-600 hover:bg-brand-700 hover:shadow-md focus-visible:ring-brand-500" : "bg-slate-900 hover:bg-slate-800 hover:shadow-md focus-visible:ring-slate-700"}`} disabled={saving} onClick={() => submit()}>
                 {saving ? "Saving…" : isSale ? "Complete Sale" : "Complete Purchase"}
               </button>
             )}
@@ -992,8 +993,8 @@ export function Checkout({ mode }: { mode: CartMode }) {
                 </div>
               </div>
 
-              {/* Stock Impact */}
-              <div>
+              {/* Stock Impact (a sale of sets only has none of its own: see Sets below) */}
+              <div className={previewData.stock.length === 0 && previewData.sets ? "hidden" : ""}>
                 <h3 className="mb-2 font-semibold text-slate-800">Net Stock Impact</h3>
                 <div className="overflow-x-auto rounded border border-slate-200">
                   <table className="w-full text-left text-xs">
@@ -1025,6 +1026,18 @@ export function Checkout({ mode }: { mode: CartMode }) {
                   </table>
                 </div>
               </div>
+
+              {previewData.sets && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700" role="status">
+                  <div className="font-semibold text-slate-900">Sets</div>
+                  <ul className="mt-1 grid gap-0.5 text-xs">
+                    <li>{previewData.sets.kept} kept on the sale (with the parts they were sold with)</li>
+                    {previewData.sets.backInStock.length > 0 && <li className="text-emerald-700">{previewData.sets.backInStock.length} back in stock as sold</li>}
+                    {previewData.sets.newlySold.length > 0 && <li className="text-rose-700">{previewData.sets.newlySold.length} newly sold from stock</li>}
+                    {previewData.sets.partChanges > 0 && <li>{previewData.sets.partChanges} part change{previewData.sets.partChanges === 1 ? "" : "s"}: old parts go back to free stock, new ones are taken from it</li>}
+                  </ul>
+                </div>
+              )}
 
               {previewData.hasStockWarning && (
                 <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-xs text-rose-900" role="alert">
@@ -1074,6 +1087,7 @@ export function Checkout({ mode }: { mode: CartMode }) {
         <SaleSetsModal
           productId={lines[editingSets]!.productId}
           initial={lines[editingSets]!.saleSets}
+          initialPrice={lines[editingSets]!.price}
           orderId={cart.order?.id}
           excludeSetIds={lines.flatMap((l, j) => (j === editingSets ? [] : (l.saleSets ?? []).map((s) => s.setId)))}
           onClose={() => setEditingSets(null)}

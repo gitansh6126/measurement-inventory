@@ -4,6 +4,7 @@
 import {
   BASE_UNIT_LABEL,
   ENTRY_UNITS,
+  METRES_PER,
   RATE_ENTRY_UNITS,
   RATE_UNIT_LABEL,
   formatLength,
@@ -16,7 +17,9 @@ import {
   type PieceKind,
   type PieceStatus,
 } from "@rs-v31/shared/measure";
-import type { Attributes } from "./types";
+import { money } from "./format";
+import { getLengthView } from "./lengthView";
+import type { Attributes, MeasureSettings, ProductType } from "./types";
 
 export { BASE_UNIT_LABEL, ENTRY_UNITS, RATE_ENTRY_UNITS, rateFromDefault, ratePerOf, rateToDefault, type LengthUnit, type PieceKind, type PieceStatus };
 
@@ -35,8 +38,27 @@ export const metaOf = (m: { lengthUnit: LengthUnit; decimals?: number | null; le
   rollName: m.rollName ?? null,
 });
 
-/** 18.5 (base units) → "18.5 m" / "41 ft 8 in", in the product's own unit. */
-export const fmtLen = (value: number, meta: Pick<MeasureMeta, "lengthUnit" | "decimals">) => formatLength(toMilli(value), meta.lengthUnit, meta.decimals);
+/** A Measured product's stock is a length (shown in the user's m / ft view); other products have none. */
+export const stockLengthOf = (p: { productType: ProductType; measure?: Partial<MeasureSettings> | null }): MeasureMeta | undefined =>
+  p.productType === "measured" ? metaOf({ ...(p.measure ?? {}), lengthUnit: p.measure?.lengthUnit ?? "m" }) : undefined;
+
+/** 18.5 (base units) → "18.5 m" / "41 ft 8 in", always in the product's own unit (entry fields, settings). */
+export const fmtLenNative = (value: number, meta: Pick<MeasureMeta, "lengthUnit" | "decimals">) => formatLength(toMilli(value), meta.lengthUnit, meta.decimals);
+
+/** Decimal metres / feet for a converted length: up to 2 places, trailing zeros dropped. */
+const short = (n: number, unit: string) => `${Number(n.toFixed(2))} ${unit}`;
+
+/**
+ * 18.5 (base units) shown in the user's length view (lib/lengthView): "18.5 m", "60.7 ft" or
+ * "18.5 m (60.7 ft)". A feet + inches product keeps "41 ft 8 in" as its feet form.
+ */
+export const fmtLen = (value: number, meta: Pick<MeasureMeta, "lengthUnit" | "decimals">) => {
+  const view = getLengthView();
+  const metres = meta.lengthUnit === "m" ? value : value * METRES_PER.in!;
+  const m = meta.lengthUnit === "m" ? fmtLenNative(value, meta) : short(metres, "m");
+  const ft = meta.lengthUnit === "ft_in" ? fmtLenNative(value, meta) : short(metres / METRES_PER.ft!, "ft");
+  return view === "ft" ? ft : view === "both" ? `${m} (${ft})` : m;
+};
 
 /** fmtLen with a leading "+" on increases (history changes). */
 export const fmtLenSigned = (value: number, meta: Pick<MeasureMeta, "lengthUnit" | "decimals">) => (value > 0 ? "+" : "") + fmtLen(value, meta);
@@ -52,6 +74,59 @@ export const rateLabel = (unit: LengthUnit | null | undefined) => (unit ? RATE_U
 
 /** " / ft" or " / m" written after a Measured rate; "" for counted items. */
 export const perRate = (unit: LengthUnit | null | undefined) => (unit ? ` / ${RATE_UNIT_LABEL[unit]}` : "");
+
+/**
+ * One rate or a range ("₹40 – ₹52") with its unit, in the user's length view (lib/lengthView):
+ * "₹52 / m", "₹15.85 / ft" or "₹52 / m (₹15.85 / ft)". Rates are stored per the product's rate
+ * unit (0028) and converted for display only. Counted items (no unit): the amounts alone.
+ */
+export const fmtRate = (unit: LengthUnit | null | undefined, ...values: (number | string)[]) => {
+  const amounts = (to?: string) =>
+    values.map((v) => money(to && unit ? (Number(v) * METRES_PER[to]!) / METRES_PER[RATE_UNIT_LABEL[unit]]! : Number(v))).join(" – ");
+  if (!unit) return amounts();
+  const m = `${amounts("m")} / m`;
+  const ft = `${amounts("ft")} / ft`;
+  const view = getLengthView();
+  return view === "ft" ? ft : view === "both" ? `${m} (${ft})` : m;
+};
+
+const whole = new Intl.NumberFormat("en-IN");
+
+/**
+ * Direct selling price or range ("Sell: ₹300 - 400") with unit if measured.
+ * When minSalePrice and salePrice are both set and min < sale:
+ *   prefix + "₹300 - 400" (or "₹300 - 400 / m")
+ * When only salePrice is set (or min == sale):
+ *   prefix + "₹400" (or "₹400 / m")
+ */
+export const fmtSellRate = (
+  unit: LengthUnit | null | undefined,
+  minPrice: number | string | null | undefined,
+  salePrice: number | string | null | undefined,
+  prefix = "Sell: "
+) => {
+  const min = Math.round(Number(minPrice) || 0);
+  const sale = Math.round(Number(salePrice) || 0);
+
+  if (min > 0 && sale > 0 && min < sale) {
+    if (!unit) {
+      return `${prefix}${money(min)} - ${whole.format(sale)}`;
+    }
+    const rateOf = (v: number, to: string) =>
+      Math.round((v * METRES_PER[to]!) / METRES_PER[RATE_UNIT_LABEL[unit]]!);
+    const m = `${money(rateOf(min, "m"))} - ${whole.format(rateOf(sale, "m"))} / m`;
+    const ft = `${money(rateOf(min, "ft"))} - ${whole.format(rateOf(sale, "ft"))} / ft`;
+    const view = getLengthView();
+    const text = view === "ft" ? ft : view === "both" ? `${m} (${ft})` : m;
+    return `${prefix}${text}`;
+  }
+
+  const single = sale > 0 ? sale : min;
+  if (single > 0) {
+    return `${prefix}${fmtRate(unit, single)}`;
+  }
+  return "—";
+};
 
 /** "Roll" / "Drum"… (lower-case plural helper for counts). */
 export const rollWord = (meta: Pick<MeasureMeta, "rollName">, n = 1) => {
@@ -153,6 +228,7 @@ export interface MeasuredVariation {
   attributes: Attributes;
   active: boolean;
   salePrice: string;
+  minSalePrice?: string;
   lowStockThreshold: number;
   defaultRollLength: number | null;
   stock: number;

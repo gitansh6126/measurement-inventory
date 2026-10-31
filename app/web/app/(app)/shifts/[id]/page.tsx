@@ -69,7 +69,7 @@ export default function ShiftPage() {
         {!t ? (
           <TableSkeleton />
         ) : (
-          <table className="table">
+          <table className="table table-stack">
             <thead>
               <tr>
                 <th className="w-10">#</th>
@@ -82,7 +82,7 @@ export default function ShiftPage() {
             <tbody>
               {t.lines.map((l) => (
                 <tr key={l.lineNo}>
-                  <td className="text-slate-400">{l.lineNo}</td>
+                  <td className="stack-hide text-slate-400">{l.lineNo}</td>
                   <td>
                     <div className="font-medium text-slate-900">{l.productName}</div>
                     {l.setId ? (

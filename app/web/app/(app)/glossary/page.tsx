@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { EmptyState, PageHeader, SearchInput, Segmented, Toolbar } from "@/components/ui";
 import { BookIcon } from "@/components/icons";
@@ -137,7 +138,15 @@ export default function GlossaryPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <PageHeader title="Glossary" subtitle="Simple meanings of inventory, business and computer words used in this app" />
+      <PageHeader
+        title="Glossary"
+        subtitle="Simple meanings of inventory, business and computer words used in this app"
+        actions={
+          <Link href="/rules" className="btn-secondary text-xs">
+            Business Logic &amp; Formulas &rarr;
+          </Link>
+        }
+      />
       <Toolbar>
         <SearchInput value={q} onChange={setQ} placeholder="Search a word or meaning…" />
         <div className="max-w-full overflow-x-auto">

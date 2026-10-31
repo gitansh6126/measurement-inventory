@@ -8,8 +8,10 @@ import {
   orderAttributes,
   type AttributeDef,
   type Attributes,
+  type TechSpec,
 } from "@rs-v31/shared";
 import { BASE_UNIT_LABEL, LENGTH_UNITS, type LengthUnit } from "@rs-v31/shared/measure";
+import { byproductName } from "@rs-v31/shared/sets";
 import { z } from "zod";
 import type { Tx } from "../db.js";
 import { categoryIdsInput, variationCategoriesInput } from "./category-heads.js";
@@ -54,6 +56,26 @@ export const gallery = z
   )
   .max(30)
   .optional();
+
+// 0044: technical specifications in the user's order; blank rows are dropped, a name only once.
+export const specsInput = z
+  .array(z.object({ name: z.string().trim().max(80), value: z.string().trim().max(300) }))
+  .max(60, "At most 60 specification rows")
+  .transform((rows) => rows.filter((r) => r.name || r.value))
+  .superRefine((rows, ctx) => {
+    const seen = new Set<string>();
+    for (const r of rows) {
+      if (!r.name) ctx.addIssue({ code: "custom", message: `Name the specification "${r.value}"` });
+      const k = r.name.toLowerCase();
+      if (r.name && seen.has(k)) ctx.addIssue({ code: "custom", message: `Specification listed twice: ${r.name}` });
+      seen.add(k);
+    }
+  })
+  .optional();
+
+/** Stored specs as output (older rows may hold anything). */
+export const specsOut = (v: Prisma.JsonValue | null | undefined): TechSpec[] =>
+  Array.isArray(v) ? (v as unknown as TechSpec[]).filter((r) => r && typeof r.name === "string").map((r) => ({ name: r.name, value: String(r.value ?? "") })) : [];
 
 const shortNameInput = z
   .string()
@@ -134,6 +156,7 @@ export const variationInput = z.object({
   officialSku: officialSkuInput,
   description: optionalText(1000),
   imageUrl,
+  specs: specsInput,
   // Measured products: overrides the product's default roll length (purchase pre-fill only).
   defaultRollLength: lengthSetting,
   // V3.1 (0038): categories of other heads on this variation only (Variable / Measured).
@@ -147,6 +170,7 @@ const groupCommon = {
   description: optionalText(1000),
   imageUrl,
   gallery,
+  specs: specsInput,
   categoryId: z.string().min(1).nullish().transform((v) => v ?? null),
   // V3.1 (0033): categories of heads other than Product Type, e.g. Industry → Agriculture, Gym.
   categoryIds: categoryIdsInput,
@@ -230,6 +254,8 @@ export const groupedBody = z.object({
           productId: z.string().min(1).optional(),
           newProduct: plainProductBody.optional(),
           required: z.boolean().default(true),
+          // The same product may be listed more than once (two chains); the label tells them apart.
+          label: z.string().trim().max(60).nullish(),
         })
         .refine((b) => !!b.productId !== !!b.newProduct, "Pick an existing product or create a new one for each by-product"),
     )
@@ -248,6 +274,7 @@ export const updateProductBody = z
     description: optionalText(1000).optional(),
     imageUrl: imageUrl.optional(),
     gallery,
+    specs: specsInput,
     categoryId: z.string().min(1).nullable().optional(),
     categoryIds: categoryIdsInput,
     // V3.1 (0038): categories on chosen variations only; replaces all of them when sent.
@@ -273,6 +300,7 @@ export const updateVariationBody = z
     officialSku: officialSkuInput,
     description: optionalText(1000).optional(),
     imageUrl: imageUrl.optional(),
+    specs: specsInput,
     active: z.boolean().optional(),
     defaultRollLength: lengthSetting.optional(),
     // V3.1 (0038): this variation's own categories of other heads (replaces them).
@@ -292,6 +320,7 @@ export interface ResolvedVariation {
   officialSku: string | null;
   description: string | null;
   imageUrl: string | null;
+  specs?: Prisma.InputJsonValue;
   defaultRollLength?: number | null;
 }
 
@@ -320,6 +349,7 @@ export function resolveVariation(v: VariationInput, defs: readonly AttributeDef[
     officialSku,
     description: v.description,
     imageUrl: v.imageUrl,
+    ...(v.specs ? { specs: v.specs as unknown as Prisma.InputJsonValue } : {}),
     ...(v.defaultRollLength ? { defaultRollLength: v.defaultRollLength } : {}),
   };
 }
@@ -377,19 +407,20 @@ export async function assertActiveCategory(tx: Tx, companyId: string, categoryId
 /**
  * Attribute edits on a Variable product may only extend it, so no variation can lose
  * its identity (BR-08 without main v2's rename/delete risk):
- * same attribute names in the same order; declared values may be added; a value may be
- * removed only when no variation (active or archived) uses it. Units/abbreviations may
- * change; they affect only codes generated from now on (stored codes are never rewritten).
+ * same attribute names (their order may change: identity is order-independent); declared
+ * values may be added; a value may be removed only when no variation (active or archived)
+ * uses it. Order, units and abbreviations affect only codes generated from now on (stored
+ * codes are never rewritten).
  */
 export function assertAttributeEditSafe(
   oldDefs: readonly AttributeDef[],
   newDefs: readonly AttributeDef[],
   variations: readonly { attributes: Prisma.JsonValue }[],
 ) {
-  const oldNames = oldDefs.map((d) => d.name);
-  const newNames = newDefs.map((d) => d.name);
+  const oldNames = oldDefs.map((d) => d.name).sort();
+  const newNames = newDefs.map((d) => d.name).sort();
   if (variations.length > 0 && oldNames.join("\u0000") !== newNames.join("\u0000")) {
-    throw new AppError(409, "ATTRIBUTES_LOCKED", "Attribute names cannot be added, removed, renamed or reordered once variations exist");
+    throw new AppError(409, "ATTRIBUTES_LOCKED", "Attribute names cannot be added, removed or renamed once variations exist");
   }
   for (const d of newDefs) {
     const before = oldDefs.find((o) => o.name === d.name);
@@ -430,6 +461,7 @@ export const groupInclude = {
     select: {
       id: true,
       productId: true,
+      label: true,
       required: true,
       sortOrder: true,
       product: {
@@ -470,6 +502,7 @@ export function serializeVariation(v: Variation, defs?: readonly AttributeDef[])
     attributes: defs?.length ? orderAttributes(attrs, defs) : attrs,
     description: v.description,
     imageUrl: v.imageUrl,
+    specs: specsOut(v.specs),
     salePrice: v.salePrice.toFixed(2),
     minSalePrice: v.minSalePrice.toFixed(2),
     purchaseCost: v.purchaseCost.toFixed(2),
@@ -509,6 +542,7 @@ export function serializeGroup(g: GroupWithVariations) {
     unit: g.unit,
     imageUrl: g.imageUrl,
     gallery: g.gallery && g.gallery.length > 0 ? g.gallery : (g.imageUrl ? [g.imageUrl] : []),
+    specs: specsOut(g.specs),
     category: g.category,
     categories: g.categoryLinks
       .map(({ category }) => linkOut(category))
@@ -548,7 +582,10 @@ export function serializeGroup(g: GroupWithVariations) {
               return {
                 id: b.id,
                 productId: b.productId,
-                name: b.product.name,
+                // "Load Chain Grade 80 · Hand chain" when the link has a label.
+                name: byproductName(b.product.name, b.label),
+                productName: b.product.name,
+                label: b.label,
                 productType: b.product.productType,
                 unit: b.product.unit,
                 lengthUnit: b.product.lengthUnit,

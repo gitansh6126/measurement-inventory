@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import type { AttributeDef } from "@rs-v31/shared";
+import { repeatLabels } from "@rs-v31/shared/sets";
 import type { Tx } from "../db.js";
 import { audit } from "./audit.js";
 import { addVariationCategories, setProductCategories } from "./category-heads.js";
@@ -57,6 +58,7 @@ export async function createPlainProduct(tx: Tx, ctx: CreateCtx, body: PlainProd
       ...(body.productType === "measured" ? await measureColumns(tx, companyId, body.measure) : {}),
       imageUrl: primaryImage,
       gallery: galleryList,
+      specs: (body.specs ?? []) as unknown as Prisma.InputJsonValue,
       categoryId: body.categoryId,
       attributeDefinitions: defs as unknown as Prisma.InputJsonValue,
       ownerGroupId: opts.ownerGroupId ?? null,
@@ -115,6 +117,7 @@ export async function createGroupedProduct(tx: Tx, ctx: CreateCtx, body: Grouped
       unit: body.unit,
       imageUrl: primaryImage,
       gallery: galleryList,
+      specs: (body.specs ?? []) as unknown as Prisma.InputJsonValue,
       categoryId: body.categoryId,
       attributeDefinitions: [] as unknown as Prisma.InputJsonValue,
       createdById: actorId,
@@ -142,9 +145,10 @@ export async function createGroupedProduct(tx: Tx, ctx: CreateCtx, body: Grouped
     { ownerGroupId: group.id },
   );
 
-  // 3–4. By-products (existing or created inline) and their links.
-  const seen = new Set<string>();
-  for (const [sortOrder, b] of body.byproducts.entries()) {
+  // 3–4. By-products (existing or created inline) and their links. A product may repeat (two
+  // chains in one hoist); each repeat is its own link with its own variation/length per set.
+  const rows: { productId: string; required: boolean; label: string | null | undefined }[] = [];
+  for (const b of body.byproducts) {
     let productId = b.productId;
     if (b.newProduct) {
       productId = (await createPlainProduct(tx, ctx, b.newProduct)).id;
@@ -155,9 +159,11 @@ export async function createGroupedProduct(tx: Tx, ctx: CreateCtx, body: Grouped
       if (p.ownerGroupId) throw new AppError(400, "BYPRODUCT_MAIN", `${p.name} is the main component of another set`);
       if (!p.active) throw new AppError(400, "BYPRODUCT_INACTIVE", `${p.name} is archived`);
     }
-    if (seen.has(productId!)) throw new AppError(400, "BYPRODUCT_DUPLICATE", "A by-product is listed twice");
-    seen.add(productId!);
-    await tx.groupByproduct.create({ data: { companyId, groupId: group.id, productId: productId!, required: b.required, sortOrder, createdById: actorId } });
+    rows.push({ productId: productId!, required: b.required, label: b.label });
+  }
+  const labels = repeatLabels(rows);
+  for (const [sortOrder, b] of rows.entries()) {
+    await tx.groupByproduct.create({ data: { companyId, groupId: group.id, productId: b.productId, label: labels[sortOrder], required: b.required, sortOrder, createdById: actorId } });
   }
 
   if (body.categoryIds?.length) await setProductCategories(tx, companyId, group.id, body.categoryIds, actorId);

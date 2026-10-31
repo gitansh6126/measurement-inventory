@@ -43,7 +43,7 @@ export function PartyProfile({ mode, id }: { mode: "customer" | "supplier"; id: 
       setFlash(`Complete or clear the current ${cart.mode} cart first.`);
       return;
     }
-    cart.setParty(kind, { id: party.id, name: party.name });
+    cart.setParty(kind, { id: party.id, name: party.name, creditScore: party.creditScore });
     router.push(kind === "sale" ? "/sales/new" : "/purchases/new");
   }
 
@@ -77,6 +77,7 @@ export function PartyProfile({ mode, id }: { mode: "customer" | "supplier"; id: 
         <Info label="Phone">{party.phone || "—"}{party.altPhone ? ` · ${party.altPhone}` : ""}</Info>
         <Info label="Contact person">{party.contactPerson || "—"}</Info>
         <Info label="City">{party.city || "—"}</Info>
+        {!isSupplier && <Info label="Category">{party.category || "—"}</Info>}
         <Info label="Address">{party.address || "—"}</Info>
         <Info label={isSupplier ? "Pickup / dispatch address" : "Delivery address"}>{party.shippingAddress || "Same as address"}</Info>
         <Info label="Since">{dateTime(party.createdAt)}</Info>
@@ -84,6 +85,11 @@ export function PartyProfile({ mode, id }: { mode: "customer" | "supplier"; id: 
           <Info label="Credit score">
             <CreditScoreBadge score={party.creditScore ?? 0} showTier />
           </Info>
+        )}
+        {party.notes && (
+          <div className="sm:col-span-3">
+            <Info label="Notes">{party.notes}</Info>
+          </div>
         )}
       </section>
 

@@ -29,6 +29,9 @@ const fields = {
   altPhone: opt(30),
   shippingAddress: opt(500),
   creditScore: z.coerce.number().int().min(0, "Credit score cannot be negative").max(1000).optional().default(0),
+  // Customer category: one of the company's existing categories or a new one typed in the form.
+  category: opt(60),
+  notes: opt(2000),
 };
 const createBody = z.object({ type: z.enum(["CUSTOMER", "SUPPLIER", "BOTH"]), ...fields });
 const updateBody = z
@@ -43,6 +46,8 @@ const updateBody = z
     altPhone: fields.altPhone.optional(),
     shippingAddress: fields.shippingAddress.optional(),
     creditScore: z.coerce.number().int().min(0, "Credit score cannot be negative").max(1000).optional(),
+    category: fields.category.optional(),
+    notes: fields.notes.optional(),
     active: z.boolean().optional(),
     version: versionField,
   })
@@ -52,6 +57,7 @@ const listQuery = z.object({
   role: z.enum(["customer", "supplier", "all"]).default("all"),
   q: z.string().trim().max(100).optional(),
   status: z.enum(["active", "all"]).default("active"),
+  category: z.string().trim().max(60).optional(),
 });
 
 const select = {
@@ -66,10 +72,19 @@ const select = {
   altPhone: true,
   shippingAddress: true,
   creditScore: true,
+  category: true,
+  notes: true,
   active: true,
   version: true,
 } as const;
 const ctx = (req: Request) => ({ companyId: req.auth!.companyId, actorId: req.auth!.userId, requestId: req.requestId });
+
+// Reuse the spelling of an existing category ("retail" → "Retail") so the dropdown does not split.
+async function canonicalCategory(companyId: string, category: string | null | undefined) {
+  if (!category) return category;
+  const hit = await prisma.party.findFirst({ where: { companyId, category: { equals: category, mode: "insensitive" } }, select: { category: true } });
+  return hit?.category ?? category;
+}
 
 function duplicateName(e: unknown) {
   return e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
@@ -88,6 +103,7 @@ export function partyRoutes() {
         companyId,
         type: { in: types as ("CUSTOMER" | "SUPPLIER" | "BOTH")[] },
         ...(q.status === "active" ? { active: true } : {}),
+        ...(q.category ? { category: { equals: q.category, mode: "insensitive" as const } } : {}),
         ...(q.q ? { OR: [{ name: { contains: q.q, mode: "insensitive" } }, { phone: { contains: q.q } }, { city: { contains: q.q, mode: "insensitive" } }] } : {}),
       },
       select,
@@ -95,6 +111,18 @@ export function partyRoutes() {
       take: 500,
     });
     res.json({ parties });
+  });
+
+  // Categories already used by this company, for the "select or create" box on the customer form.
+  // Registered before /:id so "categories" is not read as a party id.
+  r.get("/categories", requirePermission("sale.view"), async (req, res) => {
+    const rows = await prisma.party.findMany({
+      where: { companyId: req.auth!.companyId, category: { not: null } },
+      distinct: ["category"],
+      select: { category: true },
+      orderBy: { category: "asc" },
+    });
+    res.json({ categories: rows.map((r) => r.category!) });
   });
 
   // Profile page (plan §3.2): the party plus lifetime totals. Cancelled documents are excluded.
@@ -126,6 +154,7 @@ export function partyRoutes() {
   r.post("/", requirePermission("party.create"), async (req, res) => {
     const body = createBody.parse(req.body);
     const { companyId, actorId, requestId } = ctx(req);
+    body.category = (await canonicalCategory(companyId, body.category)) ?? null;
     if (body.type !== "CUSTOMER" && req.auth!.role === "sales_staff") {
       throw new AppError(403, "FORBIDDEN", "Only a manager or admin can add suppliers");
     }
@@ -145,6 +174,7 @@ export function partyRoutes() {
   r.patch("/:id", requirePermission("party.edit"), async (req, res) => {
     const { version, ...body } = updateBody.parse(req.body);
     const { companyId, actorId, requestId } = ctx(req);
+    if (body.category !== undefined) body.category = await canonicalCategory(companyId, body.category);
     try {
       const party = await prisma.$transaction(async (tx) => {
         await lockVersion(tx, "party", companyId, String(req.params.id), version, "This customer or supplier");

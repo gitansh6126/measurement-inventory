@@ -58,6 +58,24 @@ const bestQuery = z.object({
   supplierId: z.string().min(1).optional(),
 });
 
+const compareQuery = z.object({
+  q: z.string().trim().max(100).optional(),
+  categoryId: z.string().min(1).optional(),
+  productId: z.string().min(1).optional(),
+  // Limit the comparison to these suppliers (comma separated); empty = every supplier.
+  supplierIds: z
+    .string()
+    .optional()
+    .transform((s) => [...new Set((s ?? "").split(",").map((x) => x.trim()).filter(Boolean))])
+    .refine((a) => a.length <= 20, "Pick at most 20 suppliers"),
+  // 2 = only variations two or more suppliers quote, i.e. where there is something to compare;
+  // 0 = the whole catalogue, so the By product view can add a first rate.
+  minSuppliers: z.coerce.number().int().min(0).max(2).default(1),
+  includePaused: z.enum(["0", "1"]).default("0").transform((v) => v === "1"),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+});
+
 const historyQuery = z.object({ variationId: z.string().min(1), supplierId: z.string().min(1).optional() });
 
 const ctx = (req: Request) => ({ companyId: req.auth!.companyId, actorId: req.auth!.userId, requestId: req.requestId });
@@ -254,6 +272,128 @@ export function vendorPriceRoutes() {
       };
     });
     res.json({ suggestions });
+  });
+
+  // Side-by-side comparison: one row per variation, one rate per supplier, cheapest marked,
+  // with the spread between the cheapest and dearest quote. Paged by variation. Paused rates
+  // are left out unless asked for, and never count as the best price.
+  r.get("/compare", requirePermission("vendor_pricing.view"), async (req, res) => {
+    const q = compareQuery.parse(req.query);
+    const companyId = req.auth!.companyId;
+    const rateWhere: Prisma.VendorPriceWhereInput = {
+      companyId,
+      ...(q.includePaused ? {} : { active: true }),
+      ...(q.supplierIds.length ? { supplierId: { in: q.supplierIds } } : {}),
+    };
+
+    // Variations with enough quotes (count per variation across the chosen suppliers).
+    let ids: string[] | null = null;
+    if (q.minSuppliers > 0) {
+      const counts = await prisma.vendorPrice.groupBy({
+        by: ["variationId"],
+        where: rateWhere,
+        _count: { _all: true },
+      });
+      ids = counts.filter((c) => c._count._all >= q.minSuppliers).map((c) => c.variationId);
+    }
+
+    const where: Prisma.ProductVariationWhereInput = {
+      companyId,
+      active: true,
+      ...(ids ? { id: { in: ids } } : {}),
+      group: {
+        active: true,
+        ...(q.productId ? { id: q.productId } : {}),
+        ...(q.categoryId === "none" ? { categoryId: null } : q.categoryId ? { categoryId: q.categoryId } : {}),
+      },
+      ...(q.q
+        ? {
+            OR: [
+              { group: { name: { contains: q.q, mode: "insensitive" } } },
+              { shortName: { contains: q.q, mode: "insensitive" } },
+              { officialSku: { contains: q.q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    };
+
+    const [total, variations] = await Promise.all([
+      prisma.productVariation.count({ where }),
+      prisma.productVariation.findMany({
+        where,
+        select: {
+          id: true,
+          shortName: true,
+          attributes: true,
+          purchaseCost: true,
+          group: {
+            select: {
+              id: true,
+              name: true,
+              unit: true,
+              lengthUnit: true,
+              attributeDefinitions: true,
+              category: { select: { id: true, name: true } },
+            },
+          },
+          vendorPrices: {
+            where: rateWhere,
+            select: { supplierId: true, rate: true, active: true, effectiveAt: true, supplier: { select: { name: true } } },
+          },
+        },
+        orderBy: [{ group: { name: "asc" } }, { sortOrder: "asc" }, { shortName: "asc" }, { id: "asc" }],
+        skip: (q.page - 1) * q.pageSize,
+        take: q.pageSize,
+      }),
+    ]);
+
+    const supplierNames = new Map<string, string>();
+    const rows = variations.map((v) => {
+      const rates = [...v.vendorPrices].sort((a, b) => a.rate.comparedTo(b.rate) || a.supplier.name.localeCompare(b.supplier.name));
+      for (const x of rates) supplierNames.set(x.supplierId, x.supplier.name);
+      const live = rates.filter((x) => x.active);
+      const best = live[0] ?? null;
+      const dearest = live[live.length - 1] ?? null;
+      return {
+        variationId: v.id,
+        productId: v.group.id,
+        productName: v.group.name,
+        unit: v.group.unit,
+        lengthUnit: v.group.lengthUnit,
+        category: v.group.category,
+        attributeDefinitions: (v.group.attributeDefinitions || []) as unknown[],
+        shortName: v.shortName,
+        attributes: (v.attributes || {}) as Record<string, string>,
+        purchaseCost: v.purchaseCost.toFixed(2),
+        rates: rates.map((x) => ({
+          supplierId: x.supplierId,
+          supplierName: x.supplier.name,
+          rate: x.rate.toFixed(2),
+          active: x.active,
+          effectiveAt: x.effectiveAt,
+        })),
+        supplierCount: live.length,
+        best: best ? { supplierId: best.supplierId, supplierName: best.supplier.name, rate: best.rate.toFixed(2) } : null,
+        maxRate: dearest ? dearest.rate.toFixed(2) : null,
+        // How much dearer the dearest active quote is than the cheapest, in percent.
+        spreadPct:
+          best && dearest && live.length > 1 && best.rate.greaterThan(0)
+            ? Number(dearest.rate.minus(best.rate).div(best.rate).times(100).toFixed(1))
+            : null,
+      };
+    });
+
+    // Column order: the suppliers asked for, in that order; else every supplier on this page by name.
+    let suppliers: Array<{ id: string; name: string }>;
+    if (q.supplierIds.length) {
+      const parties = await prisma.party.findMany({ where: { companyId, id: { in: q.supplierIds } }, select: { id: true, name: true } });
+      const byId = new Map(parties.map((p) => [p.id, p.name]));
+      suppliers = q.supplierIds.filter((id) => byId.has(id)).map((id) => ({ id, name: byId.get(id)! }));
+    } else {
+      suppliers = [...supplierNames].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    res.json({ suppliers, rows, total, page: q.page, pageSize: q.pageSize });
   });
 
   r.get("/history", requirePermission("vendor_pricing.view"), async (req, res) => {

@@ -8,6 +8,7 @@ import { StockBadge } from "@/components/StockBadge";
 import { DataView } from "@/components/catalog/DataView";
 import { useViewMode } from "@/lib/useViewMode";
 import { money } from "@/lib/format";
+import { fmtSellRate } from "@/lib/measure";
 import type { StockProduct, StockVariation } from "@/lib/types";
 
 export function LineSheet({
@@ -128,14 +129,14 @@ export function LineSheet({
               renderCard={(row) => (
                 <button type="button" onClick={() => setPick({ ...row.attributes })} className="card flex h-full w-full flex-col gap-2 p-3 text-left">
                   <div className="flex items-center justify-between text-xs text-slate-500"><span>{row.shortName}</span><span>{row.quantity}</span></div>
-                  <div className="font-semibold text-slate-900">{Number(row.minSalePrice) > 0 ? `${money(row.minSalePrice)} – ${money(row.salePrice)}` : money(row.salePrice)}</div>
+                  <div className="font-semibold text-slate-900">{fmtSellRate(null, row.minSalePrice, row.salePrice, "Sell: ")}</div>
                   <div className="text-xs text-slate-500">{Object.values(row.attributes).join(" / ") || "Variant"}</div>
                 </button>
               )}
               columns={[
                 { id: "variation", header: <span>Variation</span>, cell: (row) => <td>{row.shortName}</td> },
                 { id: "stock", header: <span>Stock</span>, cell: (row) => <td>{row.quantity}</td> },
-                { id: "price", header: <span className="text-right">Minimum Selling Price – Selling Price</span>, align: "right", cell: (row) => <td className="text-right">{Number(row.minSalePrice) > 0 ? `${money(row.minSalePrice)} – ${money(row.salePrice)}` : money(row.salePrice)}</td> },
+                { id: "price", header: <span className="text-right">Selling Price</span>, align: "right", cell: (row) => <td className="text-right font-medium">{fmtSellRate(null, row.minSalePrice, row.salePrice, "Sell: ")}</td> },
               ]}
               empty={<div className="card p-4 text-sm text-slate-500">No options.</div>}
             />

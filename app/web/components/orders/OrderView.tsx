@@ -506,7 +506,7 @@ export function OrderView({ kind, id }: { kind: OrderKind; id: string }) {
           </div>
 
           <div className="overflow-x-auto rounded border border-amber-200 bg-white">
-            <table className="w-full text-left text-xs">
+            <table className="table-stack w-full text-left text-xs">
               <thead className="bg-amber-100/60 text-slate-700 font-semibold border-b border-amber-200">
                 <tr>
                   <th className="p-2.5">Line / Item</th>
@@ -611,7 +611,7 @@ export function OrderView({ kind, id }: { kind: OrderKind; id: string }) {
 
       <div className="grid gap-5 lg:grid-cols-[1fr_18rem]">
         <section className="card overflow-x-auto lg:overflow-x-visible">
-          <table className="table">
+          <table className="table table-stack">
             <thead>
               <tr>
                 <th>Item</th>

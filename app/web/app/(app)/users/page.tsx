@@ -128,7 +128,7 @@ function Users() {
         ) : users.length === 0 ? (
           <EmptyState icon={<UsersIcon className="h-6 w-6" />} title="No users" />
         ) : (
-          <table className="table">
+          <table className="table table-stack">
             <thead>
               <tr>
                 <th>Name</th>

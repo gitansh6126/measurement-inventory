@@ -5,20 +5,27 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useCan } from "@/components/MeContext";
 import type { Party } from "@/components/PartyModal";
 import { Restricted } from "@/components/Restricted";
-import { Alert, EmptyState, Modal, PageHeader, SearchInput, Segmented, TableSkeleton } from "@/components/ui";
-import { PlusIcon } from "@/components/icons";
+import { Alert, Avatar, EmptyState, PageHeader, SearchInput, Segmented, TableSkeleton } from "@/components/ui";
+import { PlusIcon, SidebarIcon } from "@/components/icons";
 import { Combobox } from "@/components/Combobox";
 import { api } from "@/lib/api";
-import { dateTime, money, variationLabel } from "@/lib/format";
+import { dateTime } from "@/lib/format";
 import type { AttributeDef, CategoryList } from "@/lib/types";
 import { errorText, useApi } from "@/lib/useApi";
 import { variationAttributeColumns } from "@/lib/variationColumns";
 import { RateField } from "@/components/measure/RateField";
-import { rateLabel, type LengthUnit } from "@/lib/measure";
+import { ProductPriceView } from "@/components/vendor/ProductPriceView";
+import { PriceHistoryModal } from "@/components/vendor/PriceHistoryModal";
+import { VendorPricingModal } from "@/components/vendor/VendorPricingModal";
+import { VariationTabs } from "@/components/products/VariationTabs";
+import { PriceRail, RailItem, type RailMode } from "@/components/vendor/PriceRail";
+import { ProductRail, type RailProduct } from "@/components/vendor/ProductRail";
+import { fmtRate, rateLabel, type LengthUnit } from "@/lib/measure";
+import { useLengthView } from "@/lib/lengthView";
+import { LengthViewToggle } from "@/components/measure/LengthViewToggle";
 import { useEntryUnits } from "@/lib/useEntryUnits";
 
 /** " / ft" or " / m" after a Measured rate; nothing for counted items. */
-const perUnit = (p: { lengthUnit: LengthUnit | null }) => (p.lengthUnit ? ` / ${rateLabel(p.lengthUnit)}` : "");
 
 interface SheetRate {
   id: string;
@@ -41,7 +48,7 @@ interface SheetProduct {
   id: string;
   name: string;
   unit: string;
-  productType: "simple" | "variable" | "measured";
+  productType: "simple" | "variable" | "measured" | "grouped";
   /** Measured: rates are per m, or per ft on a feet + inches product (0028). */
   lengthUnit: LengthUnit | null;
   category: { id: string; name: string } | null;
@@ -59,20 +66,15 @@ interface SheetResponse {
   pageSize: number;
 }
 
-interface Hist {
-  id: string;
-  supplierName: string | null;
-  rate: string;
-  /** 12 = per ft; 1 on a feet + inches product = an older per-inch rate (0028). */
-  ratePer?: number;
-  active: boolean;
-  notes: string | null;
-  recordedAt: string;
-  recordedBy: string | null;
-}
 
-
-function SupplierPricesContent() {
+/** "By supplier" view: one supplier's rate sheet, product by product. */
+function BySupplierView({
+  railMode = "expanded",
+  onRailModeChange,
+}: {
+  railMode?: RailMode;
+  onRailModeChange?: (mode: RailMode) => void;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const canManage = useCan("vendor_pricing.manage");
@@ -131,6 +133,7 @@ function SupplierPricesContent() {
 
   // Supplier filter query for the sidebar
   const [supplierFilter, setSupplierFilter] = useState("");
+  const [railOpen, setRailOpen] = useState(false);
   const filteredSuppliers = useMemo(() => {
     const q = supplierFilter.trim().toLowerCase();
     if (!q) return suppliers;
@@ -152,6 +155,9 @@ function SupplierPricesContent() {
 
   // Expand / Collapse state for variable product rows
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [varFiltersByProduct, setVarFiltersByProduct] = useState<
+    Record<string, { ids: string[] | null; filters: Record<string, string>; singleId: string | null }>
+  >({});
 
   // 4. Load sheet data
   const sheetUrl = selectedSupplierId
@@ -172,7 +178,7 @@ function SupplierPricesContent() {
 
   // History modal
   const [historyVar, setHistoryVar] = useState<{ id: string; label: string; lengthUnit: LengthUnit | null } | null>(null);
-  const [historyData, setHistoryData] = useState<Hist[] | null>(null);
+  const [groupedModalProductId, setGroupedModalProductId] = useState<string | null>(null);
 
   // Helpers
   const activeSupplier = suppliers.find((s) => s.id === selectedSupplierId);
@@ -303,20 +309,8 @@ function SupplierPricesContent() {
     }
   }
 
-  // Open history modal (F6: clears previous history first)
-  async function openHistory(p: SheetProduct, v: SheetVariation) {
-    if (!selectedSupplierId) return;
-    const label = `${p.name} · ${v.shortName}`;
-    setHistoryVar({ id: v.id, label, lengthUnit: p.lengthUnit });
-    setHistoryData(null); // Clear previous history (F6)
-    try {
-      const res = await api<{ history: Hist[] }>(
-        `/vendor-prices/history?variationId=${v.id}&supplierId=${selectedSupplierId}`
-      );
-      setHistoryData(res.history);
-    } catch (err) {
-      setMsg({ kind: "error", text: errorText(err) });
-    }
+  function openHistory(p: SheetProduct, v: SheetVariation) {
+    setHistoryVar({ id: v.id, label: `${p.name} · ${v.shortName}`, lengthUnit: p.lengthUnit });
   }
 
   // Expand all / Collapse all
@@ -331,114 +325,67 @@ function SupplierPricesContent() {
   }
 
   return (
-    <div className="space-y-4 pb-24">
-      <PageHeader
-        title="Vendor Pricing &amp; Price History"
-        subtitle="Manage supplier rate cards inline. Rates prefill purchase orders, and purchases automatically update these rate cards."
-      />
-
-      <div className="grid gap-5 lg:grid-cols-[18rem_1fr] xl:grid-cols-[20rem_1fr] items-start">
-        {/* Left Sidebar: Vendor / Supplier Directory */}
-        <aside className="card p-3.5 space-y-3 lg:sticky lg:top-12">
-          <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                Suppliers
+    <div className="space-y-4">
+      <div className="flex flex-col lg:flex-row items-start gap-3 lg:gap-5">
+        {/* Left rail: supplier directory (a slide-in drawer below lg). */}
+        <PriceRail
+          title="Suppliers"
+          count={`${suppliers.length} active`}
+          open={railOpen}
+          onOpenChange={setRailOpen}
+          mode={railMode}
+          onModeChange={onRailModeChange}
+          current={
+            activeSupplier ? (
+              <span className="flex items-center gap-2.5">
+                <Avatar name={activeSupplier.name} seed={activeSupplier.id} size="sm" />
+                <span className="min-w-0">
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Supplier</span>
+                  <span className="block truncate text-sm font-semibold text-slate-900">{activeSupplier.name}</span>
+                </span>
               </span>
-              <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                {suppliers.length} active
-              </span>
-            </div>
-            {supplierFilter && (
-              <button
-                type="button"
-                onClick={() => setSupplierFilter("")}
-                className="text-[11px] font-medium text-slate-400 hover:text-slate-600"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-
-          <div>
-            <SearchInput
-              value={supplierFilter}
-              onChange={setSupplierFilter}
-              placeholder="Filter suppliers…"
-            />
-          </div>
-
-          {/* Supplier List */}
-          <div className="max-h-[calc(100vh-260px)] overflow-y-auto space-y-1.5 pr-0.5">
-            {filteredSuppliers.length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-400">
-                No suppliers match &ldquo;{supplierFilter}&rdquo;
-              </div>
             ) : (
-              filteredSuppliers.map((s) => {
-                const isSel = selectedSupplierId === s.id;
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => switchSupplier(s.id)}
-                    className={`group w-full text-left rounded-lg p-2.5 transition-all text-xs border ${
-                      isSel
-                        ? "bg-slate-900 text-white border-slate-900 shadow-sm"
-                        : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-1.5">
-                      <span className="font-semibold truncate">{s.name}</span>
-                      {isSel && (
-                        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-200 shrink-0">
-                          Active
-                        </span>
-                      )}
-                    </div>
-                    {(s.city || s.phone) && (
-                      <div
-                        className={`mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] ${
-                          isSel ? "text-slate-300" : "text-slate-500"
-                        }`}
-                      >
-                        {s.city && <span>📍 {s.city}</span>}
-                        {s.phone && <span>📞 {s.phone}</span>}
-                      </div>
-                    )}
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </aside>
+              <span className="text-sm font-semibold text-slate-600">Pick a supplier</span>
+            )
+          }
+          search={<SearchInput value={supplierFilter} onChange={setSupplierFilter} placeholder="Filter suppliers…" />}
+        >
+          {filteredSuppliers.length === 0 ? (
+            <div className="py-8 text-center text-xs text-slate-400">No suppliers match &ldquo;{supplierFilter}&rdquo;</div>
+          ) : (
+            filteredSuppliers.map((s) => (
+              <RailItem
+                key={s.id}
+                selected={selectedSupplierId === s.id}
+                onClick={() => {
+                  switchSupplier(s.id);
+                  setRailOpen(false);
+                }}
+                thumb={<Avatar name={s.name} seed={s.id} size="sm" />}
+                title={s.name}
+                subtitle={[s.city, s.phone].filter(Boolean).join(" · ") || undefined}
+              />
+            ))
+          )}
+        </PriceRail>
 
         {/* Right Main Content Area */}
-        <div className="min-w-0 space-y-4">
-          {/* Active Supplier Header Banner */}
+        <div className="min-w-0 flex-1 space-y-4">
+          {/* Active supplier header (desktop; phones show it on the rail bar). */}
           {activeSupplier && (
-            <div className="card p-3.5 flex flex-wrap items-center justify-between gap-3 bg-white">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                  Rate Sheet:
-                </span>
-                <span className="text-sm font-bold text-slate-900">
-                  {activeSupplier.name}
-                </span>
-                {activeSupplier.city && (
-                  <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                    📍 {activeSupplier.city}
-                  </span>
-                )}
-                {activeSupplier.phone && (
-                  <span className="text-xs text-slate-500">
-                    📞 {activeSupplier.phone}
-                  </span>
-                )}
+            <div className="card hidden flex-wrap items-center justify-between gap-3 p-3.5 lg:flex">
+              <div className="flex min-w-0 items-center gap-3">
+                <Avatar name={activeSupplier.name} seed={activeSupplier.id} />
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Rate sheet</div>
+                  <div className="truncate text-base font-bold text-slate-900">{activeSupplier.name}</div>
+                  <div className="flex flex-wrap gap-x-3 text-xs text-slate-500">
+                    {activeSupplier.city && <span>{activeSupplier.city}</span>}
+                    {activeSupplier.phone && <span>{activeSupplier.phone}</span>}
+                  </div>
+                </div>
               </div>
-              <span className="text-xs text-slate-400">
-                Rates pre-fill purchase orders automatically
-              </span>
+              <span className="text-xs text-slate-400">Rates pre-fill purchase orders automatically</span>
             </div>
           )}
 
@@ -448,6 +395,17 @@ function SupplierPricesContent() {
           {/* Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 p-4">
             <div className="flex flex-wrap items-center gap-3">
+              {railMode !== "expanded" && onRailModeChange && (
+                <button
+                  type="button"
+                  onClick={() => onRailModeChange("expanded")}
+                  className="btn-secondary py-1.5 px-2.5 text-xs inline-flex items-center gap-1.5"
+                  title="Expand suppliers sidebar"
+                >
+                  <SidebarIcon className="h-3.5 w-3.5 text-slate-500" />
+                  <span>Show Suppliers</span>
+                </button>
+              )}
               <div className="w-64">
                 <SearchInput
                   value={search}
@@ -491,7 +449,7 @@ function SupplierPricesContent() {
               />
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => toggleExpandAll(true)}
@@ -558,13 +516,13 @@ function SupplierPricesContent() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="table table-sticky-0">
+              <table className="table table-stack table-sticky-0">
                 <thead>
                   <tr>
                     <th className="sticky !top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_#e2e8f0] w-10 text-center" />
                     <th className="sticky !top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_#e2e8f0]">Product</th>
                     <th className="sticky !top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_#e2e8f0] w-36">Category</th>
-                    <th className="sticky !top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_#e2e8f0] w-44 text-right">Last Price</th>
+                    <th data-label="Last Price" className="sticky !top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_#e2e8f0] w-44 text-right">Last Price</th>
                     <th className="sticky !top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_#e2e8f0] w-64 text-right">New Price (₹)</th>
                     <th className="sticky !top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_#e2e8f0] w-28 text-center">Status</th>
                     <th className="sticky !top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_#e2e8f0] w-36 text-center">Actions</th>
@@ -573,7 +531,7 @@ function SupplierPricesContent() {
                 <tbody>
                   {products.map((p) => {
                     const isVariable = p.productType === "variable" || p.variations.length > 1;
-                    const isExpanded = expanded[p.id] ?? false;
+                    const isExpanded = expanded[p.id] !== undefined ? expanded[p.id] : search.trim().length > 0;
 
                     if (!isVariable) {
                       // Simple or single-variation product: 1 single row
@@ -588,11 +546,27 @@ function SupplierPricesContent() {
                           key={p.id}
                           className={v.active ? "hover:bg-slate-50/70" : "opacity-60 bg-slate-50/40"}
                         >
-                          <td className="text-center text-slate-300">•</td>
+                          <td className="stack-hide text-center text-slate-300">•</td>
                           <td>
-                            <div className="font-semibold text-slate-900">{p.name}</div>
-                            <div className="text-[11px] text-slate-400">
-                              <span className="font-mono">{v.shortName}</span> · {p.lengthUnit ? `₹ / ${rateLabel(p.lengthUnit)}` : p.unit}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-semibold text-slate-900">{p.name}</span>
+                              {p.productType === "grouped" && (
+                                <span className="rounded bg-sky-100 text-sky-800 text-[10px] font-bold px-1.5 py-0.2">
+                                  Grouped Set
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-x-2">
+                              <span><span className="font-mono">{v.shortName}</span> · {p.productType === "grouped" ? "₹ per set" : p.lengthUnit ? `₹ / ${rateLabel(p.lengthUnit)}` : p.unit}</span>
+                              {p.productType === "grouped" && (
+                                <button
+                                  type="button"
+                                  onClick={() => setGroupedModalProductId(p.id)}
+                                  className="text-brand-600 hover:text-brand-700 font-medium hover:underline cursor-pointer"
+                                >
+                                  Presets & parts pricing →
+                                </button>
+                              )}
                             </div>
                           </td>
                           <td className="text-slate-600 text-xs">{p.category?.name ?? "—"}</td>
@@ -600,7 +574,7 @@ function SupplierPricesContent() {
                           <td className="text-right">
                             {v.rate ? (
                               <div>
-                                <div className="font-semibold text-slate-900">{money(v.rate.rate)}{perUnit(p)}</div>
+                                <div className="font-semibold text-slate-900">{fmtRate(p.lengthUnit, v.rate.rate)}</div>
                                 {v.rate.effectiveAt && (
                                   <div className="text-[10px] text-slate-400">
                                     {dateTime(v.rate.effectiveAt)}
@@ -609,7 +583,7 @@ function SupplierPricesContent() {
                               </div>
                             ) : (
                               <span className="text-xs text-slate-400 italic">
-                                {Number(v.purchaseCost) > 0 ? `Cost ${money(v.purchaseCost)}${perUnit(p)}` : "Not set"}
+                                {Number(v.purchaseCost) > 0 ? `Cost ${fmtRate(p.lengthUnit, v.purchaseCost)}` : "Not set"}
                               </span>
                             )}
                           </td>
@@ -624,7 +598,7 @@ function SupplierPricesContent() {
                               {p.lengthUnit ? (
                                 <RateField compact unit={p.lengthUnit} label={`Rate for ${v.shortName}`} placeholder="Enter ₹" value={entered} disabled={!canManage} onChange={(val) => setNewPrices((prev) => ({ ...prev, [v.id]: val }))} preferredUnit={purchaseUnits.rateUnit(p.lengthUnit)} onUnitChange={(u) => p.lengthUnit && purchaseUnits.setRateUnit(p.lengthUnit, u)} />
                               ) : (
-                              <input
+                              <input autoComplete="off"
                                 type="text"
                                 inputMode="numeric"
                                 placeholder="Enter ₹"
@@ -700,6 +674,16 @@ function SupplierPricesContent() {
                               >
                                 History
                               </button>
+                              {p.productType === "grouped" && (
+                                <button
+                                  type="button"
+                                  onClick={() => setGroupedModalProductId(p.id)}
+                                  className="rounded border border-brand-200 bg-brand-50 px-2 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100 cursor-pointer"
+                                  title="View standard sets & components pricing"
+                                >
+                                  Presets
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -710,8 +694,8 @@ function SupplierPricesContent() {
                     const rateRange =
                       p.minRate && p.maxRate
                         ? p.minRate === p.maxRate
-                          ? `${money(p.minRate)}${perUnit(p)}`
-                          : `${money(p.minRate)} – ${money(p.maxRate)}${perUnit(p)}`
+                          ? fmtRate(p.lengthUnit, p.minRate)
+                          : fmtRate(p.lengthUnit, p.minRate, p.maxRate)
                         : "No rates set";
 
                     const attrColumns = variationAttributeColumns(p, p.variations);
@@ -723,7 +707,7 @@ function SupplierPricesContent() {
                           className="cursor-pointer bg-white hover:bg-slate-50/80 transition-colors"
                           onClick={() => setExpanded((o) => ({ ...o, [p.id]: !isExpanded }))}
                         >
-                          <td className="text-center">
+                          <td className="stack-hide text-center">
                             <button
                               type="button"
                               className="text-brand-600 font-bold text-base"
@@ -753,7 +737,7 @@ function SupplierPricesContent() {
                             {rateRange}
                           </td>
 
-                          <td />
+                          <td className="stack-hide" />
                           <td colSpan={2} className="text-center text-xs text-slate-400">
                             {isExpanded ? "Click to collapse" : "Click to view variations"}
                           </td>
@@ -763,8 +747,23 @@ function SupplierPricesContent() {
                         {isExpanded && (
                           <tr>
                             <td colSpan={7} className="bg-slate-50/70 p-4 border-y border-slate-200">
+                              <div className="mb-3">
+                                <VariationTabs
+                                  attributes={p.attributes}
+                                  variations={p.variations}
+                                  selectedFilters={varFiltersByProduct[p.id]?.filters}
+                                  selectedVariationId={varFiltersByProduct[p.id]?.singleId}
+                                  onFilterChange={(filteredIds, filters, singleId) => {
+                                    setVarFiltersByProduct((prev) => ({
+                                      ...prev,
+                                      [p.id]: { ids: filteredIds, filters, singleId },
+                                    }));
+                                  }}
+                                  scrollTargetPrefix={`supp-var-${p.id}`}
+                                />
+                              </div>
                               <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-sm">
-                                <table className="table">
+                                <table className="table table-stack">
                                   <thead>
                                     <tr>
                                       {attrColumns.map((col) => (
@@ -774,26 +773,33 @@ function SupplierPricesContent() {
                                         </th>
                                       ))}
                                       <th className="bg-slate-100 text-slate-700">Short Code</th>
-                                      <th className="bg-slate-100 text-slate-700 text-right">Last Price</th>
+                                      <th data-label="Last Price" className="bg-slate-100 text-slate-700 text-right">Last Price {p.lengthUnit && <LengthViewToggle className="ml-1" />}</th>
                                       <th className="bg-slate-100 text-slate-700 text-right w-64">New Price (₹)</th>
                                       <th className="bg-slate-100 text-slate-700 text-center w-28">Status</th>
                                       <th className="bg-slate-100 text-slate-700 text-center w-36">Actions</th>
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {p.variations.map((v) => {
+                                    {(varFiltersByProduct[p.id]?.ids
+                                      ? p.variations.filter((v) => varFiltersByProduct[p.id]!.ids!.includes(v.id))
+                                      : p.variations
+                                    ).map((v) => {
                                       const entered = newPrices[v.id] ?? "";
                                       const isSaving = savingRows[v.id] ?? false;
                                       const active = statusOverrides[v.id] ?? v.rate?.active ?? true;
+                                      const isSelected = varFiltersByProduct[p.id]?.singleId === v.id;
 
                                       return (
                                         <tr
+                                          id={`supp-var-${p.id}-${v.id}`}
                                           key={v.id}
-                                          className={
+                                          className={`${
+                                            isSelected ? "bg-brand-50/80 font-medium ring-1 ring-brand-400" : ""
+                                          } ${
                                             !v.active
                                               ? "opacity-50 bg-slate-50/60"
                                               : "hover:bg-slate-50/50"
-                                          }
+                                          }`}
                                         >
                                           {attrColumns.map((col) => (
                                             <td key={col.name} className="font-medium text-slate-800">
@@ -814,7 +820,7 @@ function SupplierPricesContent() {
                                             {v.rate ? (
                                               <div>
                                                 <div className="font-semibold text-slate-900">
-                                                  {money(v.rate.rate)}{perUnit(p)}
+                                                  {fmtRate(p.lengthUnit, v.rate.rate)}
                                                 </div>
                                                 {v.rate.effectiveAt && (
                                                   <div className="text-[10px] text-slate-400">
@@ -825,7 +831,7 @@ function SupplierPricesContent() {
                                             ) : (
                                               <span className="text-xs text-slate-400 italic">
                                                 {Number(v.purchaseCost) > 0
-                                                  ? `Cost ${money(v.purchaseCost)}${perUnit(p)}`
+                                                  ? `Cost ${fmtRate(p.lengthUnit, v.purchaseCost)}`
                                                   : "Not set"}
                                               </span>
                                             )}
@@ -841,7 +847,7 @@ function SupplierPricesContent() {
                                               {p.lengthUnit ? (
                                                 <RateField compact unit={p.lengthUnit} label={`Rate for ${v.shortName}`} placeholder="Enter ₹" value={entered} disabled={!canManage} onChange={(val) => setNewPrices((prev) => ({ ...prev, [v.id]: val }))} preferredUnit={purchaseUnits.rateUnit(p.lengthUnit)} onUnitChange={(u) => p.lengthUnit && purchaseUnits.setRateUnit(p.lengthUnit, u)} />
                                               ) : (
-                                              <input
+                                              <input autoComplete="off"
                                                 type="text"
                                                 inputMode="numeric"
                                                 placeholder="Enter ₹"
@@ -969,7 +975,7 @@ function SupplierPricesContent() {
       ) : (
         <div className="card p-12 text-center">
           <EmptyState title="No supplier selected">
-            <p>Select a supplier from the sidebar to view and manage rate cards.</p>
+            Select a supplier from the sidebar to view and manage rate cards.
           </EmptyState>
         </div>
       )}
@@ -978,7 +984,7 @@ function SupplierPricesContent() {
 
       {/* Floating Save All Bar */}
       {canManage && editedCount > 0 && (
-        <div className="fixed bottom-4 inset-x-0 mx-auto max-w-lg z-30">
+        <div className="fixed bottom-20 inset-x-0 mx-auto max-w-lg z-30 px-3 lg:bottom-4 lg:px-0">
           <div className="flex items-center justify-between rounded-xl bg-slate-900 px-5 py-3 text-white shadow-xl">
             <div>
               <div className="text-sm font-semibold">{editedCount} unsaved price change{editedCount === 1 ? "" : "s"}</div>
@@ -1006,56 +1012,175 @@ function SupplierPricesContent() {
       )}
 
       {/* History Modal */}
-      {historyVar && (
-        <Modal
-          open
-          title={`Price History — ${historyVar.label}`}
+      {historyVar && selectedSupplierId && (
+        <PriceHistoryModal
+          title={historyVar.label}
+          variationId={historyVar.id}
+          supplierId={selectedSupplierId}
+          lengthUnit={historyVar.lengthUnit}
           onClose={() => setHistoryVar(null)}
-        >
-          <div className="space-y-3">
-            {!historyData ? (
-              <TableSkeleton rows={3} />
-            ) : historyData.length === 0 ? (
-              <p className="py-8 text-center text-xs text-slate-500">No price history recorded yet.</p>
-            ) : (
-              <div className="table-scroll table-container max-h-80 overflow-auto rounded-lg border border-slate-200">
-                <table className="table table-sticky-0 text-xs">
-                  <thead>
-                    <tr>
-                      <th className="sticky !top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_#e2e8f0]">Date</th>
-                      <th className="sticky !top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_#e2e8f0] text-right">Rate</th>
-                      <th className="sticky !top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_#e2e8f0] text-center">Status</th>
-                      <th className="sticky !top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_#e2e8f0]">Notes</th>
-                      <th className="sticky !top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_#e2e8f0]">Recorded By</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {historyData.map((h) => (
-                      <tr key={h.id}>
-                        <td>{dateTime(h.recordedAt)}</td>
-                        <td className="text-right font-semibold text-slate-900">
-                          {money(h.rate)}
-                          {historyVar.lengthUnit ? ` / ${h.ratePer === 12 ? "ft" : rateLabel(historyVar.lengthUnit) === "ft" ? "in" : rateLabel(historyVar.lengthUnit)}` : ""}
-                        </td>
-                        <td className="text-center">
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                              h.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"
-                            }`}
-                          >
-                            {h.active ? "Active" : "Paused"}
-                          </span>
-                        </td>
-                        <td className="text-slate-600">{h.notes ?? "—"}</td>
-                        <td className="text-slate-500">{h.recordedBy ?? "—"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+        />
+      )}
+
+      {/* Grouped Set Pricing Modal */}
+      {groupedModalProductId && (
+        <VendorPricingModal
+          productId={groupedModalProductId}
+          onClose={() => {
+            setGroupedModalProductId(null);
+            sheetApi.reload();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+type PriceView = "supplier" | "product";
+
+/** "By product" view: product rail on the left, the picked product's (or every product's) rates on the right. */
+function ByProductView({
+  initialQuery,
+  railMode = "expanded",
+  onRailModeChange,
+}: {
+  initialQuery: string;
+  railMode?: RailMode;
+  onRailModeChange?: (mode: RailMode) => void;
+}) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const paramProductId = searchParams.get("productId");
+
+  const [product, setProduct] = useState<RailProduct>(null);
+  // Unsaved rates on the open product's sheet: switching product asks first, as switching supplier does.
+  const [dirty, setDirty] = useState(false);
+
+  // If paramProductId is set in URL and product is not yet matching, fetch product details
+  const productApi = useApi<{ product: RailProduct }>(
+    paramProductId && paramProductId !== "compare" && paramProductId !== product?.id
+      ? `/products/${paramProductId}`
+      : null
+  );
+
+  useEffect(() => {
+    if (paramProductId === "compare") {
+      setProduct(null);
+    } else if (productApi.data?.product) {
+      setProduct(productApi.data.product);
+    }
+  }, [paramProductId, productApi.data]);
+
+  // When products are loaded in the rail, auto-select the first product if none selected
+  function handleProductsLoaded(products: RailProduct[]) {
+    if (!paramProductId && !product && products.length > 0 && products[0]) {
+      const first = products[0];
+      setProduct(first);
+      router.replace(`/supplier-prices?view=product&productId=${first.id}`);
+    }
+  }
+
+  function pick(p: RailProduct) {
+    if (p?.id === product?.id) return;
+    if (dirty && !window.confirm("You have unsaved price changes. Switch product and discard them?")) return;
+    setDirty(false);
+    setProduct(p);
+    router.replace(
+      p ? `/supplier-prices?view=product&productId=${p.id}` : `/supplier-prices?view=product&productId=compare`
+    );
+  }
+
+  return (
+    <div className="flex flex-col lg:flex-row items-start gap-3 lg:gap-5">
+      <ProductRail
+        selected={product}
+        onSelect={pick}
+        onProductsLoaded={handleProductsLoaded}
+        mode={railMode}
+        onModeChange={onRailModeChange}
+      />
+      <div className="min-w-0 flex-1 space-y-4">
+        {railMode !== "expanded" && onRailModeChange && (
+          <div className="hidden lg:flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onRailModeChange("expanded")}
+              className="btn-secondary py-1 px-2.5 text-xs inline-flex items-center gap-1.5"
+              title="Expand products sidebar"
+            >
+              <SidebarIcon className="h-3.5 w-3.5 text-slate-500" />
+              <span>Show Products</span>
+            </button>
           </div>
-        </Modal>
+        )}
+        <ProductPriceView initialQuery={initialQuery} product={product} onDirtyChange={setDirty} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Vendor Pricing & Price History: one page, two views. By supplier edits one
+ * supplier's rate sheet; By product lines up every supplier's rate per variation.
+ */
+function SupplierPricesContent() {
+  useLengthView();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const view: PriceView = searchParams.get("view") === "product" ? "product" : "supplier";
+
+  const [railMode, setRailMode] = useState<RailMode>("expanded");
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("rs:supplier-prices-rail-mode");
+      if (saved === "small" || saved === "hidden" || saved === "expanded") {
+        setRailMode(saved as RailMode);
+      }
+    }
+  }, []);
+
+  function handleRailModeChange(next: RailMode) {
+    setRailMode(next);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("rs:supplier-prices-rail-mode", next);
+    }
+  }
+
+  function switchView(v: PriceView) {
+    if (v === view) return;
+    router.replace(v === "product" ? "/supplier-prices?view=product" : "/supplier-prices");
+  }
+
+  return (
+    <div className="space-y-4 pb-24">
+      <PageHeader
+        back={{ href: "/", label: "Home" }}
+        title="Vendor Pricing &amp; Price History"
+        subtitle={
+          view === "product"
+            ? "Manage product rate cards across all suppliers inline. Compare quotes, track price history, and set active rates."
+            : "Manage supplier rate cards inline. Rates prefill purchase orders, and purchases automatically update these rate cards."
+        }
+        actions={
+          <Segmented
+            label="View"
+            value={view}
+            onChange={switchView}
+            options={[
+              { value: "supplier", label: "By supplier", title: "One supplier's rate sheet" },
+              { value: "product", label: "By product", title: "Each product's rates from every supplier" },
+            ]}
+          />
+        }
+      />
+      {view === "product" ? (
+        <ByProductView
+          initialQuery={searchParams.get("q") ?? ""}
+          railMode={railMode}
+          onRailModeChange={handleRailModeChange}
+        />
+      ) : (
+        <BySupplierView railMode={railMode} onRailModeChange={handleRailModeChange} />
       )}
     </div>
   );

@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "Hosted single-process entry (Hostinger). Not a workspace package; resolves deps from app/node_modules."
+}

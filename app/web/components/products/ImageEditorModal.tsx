@@ -15,7 +15,7 @@ export interface EditorImageItem {
 export interface ImageEditorModalProps {
   open: boolean;
   onClose: () => void;
-  context: "product" | "variation" | "category";
+  context: "product" | "variation" | "category" | "set";
   images: EditorImageItem[];
   initialIndex?: number;
   /** Called with uploaded server URLs (/api/images/<id>) upon completion */
@@ -230,7 +230,9 @@ export function ImageEditorModal({
       ? "Product Image"
       : context === "variation"
         ? "Variation Image"
-        : "Category Image";
+        : context === "set"
+          ? "Standard Set Image"
+          : "Category Image";
 
   return (
     <Modal

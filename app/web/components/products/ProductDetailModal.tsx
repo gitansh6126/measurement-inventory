@@ -8,12 +8,14 @@ import { ProductThumb } from "@/components/ProductThumb";
 import { Modal, Segmented, TableSkeleton } from "@/components/ui";
 import { api } from "@/lib/api";
 import { dateTime, formatVariationAttributes, formatVariationAttributesString, money, qty, variationLabel } from "@/lib/format";
-import { KIND_LABEL, fmtLen, metaOf, perRate, type ProductPieces } from "@/lib/measure";
+import { KIND_LABEL, fmtLen, fmtRate, fmtSellRate, metaOf, type ProductPieces } from "@/lib/measure";
 import { VendorPricingModal } from "@/components/vendor/VendorPricingModal";
 import type { Movement, StockProduct, StockVariation } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
+import { useLengthView } from "@/lib/lengthView";
 
 function RollStrip({ product }: { product: StockProduct }) {
+  useLengthView();
   const { data } = useApi<ProductPieces>(`/measure/products/${product.id}/pieces`);
   if (!data) return null;
   const meta = metaOf(data.product);
@@ -68,6 +70,7 @@ export function ProductDetailModal({
   onClose: () => void;
   onEdit?: () => void;
 }) {
+  useLengthView();
   const router = useRouter();
   const canViewCost = useCan("inventory.configure");
   const canEdit = useCan("product.write");
@@ -181,9 +184,8 @@ export function ProductDetailModal({
                 {varLabel}
               </span>,
             )}
-            {row("Selling Price", `${money(v.salePrice)}${perRate(product.measure?.lengthUnit)}`)}
-            {row("Minimum Selling Price", Number(v.minSalePrice) > 0 ? `${money(v.minSalePrice)}${perRate(product.measure?.lengthUnit)}` : "—")}
-            {canViewCost && row("Purchasing Price", Number(v.purchaseCost) > 0 ? `${money(v.purchaseCost)}${perRate(product.measure?.lengthUnit)}` : "—")}
+            {row("Selling Price", fmtSellRate(product.measure?.lengthUnit, v.minSalePrice, v.salePrice, "Sell: "))}
+            {canViewCost && row("Purchasing Price", Number(v.purchaseCost) > 0 ? fmtRate(product.measure?.lengthUnit, v.purchaseCost) : "—")}
             {product.productType !== "measured" && row(
               "Stock on Hand",
               <span className={v.state === "ok" ? "text-emerald-600" : "text-rose-600"}>
@@ -245,7 +247,7 @@ export function ProductDetailModal({
                     return <p className="text-xs text-slate-400 italic">No supplier rates recorded for this variation.</p>;
                   }
                   const activeMatching = matchingRates.filter((r: any) => r.active);
-                  const bestRate = activeMatching.length > 0 ? Math.min(...activeMatching.map((r: any) => Number(r.rate))) : null;
+                  const bestRate = activeMatching.length > 1 ? Math.min(...activeMatching.map((r: any) => Number(r.rate))) : null;
 
                   return (
                     <div className="overflow-x-auto">
@@ -271,7 +273,7 @@ export function ProductDetailModal({
                                     </span>
                                   )}
                                 </td>
-                                <td className="text-right font-semibold text-slate-900">{money(r.rate)}{perRate(product.measure?.lengthUnit)}</td>
+                                <td className="text-right font-semibold text-slate-900">{fmtRate(product.measure?.lengthUnit, r.rate)}</td>
                                 <td className="text-slate-400 text-[11px]">{r.effectiveAt ? dateTime(r.effectiveAt) : "—"}</td>
                                 <td className="text-center">
                                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${r.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}>
@@ -300,7 +302,7 @@ export function ProductDetailModal({
           <p className="py-8 text-center text-sm text-slate-500">No stock activity yet.</p>
         ) : (
           <div className="table-scroll table-container max-h-[50vh] overflow-auto">
-            <table className="table table-sticky-0">
+            <table className="table table-stack table-sticky-0">
               <thead>
                 <tr>
                   <th className="sticky !top-0 z-10 bg-slate-50 shadow-[0_1px_0_0_#e2e8f0]">Date</th>
@@ -368,7 +370,7 @@ export function ProductDetailModal({
 
       {canEdit && (
         <div className="mt-4 flex justify-end border-t border-slate-100 pt-3">
-          <Link href={`/products/${product.id}/edit`} className="btn-secondary" onClick={onClose}>
+          <Link href={`/products/${product.id}/edit?returnTo=products`} className="btn-secondary" onClick={onClose}>
             Edit product
           </Link>
         </div>

@@ -22,6 +22,7 @@ owner answers in chat 2026-10-20; `v3.1\docs\WAREHOUSE-V3-PLAN.md`; V3 baseline 
 | D4 | In V3 the main component exists **only inside sets**: not sold, bought or stock-edited loose. Loose selling may come in V4 (ask then). |
 | D5 | **By-products** are linked as products only (existing, or created new inline): Simple, Variable or Measured. Create never fixes a variation, quantity or length. |
 | D6 | By-products can be **required or optional**. |
+| D6a | (2026-10-28, migration 0040) The **same product may be a by-product more than once** (a chain hoist with two steel chains). Each repeat is its own link with its own variation / length per set and an optional label ("Load chain" / "Hand chain"); unlabelled repeats are numbered "#1", "#2". Shown as "Product · label". Definition edits send `linkId` per row so repeats stay apart. |
 | D7 | Counted by-products are always **1 per set**. Measured by-products: length typed per set at purchase. |
 | D8 | **Sets are created only by purchase.** Each set row picks every by-product's variation (and length for measured). |
 | D9 | Stock shows as a whole set on the grouped product, and the same parts show on their own products (variation rows, piece columns) as "In sets". |
@@ -40,7 +41,7 @@ owner answers in chat 2026-10-20; `v3.1\docs\WAREHOUSE-V3-PLAN.md`; V3 baseline 
 | D21 | Purchase warehouse **per set**, default from "Receive into". |
 | D22 | Public catalog shows the grouped product with set price, in stock yes/no and the chain sizes available as options; no set codes or warehouses. |
 | D23 | **Sale orders hold sets**: sets are chosen when the order is taken and are hidden from other sales until delivered or the order is cancelled. |
-| D24 | **Vendor pricing for grouped products is not in V3** (owner: "we will see in V4"). Supplier Rates page and the purchase set sheet show "Supplier rates for sets — not available yet"; no rate cards, no rate chips and no auto-update from set purchases. Loose by-product purchases keep normal vendor pricing. |
+| D24 | *(Superseded in V3.2 on 2026-10-28 by backlog A3: supplier set rates now exist, kept on the grouped product's variation and updated by set purchases.)* **Vendor pricing for grouped products is not in V3** (owner: "we will see in V4"). Supplier Rates page and the purchase set sheet show "Supplier rates for sets — not available yet"; no rate cards, no rate chips and no auto-update from set purchases. Loose by-product purchases keep normal vendor pricing. |
 
 Not in V3 (dropped from revision 1): building sets from loose stock, taking a part from another
 set (donor swap B1 / B2), incomplete sets, default variations, assembling in the shop.
@@ -330,8 +331,19 @@ Example — set CH-3MM-3M-20-10-26-01 sold with the chain changed 3 mm → 4 mm 
 
 - **Void**: `SALE_VOID` movements; set back to IN_STOCK with the parts it was sold with (4 mm).
   Released parts stay free — part changes are not undone (in V3 the next sale can change them again).
-- **Edit (revision)**: price, discount, party, date, payment only. Changing the set or its parts
-  → cancel the sale and sell again (same rule as V2 `ORDER_QTY_LOCKED`).
+- **Edit (revision)**: *(V3.2, 2026-10-28: replaced.)* ~~price, discount, party, date, payment only.
+  Changing the set or its parts → cancel the sale and sell again.~~ A sale with sets is now edited
+  like any sale (`editDocument`, one transaction): its sets come back in stock **with the parts they
+  were sold with** (measured parts get their length back — `restoreSaleCuts` + `restoreSaleSets`,
+  same as a cancel, ledger reason "<number> edited (<number>-R<n>)"), the original movements are
+  reversed, then the revision sells the sets it lists — the same sets (kept, version not checked),
+  other sets in stock, with new part changes against the parts as sold (old part → free stock, new
+  part from free stock, D13). Sets left out stay in stock. Price: the cart starts each kept set at the
+  price it was sold at, and part changes reprice from there (D12); staff can still change it, min
+  price applies. Names: the revision takes today's product / variation names (like counted lines).
+  A delivery of a sale order keeps the same sets (`ORDER_SETS_LOCKED`; parts and prices may change).
+  Purchases with sets stay `SETS_NOT_EDITABLE`; loose measured lines stay `MEASURED_NOT_EDITABLE`.
+  Test: `grouped.test.ts` "edits a sale with sets…" and the D23 order test.
 - Sale orders: sets are held from order time (§3.1); delivery applies planned changes.
 
 ---

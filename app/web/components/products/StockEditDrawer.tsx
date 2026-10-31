@@ -6,10 +6,12 @@ import { CollapseIcon, ExpandIcon } from "@/components/icons";
 import { ProductThumb } from "@/components/ProductThumb";
 import { StockBadge } from "@/components/StockBadge";
 import { SearchInput } from "@/components/ui";
+import { VariationTabs } from "@/components/products/VariationTabs";
 import { variationLabel } from "@/lib/format";
 import { fmtLen, metaOf } from "@/lib/measure";
 import type { StockProduct, StockVariation } from "@/lib/types";
 import { variationAttributeColumns } from "@/lib/variationColumns";
+import { useLengthView } from "@/lib/lengthView";
 
 // Stock In grid → drawer (same shell as the cart ProductDrawer). Shows every active variation in
 // one table with the Stock In edit cells (Current / New Stock, Min Selling Price, Selling Price,
@@ -33,8 +35,8 @@ export function StockEditDrawer({
   extra,
 }: {
   product: StockProduct;
-  heads: ReactNode;
-  cells: (v: StockVariation) => ReactNode;
+  heads?: ReactNode;
+  cells?: (v: StockVariation) => ReactNode;
   dirty: number;
   saving: boolean;
   error?: string | null;
@@ -49,8 +51,13 @@ export function StockEditDrawer({
   /** Shown under the table: V3.1 a grouped product's set types (like variation rows). */
   extra?: ReactNode;
 }) {
+  useLengthView();
   const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState("");
+  const [varFilteredIds, setVarFilteredIds] = useState<string[] | null>(null);
+  const [varFilters, setVarFilters] = useState<Record<string, string>>({});
+  const [selectedVarId, setSelectedVarId] = useState<string | null>(null);
+  const grouped = product.productType === "grouped";
   const variable = product.productType === "variable";
   // Measured rows: variation name + standard roll, totals as lengths (owner design 2026-10-16).
   const measured = product.productType === "measured";
@@ -60,14 +67,18 @@ export function StockEditDrawer({
   const total = active.reduce((s, v) => s + v.quantity, 0);
 
   const rows = useMemo(() => {
+    let list = active;
+    if (varFilteredIds) {
+      list = list.filter((v) => varFilteredIds.includes(v.id));
+    }
     const term = filter.trim().toLowerCase();
-    if (!term) return active;
-    return active.filter((v) =>
+    if (!term) return list;
+    return list.filter((v) =>
       v.shortName.toLowerCase().includes(term) ||
       v.officialSku?.toLowerCase().includes(term) ||
       Object.entries(v.attributes).some(([k, val]) => k.toLowerCase().includes(term) || val.toLowerCase().includes(term))
     );
-  }, [active, filter]);
+  }, [active, filter, varFilteredIds]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -87,7 +98,7 @@ export function StockEditDrawer({
         className={`relative z-10 flex w-full flex-col overflow-hidden bg-white shadow-2xl transition-all duration-200 ${
           expanded
             ? "h-full max-h-none w-full max-w-none rounded-none"
-            : "h-[94vh] max-h-[94vh] w-full max-w-5xl rounded-t-2xl sm:h-[88vh] sm:max-h-[88vh] sm:rounded-2xl lg:max-w-6xl xl:max-w-7xl"
+            : "h-[94vh] max-h-[94vh] w-full max-w-5xl rounded-t-2xl sm:h-[88vh] sm:max-h-[88vh] sm:rounded-2xl md:max-w-6xl lg:max-w-7xl xl:max-w-[88rem]"
         }`}
       >
         <div className="flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-5 py-3.5 sm:px-6">
@@ -122,54 +133,80 @@ export function StockEditDrawer({
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 py-3 sm:px-6">
-          {active.length > 5 && (
-            <div className="mb-2 shrink-0">
-              <SearchInput value={filter} onChange={setFilter} placeholder="Filter by attribute or SKU…" />
-            </div>
-          )}
-          <div className={`min-h-0 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-xs ${extra ? "shrink-0" : "flex-1"}`}>
-            <table className="table min-w-full">
-              <thead className="sticky top-0 z-10 bg-slate-50 shadow-xs">
-                <tr>
-                  {(variable || measured) && <th className="w-14 bg-slate-50" aria-label="Image" />}
-                  {variable ? attrCols.map((c) => <th key={c.name} className="bg-slate-50">{c.name}{c.unit ? ` (${c.unit})` : ""}</th>) : <th className="bg-slate-50">{measured ? "Variation" : "Product"}</th>}
-                  {heads}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {rows.map((v) => (
-                  <tr key={v.id}>
-                    {(variable || measured) && (
-                      <td className="w-14">
-                        <ProductThumb src={v.imageUrl ?? product.imageUrl ?? null} name={`${product.name} (${variationLabel(v, product.attributes)})`} className="h-10 w-10 rounded text-[6px]" />
-                      </td>
-                    )}
-                    {variable ? (
-                      attrCols.map((c) => <td key={c.name} className="whitespace-nowrap text-slate-800">{v.attributes[c.name] ?? "—"}</td>)
-                    ) : meta ? (
-                      <td>
-                        <div className="text-sm font-bold text-slate-900">{variationLabel(v, product.attributes)}</div>
-                        {(v.defaultRollLength ?? product.measure?.defaultRollLength) && (
-                          <div className="text-[11px] text-slate-400">Std {(meta.rollName || "roll").toLowerCase()}: {fmtLen((v.defaultRollLength ?? product.measure?.defaultRollLength)!, meta)}</div>
+          {grouped ? (
+            <div className="min-h-0 flex-1 overflow-auto">{extra}</div>
+          ) : (
+            <>
+              {active.length > 1 && (
+                <div className="mb-2.5 shrink-0">
+                  <VariationTabs
+                    attributes={product.attributes}
+                    variations={active}
+                    selectedFilters={varFilters}
+                    selectedVariationId={selectedVarId}
+                    onFilterChange={(filteredIds, filters, singleId) => {
+                      setVarFilteredIds(filteredIds);
+                      setVarFilters(filters);
+                      setSelectedVarId(singleId);
+                    }}
+                    scrollTargetPrefix="drawer-var"
+                  />
+                </div>
+              )}
+              {active.length > 5 && (
+                <div className="mb-2 shrink-0">
+                  <SearchInput value={filter} onChange={setFilter} placeholder="Filter by attribute or SKU…" />
+                </div>
+              )}
+              <div className={`min-h-0 w-full overflow-auto rounded-lg border border-slate-200 bg-white shadow-xs ${extra ? "shrink-0" : "flex-1"}`}>
+                <table className="table table-stack min-w-full">
+                  <thead className="sticky top-0 z-10 bg-slate-50 shadow-xs">
+                    <tr>
+                      {(variable || measured) && <th className="w-14 bg-slate-50" aria-label="Image" />}
+                      {variable ? attrCols.map((c) => <th key={c.name} className="bg-slate-50">{c.name}{c.unit ? ` (${c.unit})` : ""}</th>) : <th className="bg-slate-50">{measured ? "Variation" : "Product"}</th>}
+                      {heads}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {rows.map((v) => (
+                      <tr
+                        id={`drawer-var-${v.id}`}
+                        key={v.id}
+                        className={selectedVarId === v.id ? "bg-brand-50/70 font-medium ring-1 ring-brand-400" : ""}
+                      >
+                        {(variable || measured) && (
+                          <td className="w-14">
+                            <ProductThumb src={v.imageUrl ?? product.imageUrl ?? null} name={`${product.name} (${variationLabel(v, product.attributes)})`} className="h-10 w-10 rounded text-[6px]" />
+                          </td>
                         )}
-                      </td>
-                    ) : (
-                      <td className="font-medium text-slate-900">{product.name}</td>
+                        {variable ? (
+                          attrCols.map((c) => <td key={c.name} className="whitespace-nowrap text-slate-800">{v.attributes[c.name] ?? "—"}</td>)
+                        ) : meta ? (
+                          <td>
+                            <div className="text-sm font-bold text-slate-900">{variationLabel(v, product.attributes)}</div>
+                            {(v.defaultRollLength ?? product.measure?.defaultRollLength) && (
+                              <div className="text-[11px] text-slate-400">Std {(meta.rollName || "roll").toLowerCase()}: {fmtLen((v.defaultRollLength ?? product.measure?.defaultRollLength)!, meta)}</div>
+                            )}
+                          </td>
+                        ) : (
+                          <td className="font-medium text-slate-900">{product.name}</td>
+                        )}
+                        {cells?.(v)}
+                      </tr>
+                    ))}
+                    {rows.length === 0 && (
+                      <tr>
+                        <td colSpan={99} className="py-12 text-center text-sm text-slate-500">
+                          {active.length ? <>No variations match &ldquo;{filter}&rdquo;</> : "This product has no active variation"}
+                        </td>
+                      </tr>
                     )}
-                    {cells(v)}
-                  </tr>
-                ))}
-                {rows.length === 0 && (
-                  <tr>
-                    <td colSpan={99} className="py-12 text-center text-sm text-slate-500">
-                      {active.length ? <>No variations match &ldquo;{filter}&rdquo;</> : "This product has no active variation"}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          {extra && <div className="mt-3 min-h-0 flex-1 overflow-auto">{extra}</div>}
+                  </tbody>
+                </table>
+              </div>
+              {extra && <div className="mt-3 min-h-0 flex-1 overflow-auto">{extra}</div>}
+            </>
+          )}
           {error && <p className="mt-2 shrink-0 text-sm text-rose-600" role="alert">{error}</p>}
         </div>
 
@@ -180,7 +217,7 @@ export function StockEditDrawer({
           <select className="input w-auto" value={reason} onChange={(e) => onReason(e.target.value)} aria-label="Reason">
             {reasons.map((r) => <option key={r}>{r}</option>)}
           </select>
-          <input className="input min-w-[10rem] flex-1" placeholder="Notes (optional)" maxLength={300} value={notes} onChange={(e) => onNotes(e.target.value)} />
+          <input autoComplete="off" className="input min-w-[10rem] flex-1" placeholder="Notes (optional)" maxLength={300} value={notes} onChange={(e) => onNotes(e.target.value)} />
           <button type="button" className="btn-secondary" disabled={!dirty || saving} onClick={onDiscard}>Discard</button>
           <button type="button" className="btn-secondary" onClick={onClose}>Close</button>
           <button type="button" className="btn border border-emerald-700 bg-emerald-700 text-white hover:bg-emerald-800" disabled={saving || !dirty} onClick={onSave}>

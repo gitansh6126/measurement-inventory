@@ -17,6 +17,8 @@ $RunDir = Join-Path $DataRoot "run"
 $LogDir = Join-Path $DataRoot "logs"
 $BackupRoot = Join-Path $DataRoot "backups"
 $StorageRoot = Join-Path $DataRoot "storage"
+# While this file exists (update.ps1), the watchdog leaves the app alone. Older than 3 hours = stale.
+$MaintenanceFile = Join-Path $RunDir "maintenance.txt"
 $AppTitle = "RS Inventory"
 # The release this folder is on: VERSION file (kept in step with the git tag v<VERSION>).
 $AppVersion = try { (Get-Content (Join-Path $V3Root "VERSION") -TotalCount 1).Trim() } catch { "dev" }
@@ -39,6 +41,42 @@ function Get-Git {
   if ($g) { return $g.Source }
   foreach ($p in "$env:ProgramFiles\Git\cmd\git.exe", "${env:ProgramFiles(x86)}\Git\cmd\git.exe") { if (Test-Path $p) { return $p } }
   return $null
+}
+
+function Get-GitMetadata {
+  $g = Get-Git
+  if (-not $g -or -not (Test-Path (Join-Path $V3Root ".git"))) { return $null }
+  try {
+    $commit = (& $g -C $V3Root rev-parse --short HEAD 2>$null)
+    if ($commit) { $commit = $commit.Trim() }
+    $fullCommit = (& $g -C $V3Root rev-parse HEAD 2>$null)
+    if ($fullCommit) { $fullCommit = $fullCommit.Trim() }
+    $branch = (& $g -C $V3Root rev-parse --abbrev-ref HEAD 2>$null)
+    if ($branch) { $branch = $branch.Trim() }
+    $tag = (& $g -C $V3Root describe --tags --exact-match HEAD 2>$null)
+    if ($tag) { $tag = $tag.Trim() }
+    $status = (& $g -C $V3Root status --porcelain 2>$null)
+    $dirty = [bool]$status
+    $remote = (& $g -C $V3Root remote get-url origin 2>$null)
+    if ($remote) {
+      $remote = $remote.Trim()
+      if ($remote -like "git@github.com:*") {
+        $remote = "https://github.com/" + ($remote -replace '^git@github\.com:', '' -replace '\.git$', '')
+      } elseif ($remote -like "https://github.com/*") {
+        $remote = $remote -replace '\.git$', ''
+      }
+    }
+    return @{
+      Commit = $commit
+      FullCommit = $fullCommit
+      Branch = $branch
+      Tag = $tag
+      IsDirty = $dirty
+      Url = $remote
+    }
+  } catch {
+    return $null
+  }
 }
 
 # Reads KEY=VALUE lines literally, skipping comments.
@@ -78,6 +116,33 @@ function Start-Postgres {
 }
 
 function Get-PgUrl([string]$DatabaseUrl) { return ($DatabaseUrl -split '\?')[0] }
+
+# Optional monitoring ping (MONITOR_*_URL in the env file, e.g. a free healthchecks.io check):
+# <url> = all fine, <url>/fail = problem; the body is a short status text with no shop data.
+# Blank URL = off. Never throws: monitoring must not break a backup or the watchdog.
+function Send-Ping([string]$Url, [switch]$Fail, [string]$Body = "") {
+  if (-not $Url) { return }
+  $target = if ($Fail) { $Url.TrimEnd("/") + "/fail" } else { $Url }
+  try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest -UseBasicParsing -Method Post -Uri $target -Body $Body -TimeoutSec 10 | Out-Null
+  } catch { Write-Host "[!] Monitoring ping to $target failed: $($_.Exception.Message)" -ForegroundColor Yellow }
+}
+
+# Deletes files in the logs folder not written for $KeepDays days. A log the app is still
+# writing has a recent LastWriteTime, so it is never deleted.
+function Remove-OldLogs([int]$KeepDays = 30) {
+  if ($KeepDays -lt 1 -or -not (Test-Path $LogDir)) { return }
+  Get-ChildItem $LogDir -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-$KeepDays) } |
+    ForEach-Object { try { Remove-Item -LiteralPath $_.FullName -Force } catch { } }
+}
+
+# Free space (GB) on the drive that holds the data folder (database backups, images, logs).
+function Get-DataDriveFreeGB {
+  $root = [IO.Path]::GetPathRoot([IO.Path]::GetFullPath($DataRoot))
+  try { return [math]::Round((New-Object IO.DriveInfo $root).AvailableFreeSpace / 1GB, 1) } catch { return $null }
+}
 
 function Test-PortInUse([int]$Port) {
   return [bool](Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)

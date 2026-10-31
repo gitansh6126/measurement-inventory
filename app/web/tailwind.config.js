@@ -10,15 +10,20 @@ module.exports = {
       // Brand palette and "tall" screen from marble 2110 tailwind.config.js (D23).
       screens: { tall: { raw: "(min-width: 1024px) and (min-height: 700px)" } },
       // Bottom-sheet drawer: slide up from the bottom on open, back down on close; backdrop fades.
+      // Side drawer: slide in from right.
       keyframes: {
         "sheet-in": { from: { transform: "translateY(100%)" }, to: { transform: "translateY(0)" } },
         "sheet-out": { from: { transform: "translateY(0)" }, to: { transform: "translateY(100%)" } },
+        "drawer-in-right": { from: { transform: "translateX(100%)" }, to: { transform: "translateX(0)" } },
+        "drawer-out-right": { from: { transform: "translateX(0)" }, to: { transform: "translateX(100%)" } },
         "fade-in": { from: { opacity: "0" }, to: { opacity: "1" } },
         "fade-out": { from: { opacity: "1" }, to: { opacity: "0" } },
       },
       animation: {
         "sheet-in": "sheet-in 280ms cubic-bezier(0.32, 0.72, 0, 1) both",
         "sheet-out": "sheet-out 200ms cubic-bezier(0.4, 0, 1, 1) both",
+        "drawer-in-right": "drawer-in-right 240ms cubic-bezier(0.16, 1, 0.3, 1) both",
+        "drawer-out-right": "drawer-out-right 180ms ease-in both",
         "fade-in": "fade-in 200ms ease-out both",
         "fade-out": "fade-out 200ms ease-in both",
       },

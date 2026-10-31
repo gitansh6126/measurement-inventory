@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { CartLine } from "@/components/CartContext";
+import { useCart, type CartLine } from "@/components/CartContext";
+import { SupplierRateList } from "@/components/vendor/SupplierRateList";
 import { Alert, Modal } from "@/components/ui";
 import { money } from "@/lib/format";
+import { ratePerOf } from "@/lib/measure";
 import type { Product } from "@/lib/types";
 import { errorText, useApi } from "@/lib/useApi";
+import { useSupplierRates } from "@/lib/useSupplierRates";
 import { useWarehouses } from "@/lib/useWarehouses";
 import { SetTypesTable, useSetsInStock } from "./SetTypes";
 import { buildSets, emptyRow, rowsFromSets, setContentRows, setSummary, SetSheetTable, type SetBody, type SheetRow } from "./SetSheet";
@@ -13,6 +16,9 @@ import { buildSets, emptyRow, rowsFromSets, setContentRows, setSummary, SetSheet
 // V3.1 purchase cart (docs\GROUPED-PRODUCTS-V3-PLAN.md §3): the set sheet for a grouped product.
 // Confirm turns the rows into cart lines — one line per set rate ("Chain Hoist Set × 2 @ 6,200"),
 // because a document line has one price (D11: one purchase rate per set, no part costs).
+// V3.2 A3 (owner 2026-10-28): a supplier's rate for a set is kept per grouped product on its own
+// variation, like any rate card, and updated when the purchase completes. The sheet shows every
+// supplier's set rate (tap to fill) and, per row, what the chosen parts cost from this supplier.
 
 export function PurchaseSetsModal({
   productId,
@@ -41,6 +47,80 @@ export function PurchaseSetsModal({
   const [error, setError] = useState("");
   const [showStock, setShowStock] = useState(false);
   const inStock = useSetsInStock(productId);
+  // Receiving an order line keeps the order's rate: no vendor pricing there.
+  const showVendor = !pickWarehouse;
+  const cart = useCart();
+  const supplier = cart.party?.mode === "purchase" ? cart.party : null;
+  const setVariationId = product?.variations[0]?.id ?? "";
+  const partIds = info ? [info.main?.variationId ?? "", ...info.byproducts.flatMap((b) => b.variations.map((v) => v.id))] : [];
+  const vendor = useSupplierRates(showVendor ? [setVariationId, ...partIds] : [], supplier?.id);
+  const setRates = vendor.suggestions.get(setVariationId);
+  const mySetRate = setRates?.supplierRate ? String(Math.round(Number(setRates.supplierRate))) : "";
+
+  // A new sheet starts at this supplier's set rate (never over a rate already typed).
+  useEffect(() => {
+    if (!mySetRate || initial?.length || defaultRate) return;
+    setRows((rs) => rs?.map((r) => (r.rate ? r : { ...r, rate: mySetRate })) ?? rs);
+  }, [mySetRate, initial, defaultRate]);
+
+  /** Supplier cost of a row's parts: this supplier's rate, else the cheapest; null while a part has none. */
+  function partsCost(row: SheetRow): { total: number; missing: number } | null {
+    if (!info) return null;
+    const rateOf = (variationId: string) => {
+      const s = vendor.suggestions.get(variationId);
+      const r = s?.supplierRate ?? s?.cheapest?.rate;
+      return r ? Number(r) : null;
+    };
+    let total = 0;
+    let missing = 0;
+    let picked = 0;
+    if (info.main?.variationId) {
+      const r = rateOf(info.main.variationId);
+      if (r === null) missing++;
+      else total += r;
+    }
+    for (const b of info.byproducts) {
+      const p = row.parts[b.id];
+      if (!p?.variationId) continue;
+      picked++;
+      const r = rateOf(p.variationId);
+      if (r === null) {
+        missing++;
+        continue;
+      }
+      // Measured: the length is in base units, the rate per m / per ft (0028).
+      total += b.productType === "measured" ? ((Number(p.length) || 0) / ratePerOf(b.lengthUnit)) * r : r;
+    }
+    return picked || info.main?.variationId ? { total, missing } : null;
+  }
+
+  /** Supplier cost of a standard preset's parts. */
+  function presetPartsCost(t: { parts: { byproductId: string; variationId: string; length: number | null }[] }): { total: number; missing: number } | null {
+    if (!info) return null;
+    const rateOf = (variationId: string) => {
+      const s = vendor.suggestions.get(variationId);
+      const r = s?.supplierRate ?? s?.cheapest?.rate;
+      return r ? Number(r) : null;
+    };
+    let total = 0;
+    let missing = 0;
+    if (info.main?.variationId) {
+      const r = rateOf(info.main.variationId);
+      if (r === null) missing++;
+      else total += r;
+    }
+    for (const p of t.parts) {
+      const b = info.byproducts.find((x) => x.id === p.byproductId);
+      if (!b) continue;
+      const r = rateOf(p.variationId);
+      if (r === null) {
+        missing++;
+        continue;
+      }
+      total += b.productType === "measured" ? ((Number(p.length) || 0) / ratePerOf(b.lengthUnit)) * r : r;
+    }
+    return { total, missing };
+  }
 
   useEffect(() => {
     if (info && !rows) setRows(initial?.length ? rowsFromSets(info, initial) : [emptyRow(info, 1, defaultRate)]);
@@ -108,7 +188,70 @@ export function PurchaseSetsModal({
               </div>
             )}
           </div>
-          <SetSheetTable info={info} rows={rows} setRows={(fn) => setRows((r) => fn(r ?? []))} defaultRate={defaultRate} rateLabel="Rate per set (₹) *" defaultWarehouseLabel="Receive into" showWarehouse={pickWarehouse} />
+          {showVendor && vendor.list.length > 0 && (
+            <div className="mb-3">
+              <SupplierRateList
+                suggestion={setRates}
+                supplierId={supplier?.id ?? null}
+                supplierName={supplier?.name}
+                price={rows.length && rows.every((r) => r.rate === rows[0]!.rate) ? rows[0]!.rate : ""}
+                onPick={(rate) => setRows((rs) => rs?.map((r) => ({ ...r, rate })) ?? rs)}
+              />
+              <p className="mt-1 text-[11px] text-slate-500">Set rates per supplier · tapping one fills every set below. Completing the purchase saves the rate paid.</p>
+            </div>
+          )}
+          <SetSheetTable
+            groupId={productId}
+            info={info}
+            rows={rows}
+            setRows={(fn) => setRows((r) => fn(r ?? []))}
+            defaultRate={defaultRate || mySetRate}
+            rateLabel="Rate per set (₹) *"
+            defaultWarehouseLabel="Receive into"
+            showWarehouse={pickWarehouse}
+            rateHint={
+              showVendor && vendor.list.length > 0
+                ? (row) => {
+                    const c = partsCost(row);
+                    if (!c) return null;
+                    if (c.total === 0 && c.missing > 0) return <div className="mt-0.5 whitespace-nowrap text-[10px] text-slate-400">Parts: no supplier rates yet</div>;
+                    const partsRounded = Math.round(c.total);
+                    const canApply = partsRounded > 0 && row.rate !== String(partsRounded);
+                    return (
+                      <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-slate-500" title="Supplier rates of the parts chosen in this row">
+                        <span>From parts <strong className="text-slate-800 font-semibold">{money(partsRounded)}</strong></span>
+                        {c.missing > 0 && <span className="text-amber-700">({c.missing} unpriced)</span>}
+                        {canApply && (
+                          <button
+                            type="button"
+                            onClick={() => setRows((rs) => rs?.map((x) => (x.key === row.key ? { ...x, rate: String(partsRounded) } : x)) ?? rs)}
+                            className="rounded bg-brand-50 border border-brand-200 px-1.5 py-0.2 font-semibold text-brand-700 hover:bg-brand-100 transition cursor-pointer select-none"
+                            title="Set rate to calculated parts total"
+                          >
+                            Use ₹{money(partsRounded)}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  }
+                : undefined
+            }
+            standardRateHint={
+              showVendor && vendor.list.length > 0
+                ? (t) => {
+                    const c = presetPartsCost(t);
+                    if (!c) return null;
+                    if (c.total === 0 && c.missing > 0) return <span className="text-[10px] text-slate-400">Parts: no rates yet</span>;
+                    return (
+                      <span className="text-[11px] font-medium text-slate-600" title="Supplier rates of parts in this preset">
+                        Parts: <strong className="font-semibold text-emerald-700">{money(Math.round(c.total))}</strong>
+                        {c.missing > 0 && <span className="text-amber-700"> · {c.missing} unpriced</span>}
+                      </span>
+                    );
+                  }
+                : undefined
+            }
+          />
           <div className="mt-2 text-xs text-slate-500">
             {rows.length} set{rows.length === 1 ? "" : "s"} · total {money(total)}
           </div>

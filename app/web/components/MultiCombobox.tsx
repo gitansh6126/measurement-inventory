@@ -37,6 +37,7 @@ export function MultiCombobox({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
+  const touched = useRef(false); // arrow key pressed since the menu opened or the last tick
   const [pos, setPos] = useState<{ left: number; width: number; top?: number; bottom?: number; maxHeight: number } | null>(null);
 
   const chosen = new Set(values);
@@ -96,13 +97,16 @@ export function MultiCombobox({
     }
   }
 
+  // Enter navigation (lib/enterNav.ts): Enter ticks a row only after typing or an arrow key since
+  // the last tick; otherwise (and when the menu is closed) it moves on to the next field.
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) { e.preventDefault(); setOpen(true); setActive(0); return; }
+    if (!open && e.key === 'ArrowDown') { e.preventDefault(); touched.current = false; setOpen(true); setActive(0); return; }
     if (e.key === 'Backspace' && !query && values.length) { onChange(values.slice(0, -1)); return; }
     if (!open) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((a) => Math.min(a + 1, rowCount - 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
-    else if (e.key === 'Enter') { e.preventDefault(); if (rowCount) choose(active); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); touched.current = true; setActive((a) => Math.min(a + 1, rowCount - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); touched.current = true; setActive((a) => Math.max(a - 1, 0)); }
+    else if (e.key === 'Enter' && (e.shiftKey || (!touched.current && !q))) close();
+    else if (e.key === 'Enter') { e.preventDefault(); touched.current = false; if (rowCount) choose(active); }
     else if (e.key === 'Escape') { e.preventDefault(); close(); }
     else if (e.key === 'Tab') close();
   }
@@ -140,7 +144,7 @@ export function MultiCombobox({
           className="min-w-[8rem] flex-1 border-0 bg-transparent p-0 text-sm outline-none focus:ring-0"
           placeholder={tags.length ? '' : placeholder}
           value={query}
-          onFocus={() => { if (!open) { setOpen(true); setActive(0); } }}
+          onFocus={() => { if (!open) { touched.current = false; setOpen(true); setActive(0); } }}
           onChange={(e) => { setQuery(e.target.value); setActive(0); if (!open) setOpen(true); }}
           onKeyDown={onKeyDown}
         />

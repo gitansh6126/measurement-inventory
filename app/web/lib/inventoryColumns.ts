@@ -1,6 +1,6 @@
 import { qty as fmtQty } from "./format";
 import type { StockProduct, StockVariation } from "./types";
-import { perRate } from "./measure";
+import { fmtSellRate, perRate } from "./measure";
 
 /** A Measured rate is per m, or per ft on a feet + inches product (0028). */
 const withPer = (p: { measure?: { lengthUnit: Parameters<typeof perRate>[0] } | null }, text: string) => (text && p.measure ? `${text}${perRate(p.measure.lengthUnit)}` : text);
@@ -14,6 +14,8 @@ export interface ColumnDef {
   label: string;
   /** Cannot be hidden. */
   fixed?: boolean;
+  /** Cannot be moved by the user (screen tables with drag-to-reorder columns). */
+  pinned?: boolean;
   /** Needs cost visibility (inventory.configure); the API omits the value otherwise. */
   cost?: boolean;
   align?: "right";
@@ -29,13 +31,14 @@ export const INVENTORY_COLUMNS: ColumnDef[] = [
   { id: "product", label: "Product", fixed: true, value: (p) => p.name },
   { id: "variation", label: "Variation", fixed: true, value: variationLabel },
   { id: "officialSku", label: "Official SKU", value: (p, v) => (v ?? (p.productType === "simple" ? p.variations[0] : null))?.officialSku ?? "" },
+  { id: "shortName", label: "Short Name", value: (p, v) => (v ?? (p.productType === "simple" ? p.variations[0] : null))?.shortName ?? "" },
   { id: "category", label: "Category", value: (p) => p.category?.name ?? "" },
   { id: "stock", label: "Current Stock", fixed: true, align: "right", value: (p, v) => `${fmtQty(v ? v.quantity : p.quantity)} ${p.unit}` },
   { id: "state", label: "Status", value: (p, v) => stateLabel[(v ?? p).state as keyof typeof stateLabel] ?? "" },
   { id: "activity", label: "Sales Activity", value: (p) => p.activityStatus },
   { id: "minStock", label: "Min Stock", align: "right", value: (p, v) => String(v ? v.lowStockThreshold : p.lowStockThreshold) },
   { id: "minSalePrice", label: "Minimum Selling Price ₹", align: "right", value: (p, v) => { const price = (v ?? (p.productType === "simple" ? p.variations[0] : null))?.minSalePrice; return price && Number(price) > 0 ? withPer(p, money(price)) : ""; } },
-  { id: "salePrice", label: "Selling Price ₹", align: "right", value: (p, v) => withPer(p, money((v ?? (p.productType === "simple" ? p.variations[0] : null))?.salePrice)) },
+  { id: "salePrice", label: "Selling Price ₹", align: "right", value: (p, v) => { const item = v ?? (p.productType === "simple" ? p.variations[0] : null); return withPer(p, fmtSellRate(p.measure?.lengthUnit, item?.minSalePrice, item?.salePrice, "")); } },
   { id: "purchaseCost", label: "Cost ₹", align: "right", cost: true, value: (p, v) => withPer(p, money((v ?? (p.productType === "simple" ? p.variations[0] : null))?.purchaseCost)) },
   { id: "stockValue", label: "Stock Value ₹", align: "right", cost: true, value: (p, v) => money((v ?? p).stockValue) },
 ];
@@ -47,13 +50,13 @@ export const PRODUCT_REPORT_COLUMNS: ColumnDef[] = [
   { id: "category", label: "Category", value: (p) => p.category?.name ?? "" },
   { id: "stock", label: "Stock on Hand", fixed: true, align: "right", value: (p, v) => `${fmtQty(v ? v.quantity : p.quantity)} ${p.unit}` },
   { id: "minSalePrice", label: "Minimum Selling Price Rs", align: "right", value: (p, v) => { const price = (v ?? (p.productType === "simple" ? p.variations[0] : null))?.minSalePrice; return price && Number(price) > 0 ? withPer(p, money(price)) : ""; } },
-  { id: "salePrice", label: "Selling Price Rs", align: "right", value: (p, v) => withPer(p, money((v ?? (p.productType === "simple" ? p.variations[0] : null))?.salePrice)) },
+  { id: "salePrice", label: "Selling Price Rs", align: "right", value: (p, v) => { const item = v ?? (p.productType === "simple" ? p.variations[0] : null); return withPer(p, fmtSellRate(p.measure?.lengthUnit, item?.minSalePrice, item?.salePrice, "")); } },
   { id: "purchaseCost", label: "Purchasing Price Rs", align: "right", cost: true, value: (p, v) => withPer(p, money((v ?? (p.productType === "simple" ? p.variations[0] : null))?.purchaseCost)) },
   { id: "activity", label: "Sales Activity", value: (p) => p.activityStatus },
 ];
 
 /** Columns shown by default (Stock In and PDFs). */
-export const DEFAULT_HIDDEN = ["officialSku", "purchaseCost", "stockValue"];
+export const DEFAULT_HIDDEN = ["officialSku", "shortName", "purchaseCost", "stockValue"];
 
 export interface ExportRow {
   product: StockProduct;
@@ -103,7 +106,17 @@ export function filterProductTableRows(
     if (filters.stage === "active" && !p.active) return false;
     if (filters.stage === "inactive" && p.active) return false;
     if (filters.activity && p.activityStatus !== filters.activity) return false;
-    if (filters.category && (filters.category === "none" ? p.category : p.category?.id !== filters.category)) return false;
+    if (filters.category) {
+      if (filters.category === "none") {
+        if (p.category) return false;
+      } else {
+        const matchesCategory =
+          p.category?.id === filters.category ||
+          p.categories?.some((c) => c.id === filters.category) ||
+          p.variationCategories?.some((vc) => vc.id === filters.category);
+        if (!matchesCategory) return false;
+      }
+    }
     if (filters.quick === "low" && p.quantity > p.lowStockThreshold) return false;
     if (filters.quick === "out" && p.quantity !== 0) return false;
     if (filters.quick === "negative" && p.quantity >= 0) return false;

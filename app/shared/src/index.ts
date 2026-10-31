@@ -54,6 +54,19 @@ export function normAttrVals(d: AttributeDraft): string[] {
 
 export type Attributes = Record<string, string>;
 
+/** 0044: one technical specification row, e.g. { name: "Breaking load", value: "12 t" }. */
+export interface TechSpec {
+  name: string;
+  value: string;
+}
+
+/** A product's own specs, then a variation's / set's: a row with the same name replaces the product's. */
+export function mergeSpecs(base: readonly TechSpec[] | null | undefined, own: readonly TechSpec[] | null | undefined): TechSpec[] {
+  const mine = own ?? [];
+  const names = new Set(mine.map((s) => s.name.trim().toLowerCase()));
+  return [...(base ?? []).filter((s) => !names.has(s.name.trim().toLowerCase())), ...mine];
+}
+
 // Port of main v2 abbrLookup: attribute-scoped, case-insensitive on the value, uppercased.
 function abbrLookup(defs: readonly AttributeDef[]): Record<string, string> {
   const map: Record<string, string> = {};

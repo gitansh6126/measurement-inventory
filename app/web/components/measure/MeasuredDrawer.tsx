@@ -7,7 +7,7 @@ import { LengthField } from "@/components/measure/LengthField";
 import { RateField } from "@/components/measure/RateField";
 import { ProductThumb } from "@/components/ProductThumb";
 import { money, variationLabel } from "@/lib/format";
-import { KIND_CLASS, KIND_LABEL, baseLabel, fmtLen, kindPhrase, metaOf, rateLabel, rollWord, type PieceView, type ProductPieces } from "@/lib/measure";
+import { KIND_CLASS, KIND_LABEL, baseLabel, fmtLen, fmtSellRate, kindPhrase, metaOf, rateLabel, rollWord, type PieceView, type ProductPieces } from "@/lib/measure";
 import { PieceColumns, dayMonth } from "@/components/measure/PieceColumns";
 import type { StockProduct, StockVariation } from "@/lib/types";
 import { useApi } from "@/lib/useApi";
@@ -18,6 +18,8 @@ import { VendorPricingModal } from "@/components/vendor/VendorPricingModal";
 import { CollapseIcon, ExpandIcon } from "@/components/icons";
 import { SupplierRateList } from "@/components/vendor/SupplierRateList";
 import { WarehouseStockChips } from "@/components/cart/TakeFromPopup";
+import { OptionButtons } from "@/components/cart/OptionButtons";
+import { useLengthView } from "@/lib/lengthView";
 
 // Measured products in the sale / purchase drawer (wireframes W12, W14–W15, W17).
 //
@@ -34,8 +36,12 @@ import { WarehouseStockChips } from "@/components/cart/TakeFromPopup";
 
 const lite = (p: PieceView): PieceLite => ({ id: p.id, code: p.code, variationId: p.variationId, kind: p.kind, remainingMilli: toMilli(p.remainingLength), receivedAt: p.receivedAt });
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
+// Owner 2026-10-28: hide the "Cutting X from … / Leaves Y / Sell entire piece" line and the
+// "Other sizes" suggestions for now (kept for later use). Set true to show them again.
+const SHOW_CUT_HINTS = false;
 
 export function MeasuredDrawer({ product, mode, onClose, edit }: { product: StockProduct; mode: CartMode; onClose: () => void; edit?: { index: number; line: CartLine } }) {
+  useLengthView();
   const cart = useCart();
   const canViewVendor = useCan("vendor_pricing.view");
   const canManageVendor = useCan("vendor_pricing.manage");
@@ -56,7 +62,22 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
   const [showStock, setShowStock] = useState(false);
   const pieces = useApi<ProductPieces>(isSale || showStock ? `/measure/products/${product.id}/pieces` : null);
 
-  const [variationId, setVariationId] = useState<string | null>(edit?.line.variationId ?? active[0]?.id ?? null);
+  // One row of option buttons per attribute, like the single-product page. Nothing is picked up
+  // front (owner 2026-10-27) unless the line is being edited or there is only one variation.
+  const optionAttrs = useMemo(() => product.attributes.filter((a) => active.some((v) => v.attributes[a.name])), [product.attributes, active]);
+  const [pick, setPick] = useState<Record<string, string>>(() => {
+    const start = edit ? active.find((v) => v.id === edit.line.variationId) : active.length === 1 ? active[0] : undefined;
+    return start ? { ...start.attributes } : {};
+  });
+  const [flatId, setFlatId] = useState<string | null>(edit?.line.variationId ?? (active.length === 1 ? active[0].id : null));
+  const variationId = optionAttrs.length
+    ? active.find((v) => optionAttrs.every((a) => (v.attributes[a.name] ?? "") === (pick[a.name] ?? "")))?.id ?? null
+    : flatId;
+  const setVariationId = (id: string) => {
+    const v = active.find((x) => x.id === id);
+    if (v) setPick({ ...v.attributes });
+    setFlatId(id);
+  };
   const chosen: StockVariation | undefined = active.find((v) => v.id === variationId);
   const [length, setLength] = useState<number>(isSale && edit ? edit.line.quantity : NaN);
   const [price, setPrice] = useState(edit ? String(Number(edit.line.price)) : "");
@@ -275,7 +296,7 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
             </div>
             {showStock && (
               <div className="mb-3 max-h-[40vh] overflow-auto rounded-lg border border-slate-200">
-                <table className="table min-w-full">
+                <table className="table table-stack min-w-full">
                   <thead className="sticky top-0 z-10 bg-slate-50 shadow-xs">
                     <tr>
                       <th className="bg-slate-50">Variation</th>
@@ -299,11 +320,9 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
                           <td className="whitespace-nowrap text-slate-800">{varName(v)}</td>
                           <td className="whitespace-nowrap text-right text-sm">
                             {isSale ? (
-                              <>
-                                <span className="text-slate-500">{Number(v.minSalePrice) > 0 ? money(v.minSalePrice) : "—"}</span>
-                                <span className="mx-1 text-slate-300">–</span>
-                                <b className="text-brand-700">{money(v.salePrice)}</b>
-                              </>
+                              <span className="font-semibold text-brand-700">
+                                {fmtSellRate(meta.lengthUnit, v.minSalePrice, v.salePrice, "Sell: ")}
+                              </span>
                             ) : vSug?.supplierRate ? (
                               <>
                                 <b>{money(vSug.supplierRate)}</b>
@@ -312,7 +331,9 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
                             ) : vSug?.cheapest ? (
                               <>
                                 <b>{money(vSug.cheapest.rate)}</b>
-                                <span className="block text-[10px] text-slate-500">Best: {vSug.cheapest.supplierName}{vSug.rates.length > 1 ? ` · ${vSug.rates.length} suppliers` : ""}</span>
+                                <span className="block text-[10px] text-slate-500">
+                                  {vSug.rates.length > 1 ? `Best: ${vSug.cheapest.supplierName} · ${vSug.rates.length} suppliers` : vSug.cheapest.supplierName}
+                                </span>
                               </>
                             ) : (
                               <span className={Number(v.purchaseCost) > 0 ? "font-semibold" : "text-slate-400"}>{Number(v.purchaseCost) > 0 ? money(v.purchaseCost) : "—"}</span>
@@ -336,6 +357,39 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
                 </table>
               </div>
             )}
+            {optionAttrs.length ? (
+              <>
+                <OptionButtons
+                  attributes={optionAttrs}
+                  active={active}
+                  picks={pick}
+                  onChange={(name, value) => {
+                    // Tapping the picked value again clears it.
+                    setPick((p) => {
+                      const next = { ...p };
+                      if (next[name] === value) delete next[name];
+                      else next[name] = value;
+                      return next;
+                    });
+                    setPieceId(null);
+                    setError("");
+                  }}
+                />
+                <div className="mt-2 text-xs">
+                  {chosen ? (
+                    <span className="text-slate-600">
+                      Selected: <b className="text-slate-800">{varName(chosen)}</b>
+                      {isSale && pieces.data && (() => {
+                        const vp = pieces.data.variations.find((x) => x.id === chosen.id)?.pieces ?? [];
+                        return <span className={vp.length ? "text-emerald-700" : "text-rose-600"}> · {vp.length ? `${L(vp.reduce((s, p) => s + p.remainingLength, 0))} in stock` : "no stock"}</span>;
+                      })()}
+                    </span>
+                  ) : (
+                    <span className="text-amber-700">Choose {optionAttrs.filter((a) => !pick[a.name]).map((a) => a.name).join(", ") || "another combination"}</span>
+                  )}
+                </div>
+              </>
+            ) : (
             <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Variation">
               {active.map((v) => {
                 const vp = isSale ? pieces.data?.variations.find((x) => x.id === v.id)?.pieces : undefined;
@@ -362,16 +416,13 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
                 );
               })}
             </div>
+            )}
           </div>
 
           {chosen && isSale && (
             <div className="mb-4 flex flex-wrap items-center gap-4 rounded-lg bg-slate-50 px-3 py-2 text-sm border border-slate-200/60">
-              <span title="Minimum selling price is a reference only">
-                <span className="text-slate-500">Min Selling Price:</span>{" "}
-                <b>{Number(chosen.minSalePrice) > 0 ? money(chosen.minSalePrice) : "—"}</b>
-                <span className="mx-2 text-slate-400">–</span>
-                <span className="text-slate-500">Selling Price:</span>{" "}
-                <b className="text-brand-700">{money(chosen.salePrice)}</b>
+              <span className="font-semibold text-brand-700">
+                {fmtSellRate(meta.lengthUnit, chosen.minSalePrice, chosen.salePrice, "Sell: ")}
               </span>
             </div>
           )}
@@ -420,6 +471,7 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
                 </div>
               </div>
 
+              {(SHOW_CUT_HINTS || !(pieces.data && need && plan && plan.kind !== "CLOSED" && !scrap)) && (
               <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
                 {!pieces.data ? (
                   <p className="text-sm text-slate-500">{pieces.error || "Loading stock…"}</p>
@@ -435,6 +487,7 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
                   </p>
                 ) : plan ? (
                   <>
+                    {SHOW_CUT_HINTS && (
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${KIND_CLASS[plan.kind]}`}>{KIND_LABEL[plan.kind]}</span>
@@ -449,6 +502,7 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
                         </button>
                       )}
                     </div>
+                    )}
                     {plan.kind === "CLOSED" && <p className="mt-1 text-[11px] text-slate-500">The sealed {rollWord(meta)} is opened by this sale.</p>}
                     {scrap && (
                       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900" role="alert">
@@ -477,6 +531,7 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
                   </div>
                 )}
               </div>
+              )}
 
               {/* Suggestions (owner design 2026-10-16): only when they apply. */}
               {need > 0 && cutFit && (
@@ -489,7 +544,7 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
                   </button>
                 </div>
               )}
-              {need > 0 && otherVars.length > 0 && (
+              {SHOW_CUT_HINTS && need > 0 && otherVars.length > 0 && (
                 <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs text-slate-600">
                   <span className="font-medium text-slate-500">Other sizes:</span>
                   {otherVars.map((v) => {
@@ -530,17 +585,30 @@ export function MeasuredDrawer({ product, mode, onClose, edit }: { product: Stoc
                         : fitsNeed || !need
                           ? "border-slate-300 bg-white hover:border-brand-500 hover:bg-brand-50/20"
                           : "border-slate-200 bg-slate-50 opacity-70 hover:opacity-100";
+                      // The whole box chooses a piece that fits (owner 2026-10-28: no "Choose" button).
+                      const choosable = fitsNeed && !selected;
                       return (
-                        <div key={p.id} className={`rounded-lg border p-2 transition ${tone}`}>
+                        <div
+                          key={p.id}
+                          className={`rounded-lg border p-2 transition ${tone} ${choosable ? "cursor-pointer" : ""}`}
+                          {...(choosable && {
+                            role: "button",
+                            tabIndex: 0,
+                            "aria-label": `Choose ${L(p.remainingMilli / 1000)} piece`,
+                            onClick: () => setPieceId(p.id),
+                            onKeyDown: (e: React.KeyboardEvent) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                setPieceId(p.id);
+                              }
+                            },
+                          })}
+                        >
                           <div className="flex items-center justify-between gap-1.5">
                             <span className="text-sm font-bold text-slate-900">{L(p.remainingMilli / 1000)}</span>
                             {selected ? (
                               <span className="rounded bg-brand-600 px-1.5 py-0.5 text-[10px] font-bold text-white">✓ Selected</span>
-                            ) : fitsNeed ? (
-                              <button type="button" className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:border-brand-500 hover:text-brand-600" onClick={() => setPieceId(p.id)}>
-                                Choose
-                              </button>
-                            ) : (
+                            ) : fitsNeed ? null : (
                               <button type="button" className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100" title="Sell the whole piece" onClick={() => usePiece(p)}>
                                 Sell {L(p.remainingMilli / 1000)}
                               </button>

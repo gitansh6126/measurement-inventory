@@ -1,6 +1,7 @@
 import type { Prisma, SetSource, SetStatus } from "@prisma/client";
 import type { AttributeDef } from "@rs-v31/shared";
 import { formatLength, formatPieceDate, formatPieceLength, ratePerOf, toMilli } from "@rs-v31/shared/measure";
+import { byproductName, repeatLabels } from "@rs-v31/shared/sets";
 import { z } from "zod";
 import type { Db, Tx } from "../db.js";
 import { audit } from "./audit.js";
@@ -8,6 +9,7 @@ import { AppError } from "./errors.js";
 import { allocatePieceSequences, createPieces, cutPiece, dec, ledger, lengthInput, milliOf, type MeasureCtx } from "./measure.js";
 import { freeBalances, lockVariations, money, recordMovements, type MovementInput } from "./stock.js";
 import { balancesByWarehouse, inSetsByWarehouse, resolveWarehouse } from "./warehouses.js";
+import { setTypeKey, upsertSetTypePrices } from "./set-types.js";
 
 // V3.1 grouped products / sets (docs\GROUPED-PRODUCTS-V3-PLAN.md). A set's parts stay in the
 // normal stock of their own products and are only marked as taken (group_set_parts ALLOCATED):
@@ -31,6 +33,11 @@ export const setInput = z.object({
   // V3.1 warehouses (GW-1): the warehouse this set (and all its parts) is in; default = the
   // receipt's "Receive into" choice, else the default warehouse.
   warehouseId: z.string().min(1).nullish(),
+  // 0041 opening sets only: selling price, minimum selling price and minimum stock of this set's
+  // type (sets with the same parts); left out = unchanged.
+  salePrice: money.optional(),
+  minSalePrice: money.optional(),
+  lowStockThreshold: z.coerce.number().int().min(0).max(1_000_000).optional(),
 });
 export type SetInput = z.infer<typeof setInput>;
 
@@ -63,6 +70,7 @@ export async function loadSetDefinition(db: Db, companyId: string, groupId: stri
         orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
         select: {
           id: true,
+          label: true,
           required: true,
           product: {
             select: {
@@ -86,7 +94,7 @@ export async function loadSetDefinition(db: Db, companyId: string, groupId: stri
   if (!mainVariation) throw new AppError(409, "NO_MAIN_COMPONENT", `${g.name} has no main component`);
   return { ...g, mainVariation };
 }
-type SetDefinition = Awaited<ReturnType<typeof loadSetDefinition>>;
+export type SetDefinition = Awaited<ReturnType<typeof loadSetDefinition>>;
 type Link = SetDefinition["byproducts"][number];
 
 /** Code token of one fitted part (D17): attribute values "4 mm" → "4MM", a Simple part's Short Name. */
@@ -106,7 +114,7 @@ function partToken(link: Link, variation: { shortName: string; attributes: Prism
 }
 
 /** Validates the set rows against the definition (plan §3 step 1). */
-function validateSets(def: SetDefinition, sets: readonly SetInput[]) {
+export function validateSets(def: SetDefinition, sets: readonly SetInput[]) {
   const links = new Map(def.byproducts.map((b) => [b.id, b]));
   return sets.map((s, i) => {
     const label = sets.length > 1 ? `Set ${i + 1}: ` : "";
@@ -114,18 +122,18 @@ function validateSets(def: SetDefinition, sets: readonly SetInput[]) {
     const parts = s.parts.map((p) => {
       const link = links.get(p.byproductId);
       if (!link) throw new AppError(400, "UNKNOWN_BYPRODUCT", `${label}this by-product is not part of ${def.name}`);
-      if (seen.has(link.id)) throw new AppError(400, "BYPRODUCT_TWICE", `${label}${link.product.name} is entered twice`);
+      if (seen.has(link.id)) throw new AppError(400, "BYPRODUCT_TWICE", `${label}${byproductName(link.product.name, link.label)} is entered twice`);
       seen.add(link.id);
       const variation = link.product.variations.find((v) => v.id === p.variationId);
-      if (!variation || !variation.active) throw new AppError(400, "BAD_VARIATION", `${label}choose a ${link.product.name} variation`);
+      if (!variation || !variation.active) throw new AppError(400, "BAD_VARIATION", `${label}choose a ${byproductName(link.product.name, link.label)} variation`);
       const measured = link.product.productType === "measured";
-      if (measured && !p.length) throw new AppError(400, "LENGTH_REQUIRED", `${label}enter the ${link.product.name} length`);
-      if (!measured && p.length) throw new AppError(400, "NOT_MEASURED", `${label}${link.product.name} is always 1 per set`);
+      if (measured && !p.length) throw new AppError(400, "LENGTH_REQUIRED", `${label}enter the ${byproductName(link.product.name, link.label)} length`);
+      if (!measured && p.length) throw new AppError(400, "NOT_MEASURED", `${label}${byproductName(link.product.name, link.label)} is always 1 per set`);
       const lengthMilli = measured ? p.length! : null;
       return { link, variation, lengthMilli, measured };
     });
     for (const link of def.byproducts) {
-      if (link.required && !seen.has(link.id)) throw new AppError(400, "BYPRODUCT_REQUIRED", `${label}${link.product.name} is required in every set`);
+      if (link.required && !seen.has(link.id)) throw new AppError(400, "BYPRODUCT_REQUIRED", `${label}${byproductName(link.product.name, link.label)} is required in every set`);
     }
     return { input: s, parts };
   });
@@ -260,6 +268,14 @@ export async function createSets(tx: Tx, ctx: MeasureCtx, groupId: string, sets:
 export async function addOpeningSets(tx: Tx, ctx: MeasureCtx, body: z.infer<typeof openingSetsBody>) {
   const date = body.date ?? new Date();
   const created = await createSets(tx, ctx, body.groupId, body.sets, { source: "OPENING", date, reason: "Opening sets", warehouseId: body.warehouseId });
+  await upsertSetTypePrices(
+    tx,
+    ctx,
+    body.groupId,
+    body.sets
+      .filter((s) => s.salePrice !== undefined || s.minSalePrice !== undefined || s.lowStockThreshold !== undefined)
+      .map((s) => ({ parts: s.parts, salePrice: s.salePrice, minSalePrice: s.minSalePrice, lowStockThreshold: s.lowStockThreshold })),
+  );
   await audit(tx, {
     companyId: ctx.companyId,
     actorId: ctx.actorId,
@@ -359,7 +375,18 @@ export async function cancelPurchaseSets(tx: Tx, ctx: MeasureCtx, purchase: { id
 
 /** One set picked on a sale line, with the part changes made in the sale (D10, §5.2). */
 export const saleSetInput = z.object({
-  setId: z.string().min(1),
+  setId: z.string().nullish().transform((v) => v || ""),
+  /** When true, no set existed in stock; the entire combination is backordered on a customer order. */
+  isWholeBackorder: z.boolean().optional(),
+  combination: z
+    .array(
+      z.object({
+        byproductId: z.string().min(1),
+        variationId: z.string().min(1),
+        length: lengthInput.optional(),
+      }),
+    )
+    .optional(),
   /** The set's version when it was picked; a set changed since is refused (409 SET_CHANGED). */
   version: z.number().int().positive().optional(),
   changes: z
@@ -409,7 +436,14 @@ async function freeCounted(tx: Tx, companyId: string, variationId: string, wareh
  * Nothing is sold yet; `sellSets` does that after the loose lines.
  */
 export async function prepareSaleSets(tx: Tx, ctx: MeasureCtx, sale: SaleRef, lines: readonly SaleSetLine[]) {
-  const picks = lines.flatMap((l) => l.sets.map((s) => ({ ...s, lineNo: l.lineNo, groupId: l.groupId })));
+  for (const l of lines) {
+    for (const s of l.sets) {
+      if (s.isWholeBackorder || !s.setId) {
+        throw new AppError(400, "CANNOT_SELL_BACKORDER", "A backordered set cannot be directly sold; place a customer order instead");
+      }
+    }
+  }
+  const picks = lines.flatMap((l) => l.sets.map((s) => ({ ...s, lineNo: l.lineNo, groupId: l.groupId }))).filter((p) => p.setId && !p.isWholeBackorder);
   if (!picks.length) return;
   const ids = picks.map((p) => p.setId);
   if (new Set(ids).size !== ids.length) throw new AppError(400, "SET_TWICE", "The same set is picked twice");
@@ -573,9 +607,10 @@ export async function sellSets(tx: Tx, ctx: MeasureCtx, sale: SaleRef, lines: re
  * the sold measured pieces their length back; voidDocument records the SALE_VOID movements.
  * Owner rule 2026-10-24: the person cancelling chooses per set — keep it together, or release
  * its measured parts (`releaseSetIds`) as free Cut pieces in normal stock; the set then comes
- * back without them. Returns the restored set codes and the released piece codes.
+ * back without them. Returns the restored set codes and the released piece codes. A sale edit
+ * (editDocument) restores them the same way, under its own `label`, and sells them again.
  */
-export async function restoreSaleSets(tx: Tx, ctx: MeasureCtx, sale: { id: string; number: string }, releaseSetIds: readonly string[] = []) {
+export async function restoreSaleSets(tx: Tx, ctx: MeasureCtx, sale: { id: string; number: string }, releaseSetIds: readonly string[] = [], label = `VOID ${sale.number}`) {
   const sets = await tx.groupSet.findMany({ where: { companyId: ctx.companyId, saleId: sale.id }, include: { parts: { where: { status: "SOLD" } } }, orderBy: { code: "asc" } });
   const unknown = releaseSetIds.filter((id) => !sets.some((s) => s.id === id));
   if (unknown.length) throw new AppError(400, "BAD_SET", "A set chosen for release is not on this sale");
@@ -599,7 +634,7 @@ export async function restoreSaleSets(tx: Tx, ctx: MeasureCtx, sale: { id: strin
           continue;
         }
         await tx.measurementPiece.update({ where: { id: piece.id }, data: { setId: s.id, updatedById: ctx.actorId } });
-        await ledger(tx, ctx, [{ pieceId: piece.id, variationId: p.variationId, action: "SET_ALLOCATE", beforeMilli: len, afterMilli: len, saleId: sale.id, reason: `${s.code}: back from VOID ${sale.number}`, warehouseId: piece.warehouseId }]);
+        await ledger(tx, ctx, [{ pieceId: piece.id, variationId: p.variationId, action: "SET_ALLOCATE", beforeMilli: len, afterMilli: len, saleId: sale.id, reason: `${s.code}: back from ${label}`, warehouseId: piece.warehouseId }]);
       }
     }
     await tx.groupSet.update({ where: { id: s.id }, data: { status: "IN_STOCK", saleId: null, saleLineNo: null, version: { increment: 1 }, updatedById: ctx.actorId } });
@@ -639,7 +674,7 @@ export async function holdOrderSets(
   lines: readonly { lineNo: number; groupId: string; sets: readonly SaleSetInput[] }[],
   previouslyHeld: readonly string[] = [],
 ) {
-  const picks = lines.flatMap((l) => l.sets.map((s) => ({ ...s, lineNo: l.lineNo, groupId: l.groupId })));
+  const picks = lines.flatMap((l) => l.sets.map((s) => ({ ...s, lineNo: l.lineNo, groupId: l.groupId }))).filter((p) => p.setId && !p.isWholeBackorder);
   if (!picks.length) return;
   const ids = picks.map((p) => p.setId);
   if (new Set(ids).size !== ids.length) throw new AppError(400, "SET_TWICE", "The same set is picked twice");
@@ -665,9 +700,9 @@ export async function holdOrderSets(
       if (seen.has(c.byproductId)) throw new AppError(400, "BYPRODUCT_TWICE", `This set: one change per part`);
       seen.add(c.byproductId);
       if (c.action !== "REMOVE" && !link) throw new AppError(400, "UNKNOWN_BYPRODUCT", `This set: this by-product is not part of ${def.name}`);
-      if (c.action === "REMOVE" && link?.required) throw new AppError(400, "PART_REQUIRED", `This set: ${link.product.name} is required; change it, it cannot be removed`);
+      if (c.action === "REMOVE" && link?.required) throw new AppError(400, "PART_REQUIRED", `This set: ${byproductName(link.product.name, link.label)} is required; change it, it cannot be removed`);
       if (c.action !== "REMOVE" && !link!.product.variations.some((v) => v.id === c.variationId && v.active)) {
-        throw new AppError(400, "BAD_VARIATION", `This set: choose a ${link!.product.name} variation`);
+        throw new AppError(400, "BAD_VARIATION", `This set: choose a ${byproductName(link!.product.name, link!.label)} variation`);
       }
     }
     await tx.groupSet.update({ where: { id: set.id }, data: { status: "HELD", orderId: order.id, orderLineNo: pick.lineNo, version: { increment: 1 }, updatedById: ctx.actorId } });
@@ -709,7 +744,7 @@ const setInclude = {
     where: { status: { in: ["ALLOCATED", "SOLD"] } },
     orderBy: [{ role: "asc" }, { allocatedAt: "asc" }],
     include: {
-      byproduct: { select: { id: true, required: true, sortOrder: true } },
+      byproduct: { select: { id: true, label: true, required: true, sortOrder: true } },
       piece: { select: { id: true, code: true } },
       variation: {
         select: {
@@ -754,7 +789,8 @@ export function serializeSet(s: SetRow) {
         byproductId: p.byproductId,
         required: p.byproduct?.required ?? true,
         productId: g.id,
-        productName: g.name,
+        // The link's name, so two chains in one set read "Load chain" / "Hand chain".
+        productName: byproductName(g.name, p.byproduct?.label),
         productType: g.productType,
         variationId: p.variation.id,
         shortName: p.variation.shortName,
@@ -774,6 +810,8 @@ export function serializeSet(s: SetRow) {
     groupId: s.groupId,
     groupName: s.group.name,
     name: [s.group.name, ...by.map((p) => p.label)].join(" · "),
+    /** Its set type (sets with the same parts, 0041): prices and minimum stock are kept per type. */
+    typeKey: setTypeKey(by.map((p) => ({ byproductId: p.byproductId ?? "", variationId: p.variationId, length: p.productType === "measured" ? toMilli(p.quantity) : null }))),
     /** What the set holds, part by part, for display: "Load Chain Grade 80" → "8 mm · 3 m". */
     contents: by.map((p) => ({ name: p.productName, value: p.value })),
     status: s.status,
@@ -797,6 +835,8 @@ export const setsQuery = z.object({
   q: z.string().trim().max(100).optional(),
   // V3.1 (0038, G-A): only sets in this category — the grouped product is, or a fitted part is.
   categoryId: z.string().min(1).optional(),
+  // V3.2 sale edit: the sets sold on this sale (they can be picked again in its revision).
+  saleId: z.string().min(1).optional(),
 });
 
 /** G-A: a set is in a category when its grouped product is, or one of its fitted parts is. */
@@ -824,6 +864,7 @@ export async function listSets(db: Db, companyId: string, q: z.infer<typeof sets
       ...(q.status === "all" ? {} : { status: q.status as SetStatus }),
       ...(q.q ? { code: { contains: q.q, mode: "insensitive" } } : {}),
       ...(q.categoryId ? setInCategory(q.categoryId) : {}),
+      ...(q.saleId ? { saleId: q.saleId } : {}),
     },
     include: setInclude,
     orderBy: [{ createdAt: "desc" }, { code: "asc" }],
@@ -874,7 +915,15 @@ export async function setCounts(db: Db, companyId: string, groupId: string) {
 
 export const definitionBody = z.object({
   byproducts: z
-    .array(z.object({ productId: z.string().min(1), required: z.boolean() }))
+    .array(
+      z.object({
+        // The existing link this row keeps (absent = a new link). Lets the same product repeat.
+        linkId: z.string().min(1).optional(),
+        productId: z.string().min(1),
+        required: z.boolean(),
+        label: z.string().trim().max(60).nullish(),
+      }),
+    )
     .min(1, "Keep at least one by-product")
     .max(10),
 });
@@ -888,8 +937,9 @@ export async function updateDefinition(tx: Tx, ctx: MeasureCtx, groupId: string,
   if (!g) throw new AppError(404, "NOT_FOUND", "Product not found");
   if (g.productType !== "grouped") throw new AppError(400, "NOT_GROUPED", `${g.name} is not a grouped product`);
   await tx.$queryRaw`SELECT id FROM product_groups WHERE id = ${groupId} FOR UPDATE`;
-  const ids = body.byproducts.map((b) => b.productId);
-  if (new Set(ids).size !== ids.length) throw new AppError(400, "BYPRODUCT_DUPLICATE", "A by-product is listed twice");
+  const ids = [...new Set(body.byproducts.map((b) => b.productId))];
+  const linkIds = body.byproducts.flatMap((b) => (b.linkId ? [b.linkId] : []));
+  if (new Set(linkIds).size !== linkIds.length) throw new AppError(400, "BYPRODUCT_DUPLICATE", "A by-product row is listed twice");
   const products = await tx.productGroup.findMany({ where: { companyId: ctx.companyId, id: { in: ids } }, select: { id: true, name: true, productType: true, ownerGroupId: true, active: true } });
   for (const id of ids) {
     const p = products.find((x) => x.id === id);
@@ -898,18 +948,26 @@ export async function updateDefinition(tx: Tx, ctx: MeasureCtx, groupId: string,
     if (p.ownerGroupId) throw new AppError(400, "BYPRODUCT_MAIN", `${p.name} is the main component of a set`);
   }
   const existing = await tx.groupByproduct.findMany({ where: { groupId } });
-  const before = existing.filter((e) => e.active).map((e) => ({ productId: e.productId, required: e.required }));
+  const before = existing.filter((e) => e.active).map((e) => ({ productId: e.productId, label: e.label, required: e.required }));
+  const labels = repeatLabels(body.byproducts);
+  const kept = new Set<string>();
   for (const [sortOrder, b] of body.byproducts.entries()) {
-    const link = existing.find((e) => e.productId === b.productId);
-    if (link) await tx.groupByproduct.update({ where: { id: link.id }, data: { active: true, required: b.required, sortOrder } });
-    else {
+    // A row without linkId (older clients) keeps the first unclaimed link of that product.
+    const link = b.linkId
+      ? existing.find((e) => e.id === b.linkId)
+      : [...existing].sort((x, y) => Number(y.active) - Number(x.active)).find((e) => e.productId === b.productId && !kept.has(e.id) && !linkIds.includes(e.id));
+    if (b.linkId && (!link || link.productId !== b.productId)) throw new AppError(404, "NOT_FOUND", "By-product row not found");
+    if (link) {
+      kept.add(link.id);
+      await tx.groupByproduct.update({ where: { id: link.id }, data: { active: true, required: b.required, label: labels[sortOrder], sortOrder } });
+    } else {
       const p = products.find((x) => x.id === b.productId)!;
       if (!p.active) throw new AppError(400, "BYPRODUCT_INACTIVE", `${p.name} is archived`);
-      await tx.groupByproduct.create({ data: { companyId: ctx.companyId, groupId, productId: b.productId, required: b.required, sortOrder, createdById: ctx.actorId } });
+      await tx.groupByproduct.create({ data: { companyId: ctx.companyId, groupId, productId: b.productId, label: labels[sortOrder], required: b.required, sortOrder, createdById: ctx.actorId } });
     }
   }
   for (const e of existing) {
-    if (e.active && !ids.includes(e.productId)) await tx.groupByproduct.update({ where: { id: e.id }, data: { active: false } });
+    if (e.active && !kept.has(e.id)) await tx.groupByproduct.update({ where: { id: e.id }, data: { active: false } });
   }
   await tx.productGroup.update({ where: { id: groupId }, data: { version: { increment: 1 }, updatedById: ctx.actorId } });
   await audit(tx, { companyId: ctx.companyId, actorId: ctx.actorId, action: "GROUPED_DEFINITION_UPDATE", entityType: "ProductGroup", entityId: groupId, before: { byproducts: before }, after: { byproducts: body.byproducts }, requestId: ctx.requestId ?? null });

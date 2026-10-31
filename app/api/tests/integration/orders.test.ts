@@ -49,7 +49,7 @@ describe("orders", () => {
     expect(created.status).toBe(201);
     let o = await get(manager, created.body.id);
     expect(o).toMatchObject({ status: "DRAFT", total: "1400.00", expectedDate: "2026-10-20", version: 1 });
-    expect(o.number).toMatch(/^SO\/\d{4}-\d{2}\/0001$/);
+    expect(o.number).toMatch(/^SO-\d{8}-001$/);
     expect(await stored(v)).toBe(10);
 
     expect((await post(manager, `/api/orders/${o.id}/complete`, {})).body.error.code).toBe("BAD_TRANSITION");
@@ -90,7 +90,7 @@ describe("orders", () => {
     await post(manager, "/api/orders", { kind: "PURCHASE", lines: [{ variationId: v, quantity: 1, price: 80 }] });
     const list = (await manager.get("/api/orders?kind=PURCHASE")).body;
     expect(list.counts).toMatchObject({ ALL: 2, OPEN: 2, DRAFT: 1, PLACED: 1, COMPLETED: 0 });
-    expect(list.orders[0].number).toMatch(/^PO\//);
+    expect(list.orders[0].number).toMatch(/^PO-/);
     expect((await post(manager, `/api/orders/${a}/complete`, {})).status).toBe(201);
     expect(await stored(v)).toBe(5);
     expect((await manager.get("/api/orders?kind=PURCHASE&status=COMPLETED")).body.total).toBe(1);

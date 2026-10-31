@@ -10,6 +10,7 @@ import { formatAttributeValue, money } from "@/lib/format";
 import { rateLabel } from "@/lib/measure";
 import { SplitChips } from "@/components/cart/TakeFromPopup";
 import { LineFlags } from "@/components/cart/LineFlags";
+import { CreditScoreBadge } from "@/components/CreditScoreBadge";
 
 export function CartSidebar() {
   const cart = useCart();
@@ -51,41 +52,51 @@ export function CartSidebar() {
         aria-label="Shopping Cart Sidebar"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 bg-slate-50/80">
-          <div className="flex items-center gap-2.5">
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider ${
-                isSale ? "bg-sky-100 text-sky-800" : "bg-slate-200 text-slate-800"
-              }`}
-            >
-              {isSale ? "Sale Cart" : "Purchase Cart"}
-            </span>
-            <span className="text-xs font-medium text-slate-500">
-              {cart.count} {cart.count === 1 ? "item" : "items"}
-            </span>
-          </div>
+        <div className="border-b border-slate-200 px-5 py-4 bg-slate-50/80">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider ${
+                  isSale ? "bg-sky-100 text-sky-800" : "bg-slate-200 text-slate-800"
+                }`}
+              >
+                {isSale ? "Sale Cart" : "Purchase Cart"}
+              </span>
+              <span className="text-xs font-medium text-slate-500">
+                {cart.count} {cart.count === 1 ? "item" : "items"}
+              </span>
+            </div>
 
-          <div className="flex items-center gap-1">
-            {cart.count > 0 && (
+            <div className="flex items-center gap-1">
+              {cart.count > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-slate-500 hover:bg-rose-50 hover:text-rose-600 active:scale-95 active:bg-rose-100 transition-all duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
+                  title="Clear all items"
+                >
+                  <TrashIcon className="h-3.5 w-3.5" />
+                  <span>Clear</span>
+                </button>
+              )}
               <button
                 type="button"
-                onClick={handleClear}
-                className="flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-slate-500 hover:bg-rose-50 hover:text-rose-600 active:scale-95 active:bg-rose-100 transition-all duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400"
-                title="Clear all items"
+                onClick={cart.closeDrawer}
+                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700 active:scale-90 transition-all duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                aria-label="Close cart sidebar"
               >
-                <TrashIcon className="h-3.5 w-3.5" />
-                <span>Clear</span>
+                <CloseIcon className="h-4 w-4" />
               </button>
-            )}
-            <button
-              type="button"
-              onClick={cart.closeDrawer}
-              className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700 active:scale-90 transition-all duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
-              aria-label="Close cart sidebar"
-            >
-              <CloseIcon className="h-4 w-4" />
-            </button>
+            </div>
           </div>
+          {cart.party && (
+            <div className="mt-2.5 flex items-center justify-between border-t border-slate-200/60 pt-2 text-xs text-slate-600">
+              <span className="truncate font-medium">{cart.party.name}</span>
+              {isSale && typeof cart.party.creditScore === "number" && (
+                <CreditScoreBadge score={cart.party.creditScore} showTier />
+              )}
+            </div>
+          )}
         </div>
 
         {/* Cart Item List */}

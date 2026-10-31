@@ -711,7 +711,7 @@ export const RESEALED = "(sealed again)";
  * another warehouse) also comes back as a new Cut piece. The SALE_VOID stock movement is
  * recorded by voidDocument; sets re-fit their pieces afterwards (restoreSaleSets).
  */
-export async function restoreSaleCuts(tx: Tx, ctx: MeasureCtx, sale: { id: string; number: string }) {
+export async function restoreSaleCuts(tx: Tx, ctx: MeasureCtx, sale: { id: string; number: string }, label = `VOID ${sale.number}`) {
   const sold = await tx.measurementPieceLedger.findMany({ where: { companyId: ctx.companyId, saleId: sale.id, action: "SALE" }, orderBy: [{ occurredAt: "asc" }, { lineNo: "asc" }, { id: "asc" }] });
   if (!sold.length) return [];
   await lockVariations(tx, ctx.companyId, [...new Set(sold.map((s) => s.variationId))]);
@@ -740,12 +740,12 @@ export async function restoreSaleCuts(tx: Tx, ctx: MeasureCtx, sale: { id: strin
         reseal = openedBySale && rows.every((b) => b.id === row.id || !OPENS_ROLL(b.action, milliOf(b.change)));
       }
       await setRemaining(tx, ctx, piece.id, back, reseal ? { kind: "CLOSED", openedAt: null, openedById: null } : {});
-      await ledger(tx, ctx, [{ pieceId: piece.id, variationId: piece.variationId, action: "SALE_VOID", beforeMilli: 0, afterMilli: back, saleId: sale.id, lineNo: row.lineNo, reason: `VOID ${sale.number}${reseal ? ` ${RESEALED}` : ""}`, warehouseId: soldFrom }]);
+      await ledger(tx, ctx, [{ pieceId: piece.id, variationId: piece.variationId, action: "SALE_VOID", beforeMilli: 0, afterMilli: back, saleId: sale.id, lineNo: row.lineNo, reason: `${label}${reseal ? ` ${RESEALED}` : ""}`, warehouseId: soldFrom }]);
       out.push({ pieceId: piece.id, returnedTo: piece.code, length: num(back), as: "SAME_PIECE" });
     } else {
       const info = (await variationInfo(tx, ctx.companyId, [piece.variationId])).get(piece.variationId)!;
       const [child] = await createPieces(tx, ctx, info, [{ lengthMilli: back, kind: "CUT", parentId: piece.id, supplierId: piece.supplierId, unitCost: piece.unitCost?.toString() ?? null, rack: piece.rack, notes: `Returned by void of ${sale.number}`, warehouseId: soldFrom }]);
-      await ledger(tx, ctx, [{ pieceId: child!.id, variationId: piece.variationId, action: "SALE_VOID", beforeMilli: 0, afterMilli: back, relatedPieceId: piece.id, saleId: sale.id, lineNo: row.lineNo, reason: `VOID ${sale.number}`, warehouseId: soldFrom }]);
+      await ledger(tx, ctx, [{ pieceId: child!.id, variationId: piece.variationId, action: "SALE_VOID", beforeMilli: 0, afterMilli: back, relatedPieceId: piece.id, saleId: sale.id, lineNo: row.lineNo, reason: label, warehouseId: soldFrom }]);
       out.push({ pieceId: child!.id, returnedTo: child!.code, length: num(back), as: "NEW_CUT_PIECE" });
     }
   }
@@ -976,18 +976,33 @@ export async function getShortagesAndProcurement(
 
   // Backordered by-products of the set lines still to deliver: lengths (measured) or counts.
   const storedRows = await db.$queryRaw<{ id: string; sets: unknown }[]>`SELECT id, sets FROM order_lines WHERE order_id = ${orderId} AND sets IS NOT NULL`;
-  const stored = new Map(storedRows.map((r) => [r.id, Array.isArray(r.sets) ? (r.sets as { changes?: StoredChange[] }[]) : []]));
+  interface StoredSetItem {
+    changes?: StoredChange[];
+    isWholeBackorder?: boolean;
+    combination?: { byproductId: string; variationId: string; length?: number }[];
+  }
+  const stored = new Map(storedRows.map((r) => [r.id, Array.isArray(r.sets) ? (r.sets as StoredSetItem[]) : []]));
   const backorders = new Map<string, { variationId: string; lengths: number[] }[]>();
   if (o.kind === "SALE") {
     for (const l of o.lines) {
       if (l.variation.group.productType !== "grouped" || milliOf(l.quantity) <= milliOf(l.fulfilledQuantity)) continue;
       const rows: { variationId: string; lengths: number[] }[] = [];
-      for (const c of (stored.get(l.id) ?? []).flatMap((s) => s.changes ?? [])) {
+      for (const s of stored.get(l.id) ?? []) {
+        if (s.isWholeBackorder && s.combination) {
+          for (const item of s.combination) {
+            if (!item.variationId) continue;
+            let row = rows.find((r) => r.variationId === item.variationId);
+            if (!row) rows.push((row = { variationId: item.variationId, lengths: [] }));
+            row.lengths.push(item.length ? toMilli(item.length) : 1000);
+          }
+        }
+        for (const c of s.changes ?? []) {
         if (!c.backorder || c.action === "REMOVE" || !c.variationId) continue;
         let row = rows.find((r) => r.variationId === c.variationId);
         if (!row) rows.push((row = { variationId: c.variationId, lengths: [] }));
         // Stored as entered (base units); a counted part is one unit.
         row.lengths.push(c.length ? toMilli(c.length) : 1000);
+        }
       }
       if (rows.length) backorders.set(l.id, rows);
     }

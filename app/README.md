@@ -26,9 +26,10 @@ client data.
   `components\icons.tsx`, `Combobox`, `app\globals.css`, orange brand + system font.
 - **Screens/flow: main v2** (V1 modules only): Products (`products\page.tsx`: KPI strip, All/Active/
   Inactive, toolbar, grouped table with expandable variations, admin archive switch); product
-  modal + **main v2 VariationBuilder 4 steps** (`components\products\VariationBuilder.tsx`: Define
-  Attributes with Sub Var + Quality, Data with abbreviations, Create Variation, Variation
-  Details); detail modal (Details + Action Log); Adjust Stock modal; Categories grid + detail with
+  modal + **VariationBuilder 3 steps** (`components\products\VariationBuilder.tsx`: Define
+  Attributes with Sub Var + Quality, Create Variation — pick or type each value with its
+  abbreviation, a new value becomes data for the next variation (V3.2 merged main v2's separate
+  Data step) — and Variation Details); detail modal (Details + Action Log); Adjust Stock modal; Categories grid + detail with
   Add Existing / Add New; **Stock In** (`inventory\page.tsx`, main v2 StockInPanel).
 - **Cart flow:** New sales and purchases begin with a required bottom-sheet customer/supplier
   selection before the product browser; a party created there is selected and saved with the

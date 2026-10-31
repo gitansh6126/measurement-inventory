@@ -88,6 +88,16 @@ describe("inventory", () => {
     const r2 = await patch(manager, `/api/inventory/variations/${v6}`, { purchaseCost: 380 });
     expect(r2.body.variation).toMatchObject({ minSalePrice: "300.00", salePrice: "450.00", purchaseCost: "380.00", lowStockThreshold: 3 });
     expect((await patch(manager, `/api/inventory/variations/${v6}`, { salePrice: "1.5" })).status).toBe(400);
+    // Reject min sale price > sale price
+    const badPatch = await patch(manager, `/api/inventory/variations/${v6}`, { minSalePrice: "600", salePrice: "400" });
+    expect(badPatch.status).toBe(400);
+    expect(badPatch.body.error.message).toMatch(/cannot be higher than selling price/);
+    const badStockIn = await post(manager, "/api/inventory/stock-in", {
+      reason: "Prices",
+      rows: [{ variationId: v6, expectedQuantity: 0, minSalePrice: "600", salePrice: "400" }],
+    });
+    expect(badStockIn.status).toBe(400);
+    expect(badStockIn.body.error.message).toMatch(/cannot be higher than selling price/);
     const ev = await prisma.auditEvent.findFirstOrThrow({ where: { companyId: co.id, entityId: v6, action: "INVENTORY_CONFIGURE" }, orderBy: { createdAt: "asc" } });
     expect(ev.before).toMatchObject({ minSalePrice: "0.00", salePrice: "0.00" });
     expect(ev.after).toMatchObject({ minSalePrice: "300.00", salePrice: "450.00" });

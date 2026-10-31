@@ -86,7 +86,7 @@ export default function WarehousesPage() {
         </div>
       ) : (
         <div className="card overflow-x-auto lg:overflow-x-visible">
-          <table className="table">
+          <table className="table table-stack">
             <thead>
               <tr>
                 <th>Code</th>

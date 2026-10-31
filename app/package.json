@@ -12,8 +12,14 @@
     "node": ">=22"
   },
   "scripts": {
+    "dev:setup": "node ../dev/setup-dev.mjs",
+    "dev": "node ../dev/start-dev.mjs",
+    "demo:reset": "npm run demo:reset -w api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test -w api",
-    "test:integration": "npm run test:integration -w api"
+    "test:integration": "npm run test:integration -w api",
+    "build:hosting": "npm run build -w web",
+    "start:hosting": "node hosting/start.mjs",
+    "typecheck:hosting": "tsc -p hosting"
   }
 }

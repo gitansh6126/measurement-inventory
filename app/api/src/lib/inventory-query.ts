@@ -21,6 +21,7 @@ export type StockFilter = (typeof STOCK_FILTERS)[number];
 // Product order (catalog browse, v2/docs/catalog-browse §3.2). Every order ends on id so paging
 // is stable. Prices are the active variations' selling prices.
 const SORTS = {
+  high_moving: Prisma.sql`sale_count_30d DESC, last_sale_at DESC NULLS LAST, name ASC, id ASC`,
   name: Prisma.sql`name ASC, id ASC`,
   price_asc: Prisma.sql`p_min ASC NULLS LAST, name ASC, id ASC`,
   price_desc: Prisma.sql`p_max DESC NULLS LAST, name ASC, id ASC`,
@@ -37,7 +38,7 @@ export const UNCATEGORIZED = "none";
 export const inventoryQuery = z.object({
   q: z.string().trim().max(100).optional(),
   categoryId: z.string().min(1).optional(),
-  sort: z.enum(SORT_KEYS).default("name"),
+  sort: z.enum(SORT_KEYS).default("high_moving"),
   // low includes out (main v2); out includes negative (nothing on hand); negative = below zero.
   state: z.enum(STOCK_FILTERS).default("all"),
   // main v2 Products page lists active and inactive products together.
@@ -101,6 +102,42 @@ export function rollup(companyId: string, q: Pick<InventoryQuery, "q" | "categor
       SELECT s.group_id, COUNT(*) AS n FROM group_sets s
       WHERE s.company_id = ${companyId} AND s.status = 'IN_STOCK' AND ${setMatch} GROUP BY s.group_id
     ),
+    -- 0041: each in-stock set's type key, built like lib\set-types.ts setTypeKey (parts sorted
+    -- byte-wise, "C" collation = JavaScript's default sort for these ASCII ids).
+    setkeys AS (
+      SELECT s.group_id, COALESCE(string_agg(
+          sp.byproduct_id || ':' || sp.variation_id || ':' || CASE WHEN ppg.product_type = 'measured' THEN ROUND(sp.quantity * 1000)::bigint::text ELSE '' END,
+          '|' ORDER BY (sp.byproduct_id || ':' || sp.variation_id || ':' || CASE WHEN ppg.product_type = 'measured' THEN ROUND(sp.quantity * 1000)::bigint::text ELSE '' END) COLLATE "C"
+        ), '') AS k
+      FROM group_sets s
+      LEFT JOIN group_set_parts sp ON sp.set_id = s.id AND sp.role = 'BY' AND sp.status = 'ALLOCATED'
+      LEFT JOIN product_variations pv ON pv.id = sp.variation_id
+      LEFT JOIN product_groups ppg ON ppg.id = pv.group_id
+      WHERE s.company_id = ${companyId} AND s.status = 'IN_STOCK' AND ${setMatch}
+      GROUP BY s.group_id, s.id
+    ),
+    -- 0041: set types with their own minimum stock (standard or priced) that are at or below it.
+    typelow AS (
+      SELECT t.group_id,
+        COUNT(*) FILTER (WHERE COALESCE(c.n, 0) <= t.low_stock_threshold) AS n_low,
+        COUNT(*) FILTER (WHERE COALESCE(c.n, 0) <= 0) AS n_out
+      FROM group_set_types t
+      LEFT JOIN (SELECT group_id, k, COUNT(*) AS n FROM setkeys GROUP BY group_id, k) c ON c.group_id = t.group_id AND c.k = t.type_key
+      WHERE t.company_id = ${companyId} AND (t.standard OR c.n IS NOT NULL OR t.low_stock_threshold > 0)
+      GROUP BY t.group_id
+    ),
+    s30 AS (
+      SELECT v.group_id,
+        COUNT(DISTINCT sl.sale_id) AS sale_count_30d
+      FROM sale_lines sl
+      JOIN sales s ON s.id = sl.sale_id AND s.company_id = ${companyId}
+      JOIN product_variations v ON v.id = sl.variation_id AND v.company_id = ${companyId}
+      LEFT JOIN document_voids dv ON dv.sale_id = s.id AND dv.company_id = ${companyId}
+      WHERE s.status = 'COMPLETED'
+        AND dv.id IS NULL
+        AND s.sale_date >= (CURRENT_TIMESTAMP - INTERVAL '30 days')
+      GROUP BY v.group_id
+    ),
     vs AS (
       SELECT v.id AS vid, v.group_id, v.active, v.low_stock_threshold AS t,
         CASE WHEN pg.product_type = 'grouped' THEN COALESCE(sc.n, 0)
@@ -116,12 +153,13 @@ export function rollup(companyId: string, q: Pick<InventoryQuery, "q" | "categor
       WHERE v.company_id = ${companyId}
     ),
     gs AS (
-      SELECT g.id, g.name, g.category_id, g.created_at,
+      SELECT g.id, g.name, g.category_id, g.created_at, g.last_sale_at,
+        COALESCE(MAX(s30.sale_count_30d), 0) AS sale_count_30d,
         CASE WHEN bool_or(vs.active) THEN SUM(vs.q) FILTER (WHERE vs.active) ELSE SUM(vs.q) END AS gq,
         CASE WHEN bool_or(vs.active) THEN MIN(vs.t) FILTER (WHERE vs.active) ELSE MIN(vs.t) END AS gt,
         CASE WHEN bool_or(vs.active) THEN SUM(vs.val) FILTER (WHERE vs.active) ELSE SUM(vs.val) END AS gv,
-        COUNT(*) FILTER (WHERE vs.active AND vs.q <= vs.t) AS v_low,
-        COUNT(*) FILTER (WHERE vs.active AND vs.q <= 0) AS v_out,
+        COUNT(*) FILTER (WHERE vs.active AND vs.q <= vs.t) + COALESCE(MAX(tl.n_low), 0) AS v_low,
+        COUNT(*) FILTER (WHERE vs.active AND vs.q <= 0) + COALESCE(MAX(tl.n_out), 0) AS v_out,
         COUNT(*) FILTER (WHERE vs.active AND vs.q < 0) AS v_neg,
         COUNT(*) FILTER (WHERE vs.active) AS v_active,
         MIN(vs.sp) FILTER (WHERE vs.active) AS p_min,
@@ -131,8 +169,10 @@ export function rollup(companyId: string, q: Pick<InventoryQuery, "q" | "categor
         MAX(vs.c) FILTER (WHERE vs.active) AS c_max
       FROM product_groups g
       JOIN vs ON vs.group_id = g.id AND ${variationMatch}
+      LEFT JOIN typelow tl ON tl.group_id = g.id
+      LEFT JOIN s30 ON s30.group_id = g.id
       WHERE ${Prisma.join(conds, " AND ")}
-      GROUP BY g.id, g.name, g.category_id, g.created_at
+      GROUP BY g.id, g.name, g.category_id, g.created_at, g.last_sale_at
     )`;
 }
 
@@ -172,6 +212,7 @@ export interface ProductRollup {
   minSalePrice: Prisma.Decimal | null;
   costMin: Prisma.Decimal | null;
   costMax: Prisma.Decimal | null;
+  saleCount30d: number;
 }
 
 /**
@@ -187,6 +228,7 @@ export async function queryInventory(companyId: string, q: InventoryQuery) {
     prisma.$queryRaw<
       {
         id: string;
+        sale_count_30d: bigint;
         gq: bigint;
         gt: number;
         gv: Prisma.Decimal | null;
@@ -201,7 +243,7 @@ export async function queryInventory(companyId: string, q: InventoryQuery) {
         c_max: Prisma.Decimal | null;
       }[]
     >`${base}
-      SELECT id, gq, gt, gv, v_low, v_out, v_neg, v_active, p_min, p_max, min_sale_price, c_min, c_max
+      SELECT id, sale_count_30d, gq, gt, gv, v_low, v_out, v_neg, v_active, p_min, p_max, min_sale_price, c_min, c_max
       FROM gs WHERE ${where} ORDER BY ${SORTS[q.sort]} LIMIT ${limit} OFFSET ${offset}`,
     prisma.$queryRaw<
       {
@@ -260,6 +302,7 @@ export async function queryInventory(companyId: string, q: InventoryQuery) {
     minSalePrice: r.min_sale_price,
     costMin: r.c_min,
     costMax: r.c_max,
+    saleCount30d: Number(r.sale_count_30d ?? 0),
   }));
   return { ids: rows.map((r) => r.id), rows, total: Number(c.matched), summary };
 }

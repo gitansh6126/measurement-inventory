@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fiscalYearOf, formatDocNumber } from "../../src/lib/numbering.js";
+import { dateKeyOf, fiscalYearOf, formatDocNumber } from "../../src/lib/numbering.js";
 
 describe("fiscalYearOf (Indian FY, Asia/Kolkata)", () => {
   it("April starts a new financial year", () => {
@@ -24,10 +24,22 @@ describe("fiscalYearOf (Indian FY, Asia/Kolkata)", () => {
   });
 });
 
+describe("dateKeyOf (Asia/Kolkata DDMMYYYY)", () => {
+  it("formats day, month and year with zero padding in Asia/Kolkata", () => {
+    expect(dateKeyOf(new Date("2026-10-30T10:19:35+05:30"))).toBe("30102026");
+    expect(dateKeyOf(new Date("2026-04-05T00:00:00+05:30"))).toBe("05042026");
+    // Boundary check: 31 Oct 2026 18:30 UTC is 1 Nov 2026 00:00 in India
+    expect(dateKeyOf(new Date("2026-10-31T18:30:00Z"))).toBe("01112026");
+  });
+});
+
 describe("formatDocNumber", () => {
-  it("formats sale and purchase numbers", () => {
-    expect(formatDocNumber("sale", "2026-27", 1)).toBe("SAL/2026-27/0001");
-    expect(formatDocNumber("purchase", "2026-27", 42)).toBe("PUR/2026-27/0042");
-    expect(formatDocNumber("sale", "2026-27", 12345)).toBe("SAL/2026-27/12345");
+  it("formats document numbers with Indian DDMMYYYY date and 3-digit day sequence", () => {
+    expect(formatDocNumber("sale", "30102026", 1)).toBe("SAL-30102026-001");
+    expect(formatDocNumber("purchase", "30102026", 42)).toBe("PUR-30102026-042");
+    expect(formatDocNumber("saleOrder", "30102026", 1)).toBe("SO-30102026-001");
+    expect(formatDocNumber("purchaseOrder", "30102026", 2)).toBe("PO-30102026-002");
+    expect(formatDocNumber("transfer", "30102026", 3)).toBe("TRF-30102026-003");
+    expect(formatDocNumber("sale", "30102026", 12345)).toBe("SAL-30102026-12345");
   });
 });

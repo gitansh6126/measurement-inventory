@@ -248,6 +248,76 @@ describe("purchase auto-update and rate card rules (F5)", () => {
     const afterNewer = (await manager.get(`/api/vendor-prices?variationId=${p.v}&supplierId=${s}`)).body.prices[0];
     expect(afterNewer.rate).toBe("110.00");
     expect(afterNewer.active).toBe(false);
+
+    // Variation default purchaseCost is also updated to the latest purchase rate
+    const varRow = await prisma.productVariation.findUniqueOrThrow({ where: { id: p.v } });
+    expect(varRow.purchaseCost.toFixed(2)).toBe("110.00");
+
+    // Creating a Purchase Order also records the agreed vendor price & updates purchaseCost
+    const s2 = await mkSupplier("Order Supplier");
+    await post(manager, "/api/orders", {
+      kind: "PURCHASE",
+      status: "PLACED",
+      partyId: s2,
+      lines: [{ variationId: p.v, quantity: 4, price: 105 }],
+    });
+    const s2Price = (await manager.get(`/api/vendor-prices?variationId=${p.v}&supplierId=${s2}`)).body.prices[0];
+    expect(s2Price.rate).toBe("105.00");
+    const varRowAfterOrder = await prisma.productVariation.findUniqueOrThrow({ where: { id: p.v } });
+    expect(varRowAfterOrder.purchaseCost.toFixed(2)).toBe("105.00");
+  });
+});
+
+describe("compare suppliers", () => {
+  it("lines up each variation's rates across suppliers, marks the cheapest and the spread", async () => {
+    const { manager, staff, mkProduct, mkVariableProduct, mkSupplier, tag } = await setup();
+    const s1 = await mkSupplier("Apex Supplies");
+    const s2 = await mkSupplier("Beta Traders");
+    const s3 = await mkSupplier("Core Metals");
+
+    const bolt = await mkProduct("Anchor Bolt", "AB");
+    const cable = await mkVariableProduct("Steel Cable", "SC");
+    const [small, large] = cable.variations;
+
+    await put(manager, "/api/vendor-prices", { variationId: bolt.v, supplierId: s1, rate: 50 });
+    await put(manager, "/api/vendor-prices", { variationId: bolt.v, supplierId: s2, rate: 40 });
+    // Paused and cheapest: never the best price, hidden unless asked for.
+    await put(manager, "/api/vendor-prices", { variationId: bolt.v, supplierId: s3, rate: 30, active: false });
+    await put(manager, "/api/vendor-prices", { variationId: small!.id, supplierId: s1, rate: 120 });
+    await put(manager, "/api/vendor-prices", { variationId: large!.id, supplierId: s1, rate: 180 });
+    await put(manager, "/api/vendor-prices", { variationId: large!.id, supplierId: s3, rate: 150 });
+
+    // Default: only variations two or more active suppliers quote.
+    const two = (await manager.get(`/api/vendor-prices/compare?minSuppliers=2&q=${tag}`)).body;
+    expect(two.total).toBe(2);
+    const boltRow = two.rows.find((r: { variationId: string }) => r.variationId === bolt.v);
+    expect(boltRow.rates.map((x: { rate: string }) => x.rate)).toEqual(["40.00", "50.00"]);
+    expect(boltRow.best).toMatchObject({ supplierId: s2, rate: "40.00" });
+    expect(boltRow.spreadPct).toBe(25);
+    const largeRow = two.rows.find((r: { variationId: string }) => r.variationId === large!.id);
+    expect(largeRow.best.supplierId).toBe(s3);
+    expect(two.suppliers.map((s: { id: string }) => s.id)).toEqual([s1, s2, s3]);
+
+    // Any priced variation, with paused rates shown but not counted as best.
+    const all = (await manager.get(`/api/vendor-prices/compare?minSuppliers=1&includePaused=1&q=${tag}`)).body;
+    expect(all.total).toBe(3);
+    const boltAll = all.rows.find((r: { variationId: string }) => r.variationId === bolt.v);
+    expect(boltAll.rates).toHaveLength(3);
+    expect(boltAll.best.supplierId).toBe(s2);
+    expect(all.rows.find((r: { variationId: string }) => r.variationId === small!.id).spreadPct).toBeNull();
+
+    // Only the suppliers picked, in the order picked; one product only.
+    const picked = (await manager.get(`/api/vendor-prices/compare?minSuppliers=1&supplierIds=${s3},${s1}&productId=${cable.group}`)).body;
+    expect(picked.suppliers.map((s: { id: string }) => s.id)).toEqual([s3, s1]);
+    expect(picked.rows.map((r: { variationId: string }) => r.variationId).sort()).toEqual([small!.id, large!.id].sort());
+
+    // Whole catalogue: unpriced variations too, so a first rate can be entered.
+    const plain = await mkProduct("Plain Washer", "PW");
+    const every = (await manager.get(`/api/vendor-prices/compare?minSuppliers=0&q=${tag}`)).body;
+    expect(every.total).toBe(4);
+    expect(every.rows.find((r: { variationId: string }) => r.variationId === plain.v).rates).toEqual([]);
+
+    expect((await staff.get("/api/vendor-prices/compare")).status).toBe(403);
   });
 });
 
